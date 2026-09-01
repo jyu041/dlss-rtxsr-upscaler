@@ -1,0 +1,17 @@
+{
+  "mode": "DLSS 5 only",
+  "vsr_scale": 2.0,
+  "vsr_quality": "ULTRA",
+  "dlss_preset": "Default",
+  "dlss_style": "Natural",
+  "dlss_intensity": 0.55,
+  "local_tone": 0.35,
+  "local_structure": 0.35,
+  "skin_structure": 0.15,
+  "automatic_mask": "Off",
+  "codec": "H.264",
+  "container": "MP4",
+  "quality": "Good",
+  "cq": 19,
+  "encoder_preset": "p5"
+}

@@ -1,0 +1,9 @@
+name: dlss-rtxsr-upscaler
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11.13
+  - pip=26.2
+  - pip:
+      - -r requirements.txt
+      # nvidia-vfx is deliberately not guessed or auto-installed. See docs/INSTALL.md.

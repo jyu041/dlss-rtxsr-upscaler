@@ -2,5 +2,7 @@ gradio==6.16.0
 numpy==2.2.6
 Pillow==12.3.0
 psutil==7.0.0
+nvidia-vfx==0.1.0.1
+torch==2.10.0+cu128
 pytest==9.0.3
 pip-audit==2.9.0

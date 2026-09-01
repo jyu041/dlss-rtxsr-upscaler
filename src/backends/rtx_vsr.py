@@ -12,7 +12,7 @@ class RTXVSRBackend(Backend):
         """Process one HWC float/uint8 torch frame and detach DLPack storage immediately."""
         if not self.nvvfx: raise RuntimeError("RTX VSR unavailable: " + self.reason)
         import torch
-        levels = {"LOW": self.nvvfx.effects.QualityLevel.LOW, "MEDIUM": self.nvvfx.effects.QualityLevel.MEDIUM, "HIGH": self.nvvfx.effects.QualityLevel.HIGH, "ULTRA": self.nvvfx.effects.QualityLevel.ULTRA}
+        levels = self.quality_levels()
         with self.nvvfx.VideoSuperRes(levels[quality]) as sr:
             sr.output_width, sr.output_height = int(output_width), int(output_height)
             sr.load()
@@ -23,6 +23,17 @@ class RTXVSRBackend(Backend):
             del dlpack_result, source
             if torch.cuda.is_available(): torch.cuda.synchronize()
             return result
+    def quality_levels(self):
+        q = self.nvvfx.VideoSuperRes.QualityLevel if self.nvvfx else None
+        return {name: getattr(q, name) for name in ("LOW", "MEDIUM", "HIGH", "ULTRA")}
+    def mode_quality(self, mode, quality):
+        if not self.nvvfx: raise RuntimeError("RTX VSR unavailable: " + self.reason)
+        prefix = {"Super Resolution":"", "High Bitrate":"HIGHBITRATE_", "Deblur":"DEBLUR_", "Denoise":"DENOISE_"}.get(mode)
+        if prefix is None: raise ValueError("Unknown RTX VSR mode")
+        name = prefix + quality
+        level = self.nvvfx.VideoSuperRes.QualityLevel
+        if not hasattr(level, name): raise ValueError(f"Installed nvvfx does not expose {name}")
+        return getattr(level, name)
     def process(self, frames, width, height, quality="ULTRA", cancel=None, progress=None):
         if not self.nvvfx: raise RuntimeError("RTX VSR unavailable: " + self.reason)
         for index, frame in enumerate(frames):

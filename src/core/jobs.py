@@ -15,3 +15,6 @@ class JobController:
             self.active=Job(); return self.active
     def finish(self):
         with self.lock: self.active=None
+    def cancel(self):
+        with self.lock:
+            if self.active: self.active.cancel()

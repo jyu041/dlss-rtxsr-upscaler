@@ -5,5 +5,7 @@ dependencies:
   - python=3.11.13
   - pip=26.2
   - pip:
+      - --extra-index-url https://pypi.nvidia.com
+      - --extra-index-url https://download.pytorch.org/whl/cu128
       - -r requirements.txt
       # nvidia-vfx is deliberately not guessed or auto-installed. See docs/INSTALL.md.

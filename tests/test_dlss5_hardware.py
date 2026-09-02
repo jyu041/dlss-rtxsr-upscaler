@@ -39,15 +39,21 @@ def test_dlss5_temporal_and_scaling_matrix():
     backend = DLSS5Backend()
     assert backend.status().state == "EXPERIMENTAL READY"
     started = time.perf_counter()
+    native_started = time.perf_counter()
     outputs = list(backend.process_frames(_frames(30, cut_at=15), width=128, height=128, frame_count=30))
     assert len(outputs) == 30
     assert outputs[0][1]["reset"] is True
     assert any(meta["reset"] for _, meta in outputs[1:])
+    memory = __import__("subprocess").run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"], capture_output=True, text=True, check=False)
+    print(f"DLSS5 1x: {len(outputs) / max(.001, time.perf_counter() - native_started):.2f} FPS, VRAM sample={memory.stdout.strip() or 'unavailable'} MiB")
     for factor, expected in ((1.5, 192), (2.0, 256)):
+        mode_started = time.perf_counter()
         options = backend.options(upscaling_mode=factor, nr_style="Natural", nr_intensity=.60, local_tone_strength=.40, local_structure_strength=.40, skin_structure_strength=.15, automatic_mask=False, dlss_model_preset="Default", motion_mode="optical_flow")
         scaled = list(backend.process_frames(_frames(5), width=128, height=128, frame_count=5, options=options))
         assert len(scaled) == 5
         assert scaled[-1][0].shape[:2] == (expected, expected)
+        memory = __import__("subprocess").run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"], capture_output=True, text=True, check=False)
+        print(f"DLSS5 {factor:g}x: {len(scaled) / max(.001, time.perf_counter() - mode_started):.2f} FPS, VRAM sample={memory.stdout.strip() or 'unavailable'} MiB")
     print(f"DLSS5 temporal/scaling matrix: {time.perf_counter() - started:.2f}s")
 
 

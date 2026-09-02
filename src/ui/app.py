@@ -21,11 +21,11 @@ def inspect(path):
     try: i=probe(path); return format_info(i) + ("\n\nWARNING: HDR/high-bit-depth detected; DLSS5 path is SDR RGBA8 only." if i['hdr'] else ""), i
     except Exception as e: return f"Inspection failed: {e}", None
 def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value):
-    if not path: return None, "Choose an input video."
+    if not path: return None, None, "Choose an input video."
     try:
         available = DLSS5Backend().status().available if mode.startswith("DLSS") else RTXVSRBackend().status().available
         if not available:
-            return None, f"{mode} unavailable. No substitute processing was performed. Install and audit the genuine runtime first."
+            return None, None, f"{mode} unavailable. No substitute processing was performed. Install and audit the genuine runtime first."
         source_frame=TEMP/f"preview_source_{os.getpid()}.png"; preview_frame(path,timestamp,source_frame)
         from PIL import Image
         import numpy as np
@@ -41,8 +41,8 @@ def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value):
         enhanced=(result.clamp(0,1).mul(255).byte().cpu().numpy()) if vsr_mode == "Super Resolution" else (result.clamp(0,1).mul(255).byte().permute(1,2,0).cpu().numpy())
         out=TEMP/f"preview_{os.getpid()}.png"; Image.fromarray(enhanced).save(out)
         del result,tensor,image,enhanced
-        return str(out), f"RTX VSR {vsr_mode} preview completed at {target[0]}x{target[1]}."
-    except Exception as e: return None, str(e)
+        return str(source_frame), str(out), f"RTX VSR {vsr_mode} preview completed at {target[0]}x{target[1]}."
+    except Exception as e: return None, None, str(e)
 def apply_preset(name):
     p=load_presets().get(name,{}); return [p.get(k) for k in ["dlss_preset","dlss_style","dlss_intensity","local_tone","local_structure","skin_structure","automatic_mask"]]
 def unavailable_action(mode, action):
@@ -60,7 +60,7 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
     except InterruptedError: CONTROLLER.finish(); return None, "Render cancelled; partial output removed."
     except Exception as exc: CONTROLLER.finish(); return None, f"Render failed: {exc}"
 def build():
-    with gr.Blocks(title="NVIDIA Video Enhancer") as ui:
+    with gr.Blocks(title="NVIDIA Video Enhancer", analytics_enabled=False) as ui:
         gr.Markdown("# NVIDIA Video Enhancer\n**RTX Video Super Resolution + DLSS 5 Neural Rendering**")
         status=gr.HTML(status_html())
         with gr.Row():
@@ -77,10 +77,10 @@ def build():
                 with gr.Tab("Output"):
                     codec=gr.Dropdown(["H.264","HEVC","AV1"],value="H.264",label="Codec"); container=gr.Dropdown(["MP4","MKV","MOV"],value="MP4",label="Container"); encq=gr.Dropdown(["Auto","Good","Best","Lossless/Max"],value="Good",label="Quality"); cq=gr.Number(19,label="Advanced CQ",precision=0); ep=gr.Dropdown(["p1","p4","p5","p7"],value="p5",label="NVENC preset")
             with gr.Column(scale=1):
-                before=gr.Image(label="Before / source frame", type="filepath"); after=gr.Image(label="After / processed preview", type="filepath"); timestamp=gr.Number(0,label="Preview timestamp (seconds)");
+                before=gr.Image(label="Before / source frame", type="filepath"); after=gr.Image(label="After / processed preview", type="filepath"); result_video=gr.Video(label="Rendered video"); timestamp=gr.Number(0,label="Preview timestamp (seconds)");
                 with gr.Row(): frame=gr.Button("Preview Frame",variant="primary"); clip=gr.Button("Preview Clip (3s)"); render=gr.Button("Render Full Video",variant="primary"); stop=gr.Button("Stop / Cancel")
                 job=gr.Markdown("Ready. One GPU job at a time.")
-        inp.change(inspect,inp,[info,state]); preset.change(apply_preset,preset,[nrpreset,style,intensity,tone,structure,skin,mask]); frame.click(do_frame,[inp,timestamp,mode,vsr_mode,scale,quality],[after,job]); clip.click(lambda m: unavailable_action(m,"Preview clip"), mode, job); render.click(render_video,[inp,mode,vsr_mode,scale,quality,container],[after,job]); stop.click(lambda: (CONTROLLER.cancel() or "Cancellation requested."), None, job)
+        inp.change(inspect,inp,[info,state]); preset.change(apply_preset,preset,[nrpreset,style,intensity,tone,structure,skin,mask]); frame.click(do_frame,[inp,timestamp,mode,vsr_mode,scale,quality],[before,after,job]); clip.click(lambda m: unavailable_action(m,"Preview clip"), mode, job); render.click(render_video,[inp,mode,vsr_mode,scale,quality,container],[result_video,job]); stop.click(lambda: (CONTROLLER.cancel() or "Cancellation requested."), None, job)
         gr.Markdown("### Runtime notes\nA missing backend is never substituted with sharpening or another upscaler. Configure legitimate NVIDIA runtimes, then restart and refresh diagnostics.")
     return ui
-def launch(): build().launch(server_name="127.0.0.1",share=False,analytics_enabled=False,css=Path("src/ui/styles.css").read_text())
+def launch(): build().launch(server_name="127.0.0.1",share=False,enable_monitoring=False,css_paths=Path("src/ui/styles.css"))

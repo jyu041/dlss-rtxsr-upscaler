@@ -17,6 +17,8 @@ def collect():
         import nvvfx
         vfx_version=getattr(nvvfx,"__version__","0.1.0.1")
     except Exception: vfx_version=None
-    return {"windows":platform.platform(),"python":sys.version.split()[0],"conda_env":__import__('os').environ.get('CONDA_DEFAULT_ENV','unknown'),"gpu":gpu,"cuda":cuda,"nvvfx_version":vfx_version,"ffmpeg":"AVAILABLE" if tool('ffmpeg') else 'UNAVAILABLE',"ffprobe":"AVAILABLE" if tool('ffprobe') else 'UNAVAILABLE',"rtx_vsr":r.__dict__,"dlss5":d.__dict__}
+    dlss = d.__dict__.copy()
+    dlss.update({"runtime": "Community DLSS5 v3.0" if d.available else "unavailable", "network": "Worker outbound blocked by Windows Firewall" if d.available else "not applicable", "security": "User-approved exact runtime hashes" if d.available else "not approved"})
+    return {"windows":platform.platform(),"python":sys.version.split()[0],"conda_env":__import__('os').environ.get('CONDA_DEFAULT_ENV','unknown'),"gpu":gpu,"cuda":cuda,"nvvfx_version":vfx_version,"ffmpeg":"AVAILABLE" if tool('ffmpeg') else 'UNAVAILABLE',"ffprobe":"AVAILABLE" if tool('ffprobe') else 'UNAVAILABLE',"rtx_vsr":r.__dict__,"dlss5":dlss}
 def main(): print(json.dumps(collect(), indent=2))
 if __name__ == "__main__": main()

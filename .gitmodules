@@ -1,0 +1,3 @@
+[submodule "third_party/ComfyUI-DLSS5-Enhancer"]
+	path = third_party/ComfyUI-DLSS5-Enhancer
+	url = https://github.com/Blueforcer/ComfyUI-DLSS5-Enhancer.git

@@ -1,6 +1,6 @@
 {
   "Preserve / Gentle": {"dlss_preset":"Default","dlss_style":"Natural","dlss_intensity":0.25,"local_tone":0.15,"local_structure":0.15,"skin_structure":0.05,"automatic_mask":"Off"},
-  "Photoreal Balanced": {"dlss_preset":"Default","dlss_style":"Natural","dlss_intensity":0.55,"local_tone":0.35,"local_structure":0.35,"skin_structure":0.15,"automatic_mask":"Off"},
+  "Photoreal Balanced": {"dlss_preset":"Default","dlss_style":"Natural","dlss_intensity":0.60,"local_tone":0.40,"local_structure":0.40,"skin_structure":0.15,"automatic_mask":"Off"},
   "Photoreal Strong": {"dlss_preset":"Preset #2","dlss_style":"Natural","dlss_intensity":1.0,"local_tone":0.65,"local_structure":0.7,"skin_structure":0.35,"automatic_mask":"On"},
   "Cinematic": {"dlss_preset":"Preset #1","dlss_style":"Cinematic","dlss_intensity":0.7,"local_tone":0.8,"local_structure":0.45,"skin_structure":0.1,"automatic_mask":"Off"}
 }

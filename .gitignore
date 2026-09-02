@@ -21,8 +21,15 @@ runtime/*
 *.webm
 *.exe
 *.dll
+*.addon64
+*.pyd
 *.bin
+*.zip
+*.7z
+*.rar
 *.pth
 *.safetensors
+ReShade.log
+*.runtime-manifest.json
 config/settings.local.json
 .pytest_cache/

@@ -4,6 +4,10 @@ Use Windows Miniconda/Anaconda and an NVIDIA driver supporting the desired SDK. 
 
 Python 3.11 was selected as the conservative intersection for current Gradio and NVIDIA VFX integration. The official `nvidia-vfx==0.1.0.1` wheel is installed from `https://pypi.nvidia.com`; it includes the VSR feature library. PyTorch `2.10.0+cu128` is installed from the official PyTorch CUDA 12.8 index for the DLPack bridge. Install both only in this environment.
 
-For DLSS5, set `DLSS5_RUNTIME_DIR` to a directory containing legitimately obtained runtime files. Do not copy proprietary DLLs into Git or download them from mirrors. The adapter remains unavailable unless an explicit audited integration is implemented.
+DLSS5 Runtime v3.0 is approved for local experimental use on the reviewed RTX 3070 machine only. The exact local approval manifest is `runtime/dlss5-v3/approval.json`; it is gitignored and requires every approved hash to match. The staged runtime is under `runtime/audit/dlss5-v3/extracted/bin/runtime`, and its worker path must remain covered by the existing Windows Firewall outbound block rule. Do not copy proprietary binaries into Git or use changed binaries without a new manual approval.
+
+Run the first controlled synthetic check with `conda run -n dlss-rtxsr-upscaler python -m src.backends.dlss5_selftest`. It uses protocol v4, five 128x128 synthetic frames, DLAA/native 1x, and requires signed Feature-18 evidence before the backend reports `EXPERIMENTAL READY`. No personal media is used by the self-test.
+
+The pinned generic protocol reference is `third_party/ComfyUI-DLSS5-Enhancer` at commit `796ed5927a202ba50b5c929cd08e16b365041162`. ComfyUI is not installed or imported.
 
 Manual checks: `conda run -n dlss-rtxsr-upscaler python -m pip check`, `conda run -n dlss-rtxsr-upscaler python -m pip_audit`, and `conda run -n dlss-rtxsr-upscaler python -m src.core.diagnostics`.

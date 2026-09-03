@@ -40,3 +40,13 @@ def test_last_successful_render_is_persistent_and_stale_paths_are_cleared(tmp_pa
     video.unlink()
     assert user_presets.load_last_successful_render() is None
     assert "last_successful_render" not in json.loads(settings.read_text(encoding="utf-8"))
+
+
+def test_clear_last_successful_render_preserves_last_used(tmp_path, monkeypatch):
+    settings = tmp_path / "settings.local.json"
+    monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
+    settings.write_text(json.dumps({"schema_version": 1, "last_used": {"dlss5": {"scale": 1.0}}, "last_successful_render": "stale.mp4"}), encoding="utf-8")
+    user_presets.clear_last_successful_render()
+    data = json.loads(settings.read_text(encoding="utf-8"))
+    assert "last_successful_render" not in data
+    assert data["last_used"]["dlss5"]["scale"] == 1.0

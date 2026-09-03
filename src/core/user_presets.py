@@ -152,3 +152,11 @@ def save_last_successful_render(path: str | Path) -> None:
         data = _read(LOCAL_SETTINGS, {"schema_version": 1, "last_used": {}})
         data["last_successful_render"] = str(candidate)
         _atomic_write(LOCAL_SETTINGS, data)
+
+
+def clear_last_successful_render() -> None:
+    with _LOCK:
+        data = _read(LOCAL_SETTINGS, {"schema_version": 1, "last_used": {}})
+        if "last_successful_render" in data:
+            data.pop("last_successful_render", None)
+            _atomic_write(LOCAL_SETTINGS, data)

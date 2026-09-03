@@ -13,7 +13,7 @@ from src.core.paths import aligned_dimensions
 from src.core.jobs import JobController
 from src.core.monitoring import MONITOR
 from src.core.progress import tracker_callback
-from src.core.user_presets import load_last_successful_render, load_last_used, save_last_successful_render, save_last_used
+from src.core.user_presets import clear_last_successful_render, load_last_successful_render, load_last_used, save_last_successful_render, save_last_used
 from src.ui.monitoring import metrics_html
 from src.ui.progress_view import progress_html
 from src.ui.tooltips import RTX_TOOLTIPS, DLSS5_TOOLTIPS, setting_label
@@ -110,6 +110,9 @@ def load_last_render():
     if not path:
         return None, '<span class="muted">No previous render available.</span>', "No previous render available.", None, None, None, "No previous render available.", gr.update(interactive=False)
     summary, detail = inspect(path)
+    if detail.startswith("Inspection failed"):
+        clear_last_successful_render()
+        return None, '<span class="error">Previous render is not a readable video.</span>', detail, None, None, None, "Previous render is not a readable video.", gr.update(interactive=False)
     return path, summary, detail, None, None, None, f"Loaded last successful render: {Path(path).name}", gr.update(interactive=True)
 
 def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, codec_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model):

@@ -32,4 +32,6 @@ runtime/*
 ReShade.log
 *.runtime-manifest.json
 config/settings.local.json
+config/user_presets.json
+config/user_presets.json.corrupt-*
 .pytest_cache/

@@ -10,4 +10,6 @@ Run the first controlled synthetic check with `conda run -n dlss-rtxsr-upscaler 
 
 The pinned generic protocol reference is `third_party/ComfyUI-DLSS5-Enhancer` at commit `796ed5927a202ba50b5c929cd08e16b365041162`. ComfyUI is not installed or imported.
 
+The UI includes cached live CPU/RAM/GPU/VRAM metrics, persistent job progress and ETA, accessible setting help icons, and independent saved RTX VSR/DLSS5 settings. User presets are stored in gitignored `config/user_presets.json`; last-used settings are stored in gitignored `config/settings.local.json`. Neither file contains native binaries, runtime hashes, input paths, or video content.
+
 Manual checks: `conda run -n dlss-rtxsr-upscaler python -m pip check`, `conda run -n dlss-rtxsr-upscaler python -m pip_audit`, and `conda run -n dlss-rtxsr-upscaler python -m src.core.diagnostics`.

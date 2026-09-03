@@ -10,6 +10,9 @@ import pytest
 
 from src.backends.dlss5 import DLSS5Backend
 from src.backends.rtx_vsr import RTXVSRBackend
+from src.core.jobs import ProgressTracker
+from src.core.monitoring import MONITOR
+from src.core.progress import tracker_callback
 from src.video.dlss5 import render_dlss5
 from src.video.stream import render_vsr
 
@@ -74,9 +77,20 @@ def test_dlss5_synthetic_preview_full_video_and_cancellation(tmp_path):
     assert preview_stats["audio_preserved"]
     assert preview.is_file()
     full = tmp_path / "full.mkv"
-    full_stats = render_dlss5(source, full, backend, options, codec="H.264")
+    tracker = ProgressTracker()
+    monitor_timestamps = []
+    progress_callback = tracker_callback(tracker)
+    def observe_progress(event):
+        monitor_timestamps.append(MONITOR.snapshot().timestamp)
+        progress_callback(event)
+    MONITOR.set_active(True)
+    full_stats = render_dlss5(source, full, backend, options, codec="H.264", progress=observe_progress)
+    MONITOR.set_active(False)
     assert full_stats["frames"] == 90
     assert full.is_file()
+    assert tracker.snapshot().frames_done == 90
+    assert tracker.snapshot().percent == 100
+    assert len(set(monitor_timestamps)) > 1
     from src.ui.app import do_frame
     before, after, status = do_frame(source, 0, "DLSS 5 only", "Super Resolution", 2.0, "ULTRA", 1.0, "Default", "Natural", .60, .40, .40, .15, "Off", "Default")
     assert Path(before).is_file()
@@ -95,7 +109,9 @@ def test_dlss5_synthetic_preview_full_video_and_cancellation(tmp_path):
         list(backend.process_frames(_frames(30), width=128, height=128, frame_count=30, cancel=CancelAfterFive()))
 
     vsr_output = tmp_path / "vsr_regression.mp4"
-    vsr_stats = render_vsr(source, vsr_output, RTXVSRBackend(), 2.0, "ULTRA", "Super Resolution")
+    vsr_tracker = ProgressTracker()
+    vsr_stats = render_vsr(source, vsr_output, RTXVSRBackend(), 2.0, "ULTRA", "Super Resolution", progress=tracker_callback(vsr_tracker))
     assert vsr_stats["frames"] == 90
     assert vsr_stats["audio_preserved"]
     assert vsr_output.is_file()
+    assert vsr_tracker.snapshot().frames_done == 90

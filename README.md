@@ -25,3 +25,5 @@ The environment is `dlss-rtxsr-upscaler`, Python 3.11. `PYTHONNOUSERSITE=1` prev
 DLSS5 can change faces and details; stronger values increase reinterpretation. Optical flow is not game-engine motion vectors and can artifact around cuts, occlusion, hair, and transparency. The community path is SDR RGBA8-oriented and does not promise HDR preservation. RTX 30 DLSS5 compatibility may be slower/limited. Enhancement cannot repair fundamentally broken animation.
 
 See `docs/INSTALL.md`, `docs/SECURITY_AUDIT.md`, `docs/DLSS5_APPROVAL.md`, `docs/TESTING.md`, and `docs/TROUBLESHOOTING.md`.
+
+The compact system bar reports cached CPU, RAM, GPU, and VRAM usage. Render jobs expose frame progress, smoothed FPS, elapsed time, and an ETA based on recent processing speed; the ETA is an estimate and can change with workload and model startup. RTX VSR and DLSS5 settings have keyboard-focusable information icons. Named RTX VSR and DLSS5 settings are stored independently in the gitignored `config/user_presets.json`; last-used values are stored in `config/settings.local.json`. These files contain settings only, not runtime binaries or media.

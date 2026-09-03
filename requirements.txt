@@ -8,3 +8,4 @@ pytest==9.0.3
 pip-audit==2.9.0
 av==18.1.0
 opencv-contrib-python-headless==5.0.0.93
+nvidia-ml-py==13.610.43

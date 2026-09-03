@@ -2,3 +2,19 @@
 body { font-family: Inter, Segoe UI, sans-serif; }
 .gradio-container { max-width: 1500px !important; }
 button.primary { background: #76b900 !important; border: 0 !important; }
+.metric-bar { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:8px 0 14px; }
+.metric-card,.job-progress { background:#121822; border:1px solid #263242; border-radius:10px; padding:10px 12px; }
+.metric-name { color:#9aa9bd; font-size:.72rem; letter-spacing:.08em; text-transform:uppercase; }
+.metric-value { color:#f1f5fb; font-size:1rem; font-weight:600; line-height:1.35; min-height:2.7em; }
+.metric-track,.progress-track { background:#263242; border-radius:99px; display:block; height:5px; overflow:hidden; }
+.metric-fill,.progress-fill { background:#76b900; display:block; height:100%; transition:width .3s ease; }
+.metric-na { color:#8492a5; }
+.job-progress { margin:8px 0 14px; }
+.progress-head,.progress-meta { display:flex; gap:12px; justify-content:space-between; align-items:center; }
+.progress-head { margin-bottom:8px; }
+.progress-meta { color:#aeb9c8; flex-wrap:wrap; font-size:.82rem; margin-top:8px; }
+.progress-message { color:#8492a5; font-size:.78rem; margin-top:6px; }
+.setting-help { color:#76b900; cursor:help; display:inline-block; font-weight:700; margin:0 0 4px 3px; outline:none; position:relative; }
+.setting-tooltip { background:#202b3a; border:1px solid #3a4b61; border-radius:7px; bottom:calc(100% + 7px); color:#f1f5fb; display:none; font-size:.78rem; font-weight:400; left:0; line-height:1.35; padding:8px 10px; position:absolute; text-align:left; width:260px; z-index:20; }
+.setting-help:hover .setting-tooltip,.setting-help:focus .setting-tooltip,.setting-help:focus-within .setting-tooltip { display:block; }
+@media (max-width:700px) { .metric-bar { grid-template-columns:repeat(2,minmax(0,1fr)); } .progress-meta { justify-content:flex-start; } }

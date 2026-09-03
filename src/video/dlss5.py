@@ -7,15 +7,16 @@ import time
 from itertools import chain
 from pathlib import Path
 
-from src.core.media_info import probe
+from src.core.media_info import frame_total, probe
+from src.core.progress import report_progress
 
 
 def render_dlss5(source, destination, backend, options, *, start=0.0, duration=None, codec="H.264", cancel=None, progress=None):
     info = probe(str(source))
     width, height, fps = int(info["width"]), int(info["height"]), float(info["fps"])
-    frame_count = int(float(duration) * fps + 0.999) if duration else (int(info["frames"]) if str(info["frames"]).isdigit() else 0)
-    if frame_count <= 0:
-        raise RuntimeError("DLSS5 requires a finite video frame count")
+    frame_count, estimated = frame_total(info, duration)
+    session_frame_count = frame_count or 2
+    report_progress(progress, frame_index=0, total_frames=frame_count, phase="INITIALIZING", message="Initializing DLSS5 Feature-18")
     raw = ["ffmpeg", "-v", "error"]
     if start:
         raw += ["-ss", str(max(0.0, float(start)))]
@@ -42,7 +43,7 @@ def render_dlss5(source, destination, backend, options, *, start=0.0, duration=N
                 import numpy as np
                 yield np.frombuffer(raw_frame, dtype=np.uint8).reshape(height, width, 4).copy()
 
-        rendered = backend.process_frames(frames(), width=width, height=height, frame_count=frame_count, options=options, cancel=cancel)
+        rendered = backend.process_frames(frames(), width=width, height=height, frame_count=session_frame_count, options=options, cancel=cancel)
         first, first_meta = next(rendered)
         output_height, output_width = first.shape[:2]
         encoder_name = {"H.264": "h264_nvenc", "HEVC": "hevc_nvenc", "AV1": "av1_nvenc"}[codec]
@@ -63,12 +64,13 @@ def render_dlss5(source, destination, backend, options, *, start=0.0, duration=N
                 raise RuntimeError(f"NVENC encoder stopped early: {details[-2000:]}") from exc
             count += 1
             resets += int(meta["reset"])
-            if progress:
-                progress(count, frame_count, count / frame_count, count / max(0.001, time.perf_counter() - started))
+            report_progress(progress, frame_index=count, total_frames=frame_count, phase="PROCESSING", message="Processing DLSS5 temporal frames")
+        report_progress(progress, frame_index=count, total_frames=frame_count, phase="ENCODING", message="Encoding DLSS5 output")
         encoder.stdin.close()
         encoder.wait(timeout=120)
         if encoder.returncode:
             raise RuntimeError((encoder.stderr.read() if encoder.stderr else b"").decode(errors="replace")[-2000:])
+        report_progress(progress, frame_index=count, total_frames=frame_count, phase="MUXING", message="Preserving audio and metadata")
         mux = ["ffmpeg", "-y", "-v", "error", "-i", str(video_only)]
         if start:
             mux += ["-ss", str(max(0.0, float(start)))]
@@ -79,7 +81,7 @@ def render_dlss5(source, destination, backend, options, *, start=0.0, duration=N
         result = subprocess.run(mux, capture_output=True, text=True, check=False)
         if result.returncode:
             raise RuntimeError(result.stderr[-2000:])
-        return {"frames": count, "fps": count / max(0.001, time.perf_counter() - started), "dimensions": (output_width, output_height), "audio_preserved": bool(info["audio_codec"] != "none"), "scene_resets": resets, "encoder": encoder_name}
+        return {"frames": count, "fps": count / max(0.001, time.perf_counter() - started), "dimensions": (output_width, output_height), "audio_preserved": bool(info["audio_codec"] != "none"), "scene_resets": resets, "encoder": encoder_name, "frames_estimated": estimated}
     finally:
         for process in (decoder, encoder):
             if process and process.poll() is None:

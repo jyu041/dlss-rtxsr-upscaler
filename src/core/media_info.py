@@ -1,4 +1,4 @@
-import json
+import json, math
 from .process_utils import run, tool
 from .paths import safe_input
 
@@ -13,3 +13,12 @@ def probe(path):
     return {"filename":p.name,"path":str(p),"width":v.get("width"),"height":v.get("height"),"fps":float(n)/float(q) if float(q) else 0,"frames":v.get("nb_frames","unknown"),"duration":float(d.get("format",{}).get("duration",0) or 0),"codec":v.get("codec_name","unknown"),"pixel_format":v.get("pix_fmt","unknown"),"bit_depth":v.get("bits_per_raw_sample", "8"),"audio_codec":a.get("codec_name","none"),"size":int(d.get("format",{}).get("size",0) or 0),"hdr":bool(v.get("color_transfer") in {"smpte2084","arib-std-b67"} or v.get("pix_fmt","").endswith("10le"))}
 
 def format_info(i): return f"{i['filename']}\n{i['width']} x {i['height']} | {i['fps']:.3g} FPS | {i['duration']:.2f}s\nVideo: {i['codec']} / {i['pixel_format']} / {i['bit_depth']}-bit\nAudio: {i['audio_codec']} | Frames: {i['frames']}"
+
+def frame_total(info, duration=None):
+    """Return a bounded frame total and whether it was estimated from duration/FPS."""
+    exact = info.get("frames")
+    if str(exact).isdigit() and int(exact) > 0:
+        return (min(int(exact), math.ceil(float(duration) * info["fps"])) if duration else int(exact)), False
+    seconds = float(duration) if duration is not None else float(info.get("duration", 0) or 0)
+    fps = float(info.get("fps", 0) or 0)
+    return (math.ceil(seconds * fps), True) if seconds > 0 and fps > 0 else (None, True)

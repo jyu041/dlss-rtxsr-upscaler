@@ -158,6 +158,7 @@ start.bat               Local UI launcher
 - [`docs/DLSS5_APPROVAL.md`](docs/DLSS5_APPROVAL.md) - DLSS 5 provenance and approval
 - [`docs/TESTING.md`](docs/TESTING.md) - deterministic and hardware validation
 - [`docs/THIRD_PARTY.md`](docs/THIRD_PARTY.md) - dependency and retained-source licensing
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) - development and contribution guidelines
 
 ## Acknowledgements
 

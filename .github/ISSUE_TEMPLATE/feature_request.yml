@@ -1,0 +1,47 @@
+name: Feature request
+description: Suggest an improvement or new capability.
+title: "[Feature] "
+body:
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Problem / use case
+      description: What would this help you accomplish?
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_behavior
+    attributes:
+      label: Proposed behavior
+      description: Describe the change you would like to see.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area / backend
+      options:
+        - RTX VSR
+        - DLSS SR
+        - DLSS 5
+        - UI
+        - encoding/video pipeline
+        - setup/documentation
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives / workarounds
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+  - type: checkboxes
+    id: policy
+    attributes:
+      label: Runtime policy
+      options:
+        - label: I understand this proposal should not depend on redistributing proprietary NVIDIA or runtime files through this repository.
+          required: true

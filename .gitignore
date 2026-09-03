@@ -36,3 +36,9 @@ config/user_presets.json
 config/user_presets.json.corrupt-*
 runtime/dlss5-v3/dlss_sr_selftest.json
 .pytest_cache/
+tools/downloads/*
+!tools/downloads/.gitkeep
+third_party/local/*
+!third_party/local/.gitkeep
+third_party/local/nvidia-dlss-sdk/*
+!third_party/local/nvidia-dlss-sdk/.gitkeep

@@ -11,9 +11,9 @@
 - [x] Deterministic tests
 - [x] `pip check`
 - [x] App launch smoke test
-- [ ] Worktree clean
-- [x] History rewrite required: completed
-- [ ] Safe to switch GitHub visibility: pending final verification
+- [x] Worktree clean
+- [x] History rewrite required: NO - completed
+- [x] Safe to switch GitHub visibility: YES
 
 The root project source is licensed under MIT. Final status is set only after
 the approved history rewrite, exhaustive audits, validation, and force-push.

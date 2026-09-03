@@ -8,5 +8,5 @@ if errorlevel 1 exit /b 1
 cmake --build "%~dp0build"
 if errorlevel 1 exit /b 1
 
-copy /Y "%~dp0..\..\runtime\audit\dlss5-v3\extracted\bin\runtime\nvngx_dlss.dll" "%~dp0..\..\runtime\dlss-sr-host\nvngx_dlss.dll"
+echo Native host built. Supply an approved nvngx_dlss.dll separately for runtime tests.
 endlocal

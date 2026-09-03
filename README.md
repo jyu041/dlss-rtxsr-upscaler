@@ -1,32 +1,76 @@
 # NVIDIA Video Enhancer
 
-A local Windows utility for NVIDIA RTX Video Super Resolution (RTX VSR), standalone NVIDIA NGX DLSS Super Resolution, and DLSS 5 Neural Rendering. It is designed for low-resolution or CGI-like AI-generated video, including WAN2GP output.
+NVIDIA Video Enhancer is a local, Windows-only utility for three separate
+enhancement backends:
 
-RTX VSR is fast video reconstruction and artifact reduction. Use it when the source looks correct but needs resolution. DLSS SR is genuine NVIDIA NGX SuperSampling through the separate local native D3D12 host. DLSS 5 is neural rendering/material and lighting enhancement through the separately approved community worker. These are separate implementations and are selected independently; there is no combined mode.
+- **RTX Video Super Resolution (RTX VSR)** reconstructs and reduces artifacts
+  in ordinary video through NVIDIA's RTX Video SDK.
+- **Standalone DLSS Super Resolution (DLSS SR)** uses a native D3D12 host and
+  NVIDIA NGX. It uses the recommended Quality + Default starting configuration,
+  DIS optical-flow guidance, and strict runtime hash validation.
+- **Experimental DLSS 5 Neural Rendering** uses a separately supplied local
+  worker and approved runtime. It is intended for CGI-like or AI-generated
+  content and may reinterpret faces, materials, and lighting.
 
-DLSS SR video uses one persistent native host per job, raw RGBA8 frames, DIS optical-flow motion guidance, zero renderer jitter, constant baseline depth, scene-cut resets, and NVENC output. It is an SDR offline-video baseline: motion vectors are estimated rather than engine-provided, and decoded frames contain no native renderer depth or jitter.
+The backends are selected independently. The application never silently
+substitutes one backend for another.
 
-The application never substitutes another upscaler when a backend is unavailable. DLSS5 Runtime v3.0 is approved for local experimental use after manual review, exact hash matching, Microsoft Defender scanning, and VirusTotal review. The closed-source worker remains local-only, and existing Windows Firewall rules block its network access. Proprietary runtime files are not included in Git or downloaded by the application.
+## Install
 
-## Install and run
+Requirements:
 
-1. Install current Miniconda/Anaconda and NVIDIA drivers. A reputable FFmpeg build is supplied by conda-forge in the dedicated environment.
-2. Run `setup.bat` from this directory.
-3. Run `start.bat`; open the localhost URL shown.
+- Windows 10 or 11 x64
+- An NVIDIA GPU and a compatible NVIDIA driver
+- Miniconda or Anaconda
+- FFmpeg and FFprobe on `PATH`
+- A compatible official NVIDIA VFX package for RTX VSR
+- A separately obtained NVIDIA DLSS SDK/runtime for DLSS SR
+- A separately obtained and manually approved DLSS 5 runtime for DLSS 5
 
-The environment is `dlss-rtxsr-upscaler`, Python 3.11. `PYTHONNOUSERSITE=1` prevents user-site leakage and no ComfyUI environment is modified.
+Run `setup.bat`, then `start.bat`. The application listens only on localhost.
+It does not download proprietary runtimes, model weights, media, or external
+worker packages.
 
-## Suggested workflow
+## Runtime policy
 
-- Low quality, mostly-correct video: RTX VSR, 2x, ULTRA.
-- Temporal reconstruction/upscaling: DLSS SR, with Quality as the general-purpose starting mode and Default or K as initial NGX preset hints.
-- CGI/3D-animation-like video: DLSS 5, Natural, Photoreal Balanced, native first.
-- Preview a representative frame before a full render.
+NVIDIA, NGX, DLSS, RTX Video, ReShade, RenoDX, and community worker binaries
+are not distributed in this repository. They remain subject to their own
+licenses and must be supplied by the user from a legitimate source.
+
+DLSS SR requires the native host, an approved `nvngx_dlss.dll`, and a passing
+self-test. DLSS 5 additionally requires a user-approved manifest, exact hash
+matches, signed Feature-18 evidence, and an enabled Windows Firewall outbound
+block for the worker. Missing or unapproved runtimes produce diagnostics; they
+do not trigger fallback processing.
+
+## Development
+
+The Python tests can be run with:
+
+```powershell
+conda run --no-capture-output -n dlss-rtxsr-upscaler python -m pytest
+conda run --no-capture-output -n dlss-rtxsr-upscaler python -m pip check
+```
+
+Build the standalone host after placing a compatible local NVIDIA SDK under
+`third_party/local/nvidia-dlss-sdk-full`:
+
+```powershell
+native\dlss_sr_host\build.bat
+```
+
+Build output and local SDK files are ignored. See `docs/INSTALL.md`,
+`docs/SECURITY_AUDIT.md`, `docs/DLSS5_APPROVAL.md`, and
+`docs/PUBLIC_RELEASE_CHECKLIST.md` for setup and release details.
 
 ## Limitations
 
-DLSS5 can change faces and details; stronger values increase reinterpretation. DLSS SR optical flow is not game-engine motion vectors and can artifact around cuts, occlusion, hair, and transparency. The DLSS SR and community DLSS5 paths are SDR RGBA8-oriented and do not promise HDR preservation. RTX 30 compatibility may be slower/limited. Enhancement cannot repair fundamentally broken animation.
+This utility processes SDR RGBA video. DLSS SR motion is estimated optical
+flow rather than engine-provided motion vectors and can fail around cuts,
+occlusion, hair, and transparency. DLSS 5 is experimental, hardware and
+runtime dependent, and is not an NVIDIA product or endorsement. Current public
+NVIDIA DLSS 5 material describes 3D-Guided Neural Rendering as targeting RTX
+50 Series; no RTX 30 support should be inferred from community experiments.
 
-See `docs/INSTALL.md`, `docs/SECURITY_AUDIT.md`, `docs/DLSS5_APPROVAL.md`, `docs/TESTING.md`, and `docs/TROUBLESHOOTING.md`.
-
-The compact system bar reports cached CPU, RAM, GPU, and VRAM usage. Render jobs expose frame progress, smoothed FPS, elapsed time, and an ETA based on recent processing speed; the ETA is an estimate and can change with workload and model startup. RTX VSR, DLSS5, and DLSS SR settings have keyboard-focusable information icons. Named settings are stored independently in the gitignored `config/user_presets.json`; last-used values are stored in `config/settings.local.json`. These files contain settings only, not runtime binaries or media.
+The project currently has no root `LICENSE` file. A project-license decision
+is still required before public release.

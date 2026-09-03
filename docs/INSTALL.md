@@ -1,17 +1,46 @@
 # Installation
 
-Use Windows Miniconda/Anaconda and an NVIDIA driver supporting the desired SDK. From the project directory run `setup.bat`, then `start.bat`. Both scripts use only `dlss-rtxsr-upscaler`; they do not activate or modify base, WAN2GP, ComfyUI, or system Python. FFmpeg is resolved from PATH; the current machine has the Gyan.dev full build installed. The app does not download or bundle FFmpeg.
+Use Windows 10 or 11 x64 with a compatible NVIDIA driver, Miniconda or
+Anaconda, and FFmpeg/FFprobe available on `PATH`. Run `setup.bat` from the
+repository root, then run `start.bat`. The scripts use only the dedicated
+`dlss-rtxsr-upscaler` Conda environment and do not modify system Python,
+ComfyUI, or another application environment.
 
-Python 3.11 was selected as the conservative intersection for current Gradio and NVIDIA VFX integration. The official `nvidia-vfx==0.1.0.1` wheel is installed from `https://pypi.nvidia.com`; it includes the VSR feature library. PyTorch `2.10.0+cu128` is installed from the official PyTorch CUDA 12.8 index for the DLPack bridge. Install both only in this environment.
+The environment installs Python 3.11, Gradio, PyTorch CUDA 12.8, the official
+`nvidia-vfx` package, and the other pinned Python dependencies. NVIDIA and
+PyTorch package indexes are declared in `environment.yml`. FFmpeg is not
+bundled by this repository.
 
-DLSS5 Runtime v3.0 is approved for local experimental use on the reviewed RTX 3070 machine only. The exact local approval manifest is `runtime/dlss5-v3/approval.json`; it is gitignored and requires every approved hash to match. The staged runtime is under `runtime/audit/dlss5-v3/extracted/bin/runtime`, and its worker path must remain covered by the existing Windows Firewall outbound block rule. Do not copy proprietary binaries into Git or use changed binaries without a new manual approval.
+## Backends
 
-Run the first controlled synthetic check with `conda run -n dlss-rtxsr-upscaler python -m src.backends.dlss5_selftest`. It uses protocol v4, five 128x128 synthetic frames, DLAA/native 1x, and requires signed Feature-18 evidence before the backend reports `EXPERIMENTAL READY`. No personal media is used by the self-test.
+RTX VSR needs the compatible official NVIDIA VFX package and an NVIDIA GPU.
+DLSS SR needs a locally staged NVIDIA DLSS SDK to build the native D3D12 host,
+an approved `nvngx_dlss.dll` beside that host, and a passing self-test. The
+recommended starting mode is DLSS Quality with the Default model preset.
 
-The pinned generic protocol reference is `third_party/ComfyUI-DLSS5-Enhancer` at commit `796ed5927a202ba50b5c929cd08e16b365041162`. ComfyUI is not installed or imported.
+DLSS 5 is experimental and optional. It needs the retained generic protocol
+client at `third_party/ComfyUI-DLSS5-Enhancer`, a separately obtained local
+runtime, a user-approved `runtime/dlss5-v3/approval.json`, exact hash matches,
+and the required Windows Firewall outbound block. The runtime and model files
+are never downloaded or bundled by this project.
 
-The UI includes cached live CPU/RAM/GPU/VRAM metrics, persistent job progress and ETA, accessible setting help icons, and independent saved RTX VSR/DLSS5 settings. User presets are stored in gitignored `config/user_presets.json`; last-used settings are stored in gitignored `config/settings.local.json`. Neither file contains native binaries, runtime hashes, input paths, or video content.
+If an optional backend is unavailable, the UI reports the reason and refuses
+that operation. It does not silently resize, switch backends, or download
+replacement files.
 
-DLSS Super Resolution is shown as a separate capability, but is intentionally unavailable with the approved runtime. Its v4 protocol has no request that disables the DLSS5 Feature-18 addon, so the application never substitutes a resize, RTX VSR, or DLSS5 result.
+## Build the DLSS SR host
 
-Manual checks: `conda run -n dlss-rtxsr-upscaler python -m pip check`, `conda run -n dlss-rtxsr-upscaler python -m pip_audit`, and `conda run -n dlss-rtxsr-upscaler python -m src.core.diagnostics`.
+Place the compatible NVIDIA SDK under
+`third_party/local/nvidia-dlss-sdk-full`, then run:
+
+```powershell
+native\dlss_sr_host\build.bat
+```
+
+The host binary and self-test results belong in ignored
+`runtime/dlss-sr-host`. The build script does not copy or redistribute an
+NVIDIA runtime; supply and approve that file separately.
+
+The application is local-only and binds its UI to localhost. For security
+requirements and provenance rules, see `docs/SECURITY_AUDIT.md` and
+`docs/DLSS5_APPROVAL.md`.

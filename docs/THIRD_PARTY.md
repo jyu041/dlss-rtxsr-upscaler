@@ -1,9 +1,15 @@
-# Third-party software
+# Third-Party Software
 
-- Comfy-Org/Nvidia_RTX_Nodes_ComfyUI: Apache-2.0, pinned in the security audit, reference only.
-- Merserk/dlss5-visual-enhancer: MIT source, pinned in the security audit, reference only. Its native dependencies are separate and not redistributed.
-- NVIDIA RTX Video SDK / nvidia-vfx: NVIDIA terms; official source only; optional and not bundled.
-- PyTorch `2.10.0+cu128`: official PyTorch CUDA 12.8 wheel index (`download.pytorch.org`), required for the PyTorch DLPack bridge. The wheel is not indexed by PyPI’s advisory database; `pip-audit` reports it as un-auditable rather than claiming a clean advisory result.
-- DLSS/NGX/ReShade/RenoDX components: separate vendor/project terms; none bundled or executed.
-- FFmpeg: system PATH build (current machine reports Gyan.dev full build); LGPL/GPL configuration varies by build, inspect `ffmpeg -L`.
-- Gradio, NumPy, PyAV, psutil, pytest, pip-audit: licenses and versions are resolved by the dedicated environment lock inputs.
+| Dependency | License or terms | Purpose |
+|---|---|---|
+| [Blueforcer/ComfyUI-DLSS5-Enhancer](https://github.com/Blueforcer/ComfyUI-DLSS5-Enhancer) at `796ed5927a202ba50b5c929cd08e16b365041162` | MIT for its source; runtime binaries retain separate terms | Retained generic DLSS5 protocol, session, settings, motion, and diagnostics code |
+| NVIDIA RTX Video SDK / `nvidia-vfx` | NVIDIA terms | RTX VSR backend; installed separately from the official NVIDIA index |
+| NVIDIA DLSS SDK / NGX runtime | NVIDIA terms | Standalone DLSS SR native host; supplied locally and never redistributed |
+| NVIDIA DLSS5/Neural Rendering runtime | NVIDIA terms | Optional experimental backend; supplied, approved, and hash-gated locally |
+| PyTorch `2.10.0+cu128` | PyTorch license | CUDA/DLPack support for RTX VSR |
+| FFmpeg and FFprobe | Depends on the user-supplied build | Video decode, encode, and media inspection |
+| Gradio, NumPy, Pillow, PyAV, OpenCV, psutil, SciPy, Matplotlib, pytest, pip-audit, nvidia-ml-py | See package metadata and pinned requirements | Python application and test dependencies |
+
+The NVIDIA, NGX, DLSS, ReShade, RenoDX, and community worker binaries are not
+covered by the project's source-code terms and are not included here. Review
+the applicable vendor terms before obtaining or using them.

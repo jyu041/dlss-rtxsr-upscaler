@@ -1,5 +1,16 @@
 # Architecture
 
-`app.py` launches the Gradio UI on `127.0.0.1` with analytics disabled. `src/core` owns paths, JSON settings, media inspection, diagnostics, safe process ownership, and one-job cancellation. `src/video` owns FFmpeg-facing operations. `src/backends` contains strict adapters for nvvfx and DLSS5; unavailable backends raise clear errors instead of falling back.
+`app.py` launches a localhost Gradio UI with analytics disabled. `src/core`
+owns settings, paths, diagnostics, job ownership, media inspection, and
+progress. `src/video` owns FFmpeg-facing operations. `src/backends` contains
+strict RTX VSR, standalone DLSS SR, and experimental DLSS5 adapters.
 
-The intended full pipeline is bounded streaming: FFmpeg decode to CPU, one frame to the backend, copy result to independent output memory, enqueue to encoder, release temporary GPU/DLPack references, and continue. The RTX adapter implements the per-frame lifetime boundary; the machine-specific SDK/video-worker integration remains gated until `nvvfx` is installed and smoke-tested.
+Each backend is independently gated. Missing runtimes or failed self-tests
+produce diagnostics and stop that operation rather than falling back to
+another backend.
+
+RTX VSR processes frames through the NVIDIA VFX Python bridge. DLSS SR uses a
+separate native D3D12/NGX host with persistent per-job state and DIS motion
+guidance. DLSS5 uses the retained generic protocol client and a separately
+approved local worker. All runtime binaries and generated media stay outside
+the tracked source tree.

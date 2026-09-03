@@ -1,15 +1,25 @@
 # Testing
 
-Run `PYTHONPATH=. conda run -n dlss-rtxsr-upscaler python -m pytest tests -q`. Tests cover safe paths, JSON presets, scale and alignment calculations, FFprobe parsing helpers, codec validation, cancellation, and backend non-fallback behavior. GPU tests must be explicit environment-dependent tests and are skipped when the approved DLSS5 runtime cannot initialize. Never report a skipped GPU test as success.
+Run deterministic tests explicitly against the repository test directory:
 
-The approved DLSS5 self-test is `PYTHONPATH=. conda run -n dlss-rtxsr-upscaler python -m src.backends.dlss5_selftest`. It rechecks the approval manifest, all five native hashes, the exact outbound firewall rule, RTX 3070 pairing, protocol v4, clean worker shutdown, and signed Feature-18 evidence. It uses synthetic RGBA8 content only.
+```powershell
+conda run --no-capture-output -n dlss-rtxsr-upscaler python -m pytest
+conda run --no-capture-output -n dlss-rtxsr-upscaler python -m pip check
+```
 
-The extracted release tree is intentionally outside the normal test root. If it exists locally, do not run unrestricted recursive pytest discovery because the embedded Python distribution contains test-like package directories; target `tests` explicitly.
+The ordinary suite covers paths, configuration, media helpers, progress,
+monitoring, UI behavior, cancellation, presets, and backend non-fallback
+behavior. Hardware tests are explicit and may be skipped when the relevant
+local runtime is absent. A skipped hardware test is not a successful backend
+validation.
 
-This approved local run completed the DLSS5 synthetic matrix: protocol v4 Feature-18 verification on 5 frames at 128x128, 30-frame temporal processing with scene-cut reset, 1.5x and 2x scaling, a 3-second/90-frame H.264 NVENC preview and full render with audio, Preview Frame, Unicode input, and owned-worker cancellation. AV1 is not offered on the RTX 3070 path.
+Backend validation classes:
 
-The UX test coverage includes 15 unit tests for progress/ETA, monitoring snapshots, tooltip coverage/escaping, and independent Unicode/corrupt-store preset handling. The real Gradio launch test passed (`2 passed`). Hardware progress coverage passed for both DLSS5 and RTX VSR. `pip check` reported no broken requirements; `pip-audit` reported no known vulnerabilities and could not audit the local CUDA Torch build because it is not published on PyPI.
+- RTX VSR: NVIDIA VFX installation and GPU smoke tests.
+- DLSS SR: native D3D12 host, approved NGX hash, and Quality self-test.
+- DLSS5: user-approved runtime, firewall check, protocol test, and signed
+  Feature-18 evidence.
 
-The standalone SR investigation is negative by design: `python -m src.backends.dlss_sr_selftest` exits nonzero without launching native code and reports that protocol v4 always runs the DLSS5 Feature-18 addon. This prevents a false standalone-SR success claim.
-
-This sprint's verified GPU run used an RTX 3070 and the official NVIDIA wheel: 90 frames, 320x240 to 640x480, 15.93 FPS, H.264 NVENC, and AAC audio preserved. The 1000-frame stability run is recorded in the sprint report when executed; measurements must not be inferred from this short run.
+Use synthetic or owned media. Do not run unrestricted recursive pytest
+discovery when an extracted local runtime tree exists; target `tests`
+explicitly.

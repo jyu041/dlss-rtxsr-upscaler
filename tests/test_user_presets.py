@@ -28,3 +28,15 @@ def test_corrupt_store_is_backed_up(tmp_path, monkeypatch):
     monkeypatch.setattr(user_presets, "USER_PRESETS", path)
     assert user_presets.load_user_presets()["rtx_vsr"] == {}
     assert list(tmp_path.glob("user_presets.json.corrupt-*"))
+
+
+def test_last_successful_render_is_persistent_and_stale_paths_are_cleared(tmp_path, monkeypatch):
+    settings = tmp_path / "settings.local.json"
+    video = tmp_path / "render.mp4"
+    video.write_bytes(b"test")
+    monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
+    user_presets.save_last_successful_render(video)
+    assert user_presets.load_last_successful_render() == str(video.resolve())
+    video.unlink()
+    assert user_presets.load_last_successful_render() is None
+    assert "last_successful_render" not in json.loads(settings.read_text(encoding="utf-8"))

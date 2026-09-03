@@ -45,15 +45,16 @@ def test_actual_local_webui_launch():
 
 
 def test_enhancement_selector_is_the_single_routing_source():
-    assert mode_visibility("RTX VSR only") == (True, False, False, True, True)
-    assert mode_visibility("DLSS 5 only") == (False, True, False, True, True)
-    assert mode_visibility("DLSS 5 → RTX VSR") == (True, True, True, False, False)
+    assert mode_visibility("RTX VSR only") == (True, False, False)
+    assert mode_visibility("DLSS 5 only") == (False, True, False)
+    assert mode_visibility("DLSS SR only") == (False, False, True)
 
 
 def test_ui_has_no_redundant_processing_or_sr_workflow():
     source = open("src/ui/app.py", encoding="utf-8").read()
     assert 'label="Processing order"' not in source
-    assert '"DLSS SR only"' not in source
+    assert '"DLSS 5 → RTX VSR"' not in source
     assert 'gr.Tab("DLSS Super Resolution")' not in source
     assert 'gr.Tab("Output")' not in source
+    assert 'Load Last Render' in source
     assert 'show_label=False' in source

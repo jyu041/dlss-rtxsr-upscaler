@@ -13,7 +13,7 @@ from src.core.paths import aligned_dimensions
 from src.core.jobs import JobController
 from src.core.monitoring import MONITOR
 from src.core.progress import tracker_callback
-from src.core.user_presets import load_last_used, save_last_used
+from src.core.user_presets import load_last_successful_render, load_last_used, save_last_successful_render, save_last_used
 from src.ui.monitoring import metrics_html
 from src.ui.progress_view import progress_html
 from src.ui.tooltips import RTX_TOOLTIPS, DLSS5_TOOLTIPS, setting_label
@@ -67,11 +67,6 @@ def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_s
             backend = DLSS5Backend()
             options = backend.options(upscaling_mode=dlss_scale, nr_preset=nrpreset, nr_style=style, nr_intensity=float(intensity), local_tone_strength=float(tone), local_structure_strength=float(structure), skin_structure_strength=float(skin), automatic_mask=mask == "On", dlss_model_preset=model, motion_mode="none")
             enhanced = backend.process_frame(image, options=options)[..., :3]
-            if mode == "DLSS 5 → RTX VSR":
-                target = aligned_dimensions(enhanced.shape[1], enhanced.shape[0], float(scale_value))
-                import torch
-                tensor=torch.from_numpy(enhanced.copy()).to("cuda",dtype=torch.float32).div_(255).permute(2,0,1).contiguous()
-                enhanced=(RTXVSRBackend().process_frame(tensor,*target,quality_value).clamp(0,1).mul(255).byte().permute(1,2,0).cpu().numpy())
             out=TEMP/f"preview_{os.getpid()}.png"; Image.fromarray(enhanced).save(out)
             return str(source_frame), str(out), f"DLSS5 Feature-18 verified | {dlss_scale}x | {style} | Intensity {float(intensity):.2f} | Output {enhanced.shape[1]}x{enhanced.shape[0]}"
         target=(w,h) if vsr_mode in {"Deblur","Denoise"} else aligned_dimensions(w,h,float(scale_value))
@@ -99,15 +94,28 @@ def _dlss_options(backend, dlss_scale, nrpreset, style, intensity, tone, structu
 
 
 def mode_visibility(selected):
-    """Return UI capability updates for the single visible enhancement selector."""
-    combined = selected == "DLSS 5 → RTX VSR"
-    return not selected == "DLSS 5 only", not selected == "RTX VSR only", combined, not combined, not combined
+    """Return visibility for the selected backend and its settings group."""
+    return selected == "RTX VSR only", selected == "DLSS 5 only", selected == "DLSS SR only"
+
+
+def available_mode_choices():
+    choices = [("RTX VSR", "RTX VSR only"), ("DLSS 5", "DLSS 5 only")]
+    if DLSSSRBackend().status().available:
+        choices.append(("DLSS SR", "DLSS SR only"))
+    return choices
+
+
+def load_last_render():
+    path = load_last_successful_render()
+    if not path:
+        return None, '<span class="muted">No previous render available.</span>', "No previous render available.", None, None, None, "No previous render available.", gr.update(interactive=False)
+    summary, detail = inspect(path)
+    return path, summary, detail, None, None, None, f"Loaded last successful render: {Path(path).name}", gr.update(interactive=True)
 
 def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, codec_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model):
     if not path: return None, "Choose an input video."
     if processing_mode.startswith("DLSS SR"):
         return None, "DLSS SR unavailable: " + DLSSSRBackend().status().reason
-    if processing_mode == "DLSS 5 → RTX VSR": return None, "Combined full-video mode is deferred until a lossless in-memory bridge is implemented."
     job = None
     try:
         job = CONTROLLER.start(); MONITOR.set_active(True); destination = output_path(Path(path), processing_mode, container_value, float(dlss_scale))
@@ -118,6 +126,7 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
         else:
             stats = render_vsr(path, destination, RTXVSRBackend(), float(scale_value), quality_value, vsr_mode, job.cancel_event, progress=progress)
         MONITOR.set_active(False); CONTROLLER.finish("COMPLETED", f"Completed: {stats['frames']} frames")
+        save_last_successful_render(destination)
         return str(destination), f"Completed: {stats['frames']} frames at {stats['fps']:.2f} FPS; {stats['dimensions'][0]}x{stats['dimensions'][1]}; audio preserved: {stats['audio_preserved']}"
     except InterruptedError:
         if job: MONITOR.set_active(False); CONTROLLER.finish("CANCELLED", "Render cancelled")
@@ -130,7 +139,6 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
     if not path: return None, "Choose an input video."
     if processing_mode.startswith("DLSS SR"):
         return None, "DLSS SR unavailable: " + DLSSSRBackend().status().reason
-    if processing_mode == "DLSS 5 → RTX VSR": return None, "Combined preview mode is deferred until a lossless bridge is implemented."
     job = None
     try:
         job = CONTROLLER.start(); MONITOR.set_active(True); progress = tracker_callback(job.progress); destination = TEMP / f"preview_clip_{os.getpid()}.{container_value.lower()}"
@@ -155,6 +163,7 @@ def build():
     last = load_last_used()
     rlast = last.get("rtx_vsr", {})
     dlast = last.get("dlss5", {})
+    previous_render = load_last_successful_render()
     with gr.Blocks(title="NVIDIA Video Enhancer", analytics_enabled=False) as ui:
         status = gr.HTML(status_html(), elem_classes="status-header")
         gr.HTML('<details class="advanced-diagnostics"><summary>Advanced diagnostics</summary><div>DLSS SR — unsupported by current protocol. The backend remains available for future capability detection.</div></details>')
@@ -165,14 +174,14 @@ def build():
             with gr.Column(scale=25, min_width=280, elem_classes="input-panel"):
                 gr.Markdown("## Input")
                 inp = gr.Video(label="Upload video", include_audio=True)
+                load_render = gr.Button("Load Last Render", interactive=bool(previous_render), elem_classes="load-render")
                 summary = gr.HTML('<span class="muted">No video selected.</span>')
                 with gr.Accordion("Media details", open=False):
                     info = gr.Textbox(value="No video selected.", show_label=False, lines=5, interactive=False)
                 state = gr.State("DLSS 5 only")
             with gr.Column(scale=35, min_width=360, elem_classes="settings-panel"):
                 gr.Markdown("## Enhancement")
-                mode = gr.Radio([("RTX VSR", "RTX VSR only"), ("DLSS 5", "DLSS 5 only"), ("DLSS5 → RTX VSR", "DLSS 5 → RTX VSR")], value="DLSS 5 only", show_label=False, elem_id="enhancement-selector", elem_classes="enhancement-selector")
-                combined_note = gr.Markdown("Combined full-video processing is not implemented yet.", visible=False, elem_classes="capability-note")
+                mode = gr.Radio(available_mode_choices(), value="DLSS 5 only", show_label=False, elem_id="enhancement-selector", elem_classes="enhancement-selector")
                 with gr.Group(visible=False, elem_classes="backend-group") as rtx_group:
                     gr.Markdown("### RTX VSR Settings")
                     _tip(RTX_TOOLTIPS, "mode", "Mode")
@@ -203,6 +212,9 @@ def build():
                     skin = gr.Slider(-1, 2, dlast.get("skin_structure", .15), .05, show_label=False)
                     _tip(DLSS5_TOOLTIPS, "mask", "Automatic mask")
                     mask = gr.Dropdown(["Off", "On"], value="On" if dlast.get("automatic_mask", False) else "Off", show_label=False)
+                with gr.Group(visible=False, elem_classes="backend-group") as sr_group:
+                    gr.Markdown("### DLSS SR Settings")
+                    gr.Markdown("Standalone DLSS SR is not currently available in the approved runtime.")
                 with gr.Accordion("Saved settings", open=False):
                     rtx_saved = gr.Dropdown(preset_choices("rtx_vsr"), label="RTX VSR saved preset")
                     rtx_name = gr.Textbox(label="Preset name", max_length=80)
@@ -217,28 +229,29 @@ def build():
                 with gr.Accordion("Output settings", open=False):
                     codec = gr.Dropdown(["H.264", "HEVC"], value="H.264", label="Codec")
                     container = gr.Dropdown(["MP4", "MKV", "MOV"], value="MP4", label="Container")
-                gr.Markdown("### Preview")
-                with gr.Row(elem_classes="preview-options"):
-                    timestamp = gr.Number(0, label="Timestamp (sec)")
-                    preview_duration = gr.Slider(1, 10, 3, step=1, label="Duration (sec)")
-                with gr.Row(elem_classes="action-bar"):
-                    frame = gr.Button("Preview Frame")
-                    clip = gr.Button("Preview Clip")
-                    render = gr.Button("Render Video", variant="primary")
-                    stop = gr.Button("Cancel")
-                job = gr.Markdown("Ready. One GPU job at a time.")
             with gr.Column(scale=40, min_width=420, elem_classes="preview-panel"):
                 gr.Markdown("## Preview / Output")
                 with gr.Row(elem_classes="preview-grid"):
                     before = gr.Image(label="Before / source", type="filepath")
                     after = gr.Image(label="After / processed", type="filepath")
                 result_video = gr.Video(label="Rendered / preview video")
+                gr.Markdown("### Preview / Render")
+                with gr.Row(elem_classes="preview-options"):
+                    timestamp = gr.Number(0, label="Timestamp (sec)")
+                    preview_duration = gr.Slider(1, 10, 3, step=1, label="Duration (sec)")
+                with gr.Row(elem_classes="action-bar"):
+                    frame = gr.Button("Preview Frame")
+                    clip = gr.Button("Preview Clip")
+                render = gr.Button("Render Video", variant="primary", elem_classes="render-button")
+                stop = gr.Button("Cancel", interactive=False, elem_classes="cancel-button")
+                job = gr.Markdown("Ready. One GPU job at a time.")
         def visibility(selected):
-            rtx_visible, dlss_visible, combined, clip_enabled, render_enabled = mode_visibility(selected)
-            return gr.update(visible=rtx_visible), gr.update(visible=dlss_visible), gr.update(visible=combined), gr.update(interactive=clip_enabled), gr.update(interactive=render_enabled)
+            rtx_visible, dlss_visible, sr_visible = mode_visibility(selected)
+            return gr.update(visible=rtx_visible), gr.update(visible=dlss_visible), gr.update(visible=sr_visible)
         inp.change(inspect, inp, [summary, info])
+        load_render.click(load_last_render, outputs=[inp, summary, info, before, after, result_video, job, load_render])
         mode.change(lambda value: value, mode, state)
-        mode.change(visibility, mode, [rtx_group, dlss_group, combined_note, clip, render])
+        mode.change(visibility, mode, [rtx_group, dlss_group, sr_group])
         preset.change(apply_preset, preset, [nrpreset, style, intensity, tone, structure, skin, mask])
         frame.click(do_frame, [inp, timestamp, state, vsr_mode, scale, quality, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model], [before, after, job])
         clip.click(preview_clip, [inp, state, vsr_mode, scale, quality, container, timestamp, preview_duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model], [result_video, job])

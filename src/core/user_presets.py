@@ -128,3 +128,27 @@ def save_last_used(backend: str, values: dict) -> None:
         data = _read(LOCAL_SETTINGS, {"schema_version": 1, "last_used": {}})
         data.setdefault("last_used", {})[key] = clean
         _atomic_write(LOCAL_SETTINGS, data)
+
+
+def load_last_successful_render() -> str | None:
+    """Return the tracked full render only while it remains a supported video."""
+    with _LOCK:
+        data = _read(LOCAL_SETTINGS, {"schema_version": 1, "last_used": {}})
+        value = data.get("last_successful_render")
+        path = Path(value).expanduser() if isinstance(value, str) else None
+        if path and path.is_file() and path.suffix.lower() in {".mp4", ".mkv", ".mov", ".webm", ".avi"}:
+            return str(path.resolve())
+        if value is not None:
+            data.pop("last_successful_render", None)
+            _atomic_write(LOCAL_SETTINGS, data)
+        return None
+
+
+def save_last_successful_render(path: str | Path) -> None:
+    candidate = Path(path).expanduser().resolve()
+    if not candidate.is_file() or candidate.suffix.lower() not in {".mp4", ".mkv", ".mov", ".webm", ".avi"}:
+        raise ValueError("Last successful render must be an existing supported video")
+    with _LOCK:
+        data = _read(LOCAL_SETTINGS, {"schema_version": 1, "last_used": {}})
+        data["last_successful_render"] = str(candidate)
+        _atomic_write(LOCAL_SETTINGS, data)

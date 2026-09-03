@@ -30,6 +30,9 @@ body { font-family: Inter, Segoe UI, sans-serif; }
 .error { color:#e58b8b; font-size:.8rem; }
 .capability-note { border-left:2px solid #d7a84b; color:#d9c18b; font-size:.8rem; margin:-4px 0 10px; padding:5px 9px; }
 .action-bar { align-items:center; margin-top:8px; }
+.load-render { width:100%; margin:4px 0 8px; }
+.render-button { width:100%; margin-top:8px; }
+.cancel-button { margin-top:6px; }
 .action-bar button.primary { background:var(--green) !important; border:0 !important; }
 .preview-grid { align-items:stretch; }
 .preview-grid > * { min-width:0; }

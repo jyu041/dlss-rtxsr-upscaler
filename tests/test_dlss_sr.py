@@ -51,7 +51,9 @@ def test_successful_mocked_result(tmp_path, monkeypatch):
     monkeypatch.setattr("src.backends.dlss_sr.subprocess.run", lambda *args, **kwargs: Completed())
     data = DLSSSRBackend(host, result).selftest()
     assert data["status"] == "success"
-    assert DLSSSRBackend(host, result).status().state == "EXPERIMENTAL READY"
+    status = DLSSSRBackend(host, result).status()
+    assert status.state == "EXPERIMENTAL READY"
+    assert status.available is True
 
 
 def test_dlss_sr_processing_remains_gated(tmp_path):

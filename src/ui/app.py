@@ -246,14 +246,14 @@ def build():
                     rtx_message = gr.Markdown()
                     dlss_saved = gr.Dropdown(preset_choices("dlss5"), label="DLSS5 saved preset")
                     dlss_name = gr.Textbox(label="Preset name", max_length=80)
-                     with gr.Row():
-                         dlss_load = gr.Button("Load"); dlss_save = gr.Button("Save"); dlss_delete = gr.Button("Delete"); dlss_reset = gr.Button("Reset")
-                     dlss_message = gr.Markdown()
-                     sr_saved = gr.Dropdown(preset_choices("dlss_sr"), label="DLSS SR saved preset")
-                     sr_name = gr.Textbox(label="Preset name", max_length=80)
-                     with gr.Row():
-                         sr_load = gr.Button("Load"); sr_save = gr.Button("Save"); sr_delete = gr.Button("Delete"); sr_reset = gr.Button("Reset")
-                     sr_message = gr.Markdown()
+                    with gr.Row():
+                        dlss_load = gr.Button("Load"); dlss_save = gr.Button("Save"); dlss_delete = gr.Button("Delete"); dlss_reset = gr.Button("Reset")
+                    dlss_message = gr.Markdown()
+                    sr_saved = gr.Dropdown(preset_choices("dlss_sr"), label="DLSS SR saved preset")
+                    sr_name = gr.Textbox(label="Preset name", max_length=80)
+                    with gr.Row():
+                        sr_load = gr.Button("Load"); sr_save = gr.Button("Save"); sr_delete = gr.Button("Delete"); sr_reset = gr.Button("Reset")
+                    sr_message = gr.Markdown()
                 with gr.Accordion("Output settings", open=False):
                     codec = gr.Dropdown(["H.264", "HEVC"], value="H.264", label="Codec")
                     container = gr.Dropdown(["MP4", "MKV", "MOV"], value="MP4", label="Container")

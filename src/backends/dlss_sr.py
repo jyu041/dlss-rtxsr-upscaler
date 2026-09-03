@@ -55,8 +55,8 @@ class DLSSSRBackend(Backend):
         if data.get("status") != "success" or not data.get("evaluate_succeeded"):
             return BackendStatus("DLSS SR", False, "FAILED SELFTEST", str(data.get("error", self.reason)))
         return BackendStatus(
-            "DLSS SR", False, "EXPERIMENTAL READY",
-            "Native Quality self-test passed; normal UI exposure remains gated",
+            "DLSS SR", True, "EXPERIMENTAL READY",
+            "Native Quality self-test passed",
         )
 
     def validate_runtime(self):

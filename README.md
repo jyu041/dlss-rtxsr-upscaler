@@ -47,19 +47,20 @@ The backends are selected explicitly. If a required runtime is missing or unappr
 
 ```mermaid
 flowchart LR
-    A[Local Gradio UI] --> B{Explicit backend selection}
-    B --> C[RTX VSR\nNVIDIA VFX]
-    B --> D[DLSS SR\nNative D3D12 + NGX]
-    B --> E[DLSS 5\nFeature-18 worker]
-    C --> F[Decode frames]
-    D --> F
-    E --> F
-    F --> G[GPU processing]
-    G --> H[NVENC H.264 / HEVC]
-    H --> I[Video + preserved audio]
-    J[Local runtimes\nuser supplied and approved] -. gates .-> C
-    J -. gates .-> D
-    J -. gates .-> E
+    A[Local Gradio UI] --> B[Video input]
+    B --> C[Decode frames]
+    C --> D{Explicit backend selection}
+    D --> E[RTX VSR<br/>NVIDIA VFX]
+    D --> F[DLSS SR<br/>Native D3D12 + NGX]
+    D --> G[DLSS 5<br/>Feature-18 worker]
+    E --> H[GPU processing]
+    F --> H
+    G --> H
+    H --> I[NVENC H.264 / HEVC]
+    I --> J[Output video + preserved audio]
+    K[Local runtimes<br/>user supplied and approved] -. gates .-> E
+    K -. gates .-> F
+    K -. gates .-> G
 ```
 
 ## Quick Start
@@ -71,11 +72,13 @@ flowchart LR
 - Miniconda or Anaconda
 - FFmpeg and FFprobe available on `PATH`
 
-### 2. Create the environment
+### 2. Clone and create the environment
 
-From the repository root:
+From a Git-enabled terminal:
 
 ```bat
+git clone --recurse-submodules https://github.com/jyu041/dlss-rtxsr-upscaler.git
+cd dlss-rtxsr-upscaler
 setup.bat
 ```
 
@@ -122,7 +125,12 @@ Read the full audit in [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md).
 
 ## Tested Hardware
 
-Hardware validation is explicit and runtime-specific. The test suite covers deterministic helpers, media paths, progress, monitoring, UI behavior, cancellation, presets, and non-fallback behavior; GPU smoke tests run only when the relevant local runtime is present.
+Primary development and hardware validation has been performed on:
+
+- NVIDIA GeForce RTX 3070 8 GB
+- Windows
+
+This is a development and validation configuration, not a minimum requirement or a claim of official NVIDIA support for every backend. Backend availability depends on the installed GPU, driver, and exact runtime combination; in particular, this does not establish official DLSS 5 support on RTX 30-series hardware. GPU smoke tests count as validation only when the relevant local runtime is actually present.
 
 For the validation classes and commands, see [`docs/TESTING.md`](docs/TESTING.md). A skipped hardware test is not a successful backend validation.
 
@@ -149,8 +157,14 @@ start.bat               Local UI launcher
 
 ## Acknowledgements
 
+This project uses the following software and technologies; acknowledgement does not imply endorsement:
+
 - NVIDIA for RTX Video Super Resolution, NGX DLSS, and related developer technologies
 - The maintainers of the retained [`ComfyUI-DLSS5-Enhancer`](third_party/ComfyUI-DLSS5-Enhancer) protocol client
+- FFmpeg for media decoding, encoding, and muxing
+- Gradio for the local UI
+- OpenCV for image and frame processing
+- PyTorch for tensor and CUDA operations
 
 This repository does not redistribute NVIDIA SDKs, runtimes, model files, or community worker binaries.
 

@@ -237,7 +237,7 @@ def build():
                     _tip(DLSS_SR_TOOLTIPS, "mode", "Mode")
                     sr_mode = gr.Dropdown(["DLAA", "Quality", "Balanced", "Performance", "Ultra Performance"], value=srlast.get("mode", "Quality"), show_label=False)
                     _tip(DLSS_SR_TOOLTIPS, "model_preset", "Model preset")
-                    sr_model = gr.Dropdown(["Default", "J", "K", "L", "M"], value=srlast.get("model_preset", "K"), show_label=False)
+                    sr_model = gr.Dropdown(["Default", "J", "K", "L", "M"], value=srlast.get("model_preset", "Default"), show_label=False)
                 with gr.Accordion("Saved settings", open=False):
                     rtx_saved = gr.Dropdown(preset_choices("rtx_vsr"), label="RTX VSR saved preset")
                     rtx_name = gr.Textbox(label="Preset name", max_length=80)
@@ -297,7 +297,7 @@ def build():
         sr_save.click(save_dlss_sr, [sr_name, sr_mode, sr_model], [sr_saved, sr_message])
         sr_load.click(load_dlss_sr, sr_saved, [sr_mode, sr_model, sr_message])
         sr_delete.click(delete_dlss_sr, sr_saved, [sr_saved, sr_message])
-        sr_reset.click(lambda: ("Quality", "K", "DLSS SR settings reset."), outputs=[sr_mode, sr_model, sr_message])
+        sr_reset.click(lambda: ("Quality", "Default", "DLSS SR settings reset."), outputs=[sr_mode, sr_model, sr_message])
         gr.Markdown("### Runtime notes\nA missing backend is never substituted with sharpening or another upscaler. Configure legitimate NVIDIA runtimes, then restart and refresh diagnostics.")
     return ui
 

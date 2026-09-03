@@ -6,7 +6,7 @@ from urllib.request import urlopen
 
 import gradio as gr
 
-from src.ui.app import build
+from src.ui.app import build, mode_visibility
 
 def test_gradio_launch_configuration_matches_installed_api():
     blocks_params = inspect.signature(gr.Blocks).parameters
@@ -42,3 +42,18 @@ def test_actual_local_webui_launch():
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait(timeout=10)
+
+
+def test_enhancement_selector_is_the_single_routing_source():
+    assert mode_visibility("RTX VSR only") == (True, False, False, True, True)
+    assert mode_visibility("DLSS 5 only") == (False, True, False, True, True)
+    assert mode_visibility("DLSS 5 → RTX VSR") == (True, True, True, False, False)
+
+
+def test_ui_has_no_redundant_processing_or_sr_workflow():
+    source = open("src/ui/app.py", encoding="utf-8").read()
+    assert 'label="Processing order"' not in source
+    assert '"DLSS SR only"' not in source
+    assert 'gr.Tab("DLSS Super Resolution")' not in source
+    assert 'gr.Tab("Output")' not in source
+    assert 'show_label=False' in source

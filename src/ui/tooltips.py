@@ -31,3 +31,8 @@ def help_icon(text: str, label: str = "More information") -> str:
 
 def help_html(text: str, label: str):
     return help_icon(text, label)
+
+
+def setting_label(label: str, tooltip: str) -> str:
+    """Render the label and accessible help affordance as one compact row."""
+    return f'<div class="setting-label-row"><span class="setting-label-text">{escape(label)}</span>{help_icon(tooltip, "Help for " + label)}</div>'

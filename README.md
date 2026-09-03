@@ -3,6 +3,9 @@
 NVIDIA Video Enhancer is a local, Windows-only utility for three separate
 enhancement backends:
 
+This is an unofficial community project and is not affiliated with or endorsed
+by NVIDIA.
+
 - **RTX Video Super Resolution (RTX VSR)** reconstructs and reduces artifacts
   in ordinary video through NVIDIA's RTX Video SDK.
 - **Standalone DLSS Super Resolution (DLSS SR)** uses a native D3D12 host and
@@ -72,5 +75,6 @@ runtime dependent, and is not an NVIDIA product or endorsement. Current public
 NVIDIA DLSS 5 material describes 3D-Guided Neural Rendering as targeting RTX
 50 Series; no RTX 30 support should be inferred from community experiments.
 
-The project currently has no root `LICENSE` file. A project-license decision
-is still required before public release.
+Project-owned source is available under the MIT License in `LICENSE`. The
+retained Blueforcer source has its own MIT license. NVIDIA and community
+runtime binaries are not included and are not covered by the root license.

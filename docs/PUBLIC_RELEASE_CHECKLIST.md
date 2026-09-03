@@ -7,14 +7,13 @@
 - [x] Historical proprietary/binary scan
 - [x] Submodule and license review
 - [x] Third-party documentation
-- [ ] Root project license decision
+- [x] Root project license
 - [x] Deterministic tests
 - [x] `pip check`
 - [x] App launch smoke test
 - [ ] Worktree clean
-- [x] History rewrite required: YES
-- [ ] Safe to switch GitHub visibility: NO
+- [x] History rewrite required: completed
+- [ ] Safe to switch GitHub visibility: pending final verification
 
-Current blocker: reachable commits expose a potentially personal author and
-committer email address. Removing it would require coordinated history
-rewriting and a force-push, which has not been authorized.
+The root project source is licensed under MIT. Final status is set only after
+the approved history rewrite, exhaustive audits, validation, and force-push.

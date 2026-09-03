@@ -1,5 +1,8 @@
 # Third-Party Software
 
+Project-owned source is licensed under the MIT License in the root `LICENSE`
+file. That license does not apply to any dependency listed below.
+
 | Dependency | License or terms | Purpose |
 |---|---|---|
 | [Blueforcer/ComfyUI-DLSS5-Enhancer](https://github.com/Blueforcer/ComfyUI-DLSS5-Enhancer) at `796ed5927a202ba50b5c929cd08e16b365041162` | MIT for its source; runtime binaries retain separate terms | Retained generic DLSS5 protocol, session, settings, motion, and diagnostics code |

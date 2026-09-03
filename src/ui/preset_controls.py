@@ -53,3 +53,16 @@ def load_dlss(name):
 
 def delete_dlss(name):
     return delete_preset("dlss5", name)
+
+
+def save_dlss_sr(name, mode, model_preset):
+    return save_preset("dlss_sr", name, {"mode": mode, "model_preset": model_preset})
+
+
+def load_dlss_sr(name):
+    values, message = load_preset("dlss_sr", name)
+    return [values.get("mode"), values.get("model_preset"), message]
+
+
+def delete_dlss_sr(name):
+    return delete_preset("dlss_sr", name)

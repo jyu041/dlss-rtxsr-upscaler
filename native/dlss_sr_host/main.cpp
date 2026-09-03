@@ -6,9 +6,12 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <io.h>
+#include <fcntl.h>
 #include <string>
 #include <vector>
 
@@ -290,10 +293,228 @@ bool readbackTexture(Context& context, const Texture& texture, std::vector<unsig
     readback->Unmap(0, nullptr);
     return true;
 }
+
+#pragma pack(push, 1)
+struct StreamInputHeader {
+    uint32_t magic;
+    uint32_t frame;
+    uint32_t width;
+    uint32_t height;
+    uint32_t reset;
+    uint32_t colorBytes;
+    uint32_t motionBytes;
+};
+
+struct StreamOutputHeader {
+    uint32_t magic;
+    uint32_t frame;
+    uint32_t width;
+    uint32_t height;
+    uint32_t status;
+    uint32_t colorBytes;
+};
+#pragma pack(pop)
+
+constexpr uint32_t kStreamInputMagic = 0x31524644;  // DFR1
+constexpr uint32_t kStreamOutputMagic = 0x31524644; // DFR1
+
+bool readExact(void* destination, size_t size)
+{
+    return std::cin.read(static_cast<char*>(destination), static_cast<std::streamsize>(size)).good();
+}
+
+bool writeExact(const void* source, size_t size)
+{
+    std::cout.write(static_cast<const char*>(source), static_cast<std::streamsize>(size));
+    return std::cout.good();
+}
+
+int runStream(const fs::path& root, UINT inputWidth, UINT inputHeight, UINT outputWidth, UINT outputHeight,
+              NVSDK_NGX_PerfQuality_Value perf, int preset)
+{
+    if (!inputWidth || !inputHeight || !outputWidth || !outputHeight ||
+        inputWidth > 7680 || inputHeight > 4320 || outputWidth > 7680 || outputHeight > 4320) return 2;
+    Context context;
+    if (!context.initialize()) { std::wcerr << L"stream D3D12 initialization failed\n"; return 1; }
+    fs::path appData = root / "ngx-data";
+    fs::create_directories(appData);
+    NVSDK_NGX_Result init = NVSDK_NGX_D3D12_Init_with_ProjectID(
+        kProjectId, NVSDK_NGX_ENGINE_TYPE_CUSTOM, kEngineVersion, appData.c_str(), context.device.Get());
+    if (!succeeded(init)) {
+        std::wcerr << L"stream ngx_init=0x" << std::hex << static_cast<unsigned int>(init) << L"\n";
+        std::wcerr << L"stream NGX initialization failed\n";
+        return 1;
+    }
+    NVSDK_NGX_Parameter* parameters = nullptr;
+    NVSDK_NGX_Result caps = NVSDK_NGX_D3D12_GetCapabilityParameters(&parameters);
+    int available = 0;
+    if (!succeeded(caps) || !parameters || !succeeded(parameters->Get(NVSDK_NGX_Parameter_SuperSampling_Available, &available)) || !available) {
+        if (parameters) NVSDK_NGX_D3D12_DestroyParameters(parameters);
+        NVSDK_NGX_D3D12_Shutdown1(context.device.Get());
+        std::wcerr << L"stream resource creation failed\n";
+        return 1;
+    }
+    Texture color, motion, depth, output;
+    if (!createTexture(context, inputWidth, inputHeight, DXGI_FORMAT_R16G16B16A16_FLOAT, D3D12_RESOURCE_FLAG_NONE,
+                       D3D12_RESOURCE_STATE_COPY_DEST, color) ||
+        !createTexture(context, inputWidth, inputHeight, DXGI_FORMAT_R32_FLOAT, D3D12_RESOURCE_FLAG_NONE,
+                       D3D12_RESOURCE_STATE_COPY_DEST, depth) ||
+        !createTexture(context, inputWidth, inputHeight, DXGI_FORMAT_R16G16_FLOAT, D3D12_RESOURCE_FLAG_NONE,
+                       D3D12_RESOURCE_STATE_COPY_DEST, motion) ||
+        !createTexture(context, outputWidth, outputHeight, DXGI_FORMAT_R16G16B16A16_FLOAT,
+                       D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, output)) return 1;
+    std::vector<unsigned char> depthBytes(static_cast<size_t>(inputWidth) * inputHeight * sizeof(float));
+    std::fill(reinterpret_cast<float*>(depthBytes.data()),
+              reinterpret_cast<float*>(depthBytes.data()) + static_cast<size_t>(inputWidth) * inputHeight, 1.0f);
+    context.list->Close();
+    context.allocator->Reset();
+    context.list->Reset(context.allocator.Get(), nullptr);
+    std::vector<ComPtr<ID3D12Resource>> uploads;
+    if (!uploadTexture(context, depth, depthBytes, uploads)) { std::wcerr << L"stream depth upload failed\n"; return 1; }
+    D3D12_RESOURCE_BARRIER depthBarrier{};
+    depthBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    depthBarrier.Transition.pResource = depth.resource.Get();
+    depthBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    depthBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+    depthBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    context.list->ResourceBarrier(1, &depthBarrier);
+    if (!context.submit()) { std::wcerr << L"stream depth submit failed\n"; return 1; }
+
+    context.allocator->Reset();
+    context.list->Reset(context.allocator.Get(), nullptr);
+    NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_Parameter_Width, inputWidth);
+    NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_Parameter_Height, inputHeight);
+    NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_Parameter_OutWidth, outputWidth);
+    NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_Parameter_OutHeight, outputHeight);
+    NVSDK_NGX_Parameter_SetI(parameters, NVSDK_NGX_Parameter_PerfQualityValue, perf);
+    NVSDK_NGX_Parameter_SetI(parameters, NVSDK_NGX_Parameter_DLSS_Feature_Create_Flags, NVSDK_NGX_DLSS_Feature_Flags_None);
+    NVSDK_NGX_Parameter_SetI(parameters, NVSDK_NGX_Parameter_DLSSMode, NVSDK_NGX_DLSS_Mode_DLSS);
+    const char* presetParameter = perf == NVSDK_NGX_PerfQuality_Value_DLAA ? NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_DLAA :
+        perf == NVSDK_NGX_PerfQuality_Value_Balanced ? NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Balanced :
+        perf == NVSDK_NGX_PerfQuality_Value_MaxPerf ? NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Performance :
+        perf == NVSDK_NGX_PerfQuality_Value_UltraPerformance ? NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_UltraPerformance :
+        perf == NVSDK_NGX_PerfQuality_Value_UltraQuality ? NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_UltraQuality :
+        NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Quality;
+    NVSDK_NGX_Parameter_SetI(parameters, presetParameter, preset);
+    NVSDK_NGX_Handle* feature = nullptr;
+    NVSDK_NGX_Result create = NVSDK_NGX_D3D12_CreateFeature(context.list.Get(), NVSDK_NGX_Feature_SuperSampling, parameters, &feature);
+    std::wcerr << L"stream feature_create=0x" << std::hex << static_cast<unsigned int>(create) << std::dec << L"\n";
+    if (!succeeded(create) || !feature) return 1;
+    if (!context.submit()) { std::wcerr << L"stream feature submit failed\n"; return 1; }
+
+    _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+    const size_t maxColorBytes = static_cast<size_t>(inputWidth) * inputHeight * 4;
+    const size_t maxMotionBytes = static_cast<size_t>(inputWidth) * inputHeight * sizeof(float) * 2;
+    uint32_t expectedFrame = 0;
+    for (;;) {
+        StreamInputHeader header{};
+        if (!readExact(&header, sizeof(header))) break;
+        if (header.magic != kStreamInputMagic || header.frame != expectedFrame || header.width != inputWidth || header.height != inputHeight ||
+            header.colorBytes != maxColorBytes || (header.motionBytes != 0 && header.motionBytes != maxMotionBytes)) return 3;
+        std::vector<unsigned char> rgba(header.colorBytes);
+        std::vector<unsigned char> motionFloats(header.motionBytes);
+        if (!readExact(rgba.data(), rgba.size()) || (header.motionBytes && !readExact(motionFloats.data(), motionFloats.size()))) return 3;
+        std::vector<unsigned char> colorBytes(static_cast<size_t>(inputWidth) * inputHeight * 8);
+        auto* halfColor = reinterpret_cast<uint16_t*>(colorBytes.data());
+        for (size_t i = 0; i < static_cast<size_t>(inputWidth) * inputHeight; ++i)
+            for (int channel = 0; channel < 4; ++channel) halfColor[i * 4 + channel] = floatToHalf(rgba[i * 4 + channel] / 255.0f);
+        std::vector<unsigned char> halfMotion(static_cast<size_t>(inputWidth) * inputHeight * 4);
+        const float* motionData = reinterpret_cast<const float*>(motionFloats.data());
+        auto* halfMv = reinterpret_cast<uint16_t*>(halfMotion.data());
+        for (size_t i = 0; i < static_cast<size_t>(inputWidth) * inputHeight; ++i) {
+            halfMv[i * 2] = floatToHalf(header.motionBytes ? motionData[i * 2] : 0.0f);
+            halfMv[i * 2 + 1] = floatToHalf(header.motionBytes ? motionData[i * 2 + 1] : 0.0f);
+        }
+        context.allocator->Reset();
+        context.list->Reset(context.allocator.Get(), nullptr);
+        D3D12_RESOURCE_BARRIER before[3]{};
+        before[0].Type = before[1].Type = before[2].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        before[0].Transition = {color.resource.Get(), D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                                D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST};
+        before[1].Transition = {motion.resource.Get(), D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                                D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST};
+        before[2].Transition = {output.resource.Get(), D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                                D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS};
+        if (header.frame == 0) {
+            // Color, motion, and output are already in their initial states.
+        } else {
+            context.list->ResourceBarrier(3, before);
+        }
+        uploads.clear();
+        if (!uploadTexture(context, color, colorBytes, uploads) || !uploadTexture(context, motion, halfMotion, uploads)) {
+            std::wcerr << L"stream frame upload failed\n";
+            return 1;
+        }
+        D3D12_RESOURCE_BARRIER after[2]{};
+        after[0].Type = after[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        after[0].Transition = {color.resource.Get(), D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                               D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE};
+        after[1].Transition = {motion.resource.Get(), D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                               D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE};
+        context.list->ResourceBarrier(2, after);
+        NVSDK_NGX_Parameter_SetD3d12Resource(parameters, NVSDK_NGX_Parameter_Color, color.resource.Get());
+        NVSDK_NGX_Parameter_SetD3d12Resource(parameters, NVSDK_NGX_Parameter_Output, output.resource.Get());
+        NVSDK_NGX_Parameter_SetD3d12Resource(parameters, NVSDK_NGX_Parameter_Depth, depth.resource.Get());
+        NVSDK_NGX_Parameter_SetD3d12Resource(parameters, NVSDK_NGX_Parameter_MotionVectors, motion.resource.Get());
+        NVSDK_NGX_Parameter_SetF(parameters, NVSDK_NGX_Parameter_Jitter_Offset_X, 0.0f);
+        NVSDK_NGX_Parameter_SetF(parameters, NVSDK_NGX_Parameter_Jitter_Offset_Y, 0.0f);
+        NVSDK_NGX_Parameter_SetF(parameters, NVSDK_NGX_Parameter_MV_Scale_X, 1.0f);
+        NVSDK_NGX_Parameter_SetF(parameters, NVSDK_NGX_Parameter_MV_Scale_Y, 1.0f);
+        NVSDK_NGX_Parameter_SetI(parameters, NVSDK_NGX_Parameter_Reset, header.reset ? 1 : 0);
+        NVSDK_NGX_Parameter_SetF(parameters, NVSDK_NGX_Parameter_DLSS_Pre_Exposure, 1.0f);
+        NVSDK_NGX_Parameter_SetF(parameters, NVSDK_NGX_Parameter_DLSS_Exposure_Scale, 1.0f);
+        NVSDK_NGX_Result evaluate = NVSDK_NGX_D3D12_EvaluateFeature_C(context.list.Get(), feature, parameters, nullptr);
+        D3D12_RESOURCE_BARRIER outputBarrier{};
+        outputBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        outputBarrier.Transition = {output.resource.Get(), D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE};
+        context.list->ResourceBarrier(1, &outputBarrier);
+        std::vector<unsigned char> outputBytes;
+        if (!succeeded(evaluate)) { std::wcerr << L"stream evaluate=0x" << std::hex << static_cast<unsigned int>(evaluate) << std::dec << L"\n"; return 1; }
+        if (!readbackTexture(context, output, outputBytes)) { std::wcerr << L"stream readback failed\n"; return 1; }
+        std::vector<unsigned char> outputRgba = rgbaFromHalf(outputBytes);
+        StreamOutputHeader response{kStreamOutputMagic, header.frame, outputWidth, outputHeight,
+                                    succeeded(evaluate) ? 0u : static_cast<uint32_t>(evaluate),
+                                    static_cast<uint32_t>(outputRgba.size())};
+        if (!writeExact(&response, sizeof(response)) || !writeExact(outputRgba.data(), outputRgba.size())) return 4;
+        std::cout.flush();
+        expectedFrame = header.frame + 1;
+        (void)expectedFrame;
+    }
+    NVSDK_NGX_D3D12_ReleaseFeature(feature);
+    NVSDK_NGX_D3D12_DestroyParameters(parameters);
+    NVSDK_NGX_D3D12_Shutdown1(context.device.Get());
+    return 0;
+}
 }
 
 int wmain(int argc, wchar_t** argv)
 {
+    if (argc >= 2 && std::wstring(argv[1]) == L"stream") {
+        if (argc < 6) {
+            std::wcerr << L"usage: dlss_sr_host.exe stream <input_w> <input_h> <output_w> <output_h> [mode] [preset]\n";
+            return 2;
+        }
+        const UINT inputWidth = static_cast<UINT>(wcstoul(argv[2], nullptr, 10));
+        const UINT inputHeight = static_cast<UINT>(wcstoul(argv[3], nullptr, 10));
+        const UINT outputWidth = static_cast<UINT>(wcstoul(argv[4], nullptr, 10));
+        const UINT outputHeight = static_cast<UINT>(wcstoul(argv[5], nullptr, 10));
+        std::wstring mode = argc >= 7 ? argv[6] : L"quality";
+        NVSDK_NGX_PerfQuality_Value perf = mode == L"dlaa" ? NVSDK_NGX_PerfQuality_Value_DLAA :
+            mode == L"balanced" ? NVSDK_NGX_PerfQuality_Value_Balanced : mode == L"performance" ? NVSDK_NGX_PerfQuality_Value_MaxPerf :
+            mode == L"ultraperformance" ? NVSDK_NGX_PerfQuality_Value_UltraPerformance : NVSDK_NGX_PerfQuality_Value_MaxQuality;
+        int preset = NVSDK_NGX_DLSS_Hint_Render_Preset_Default;
+        if (argc >= 8) {
+            std::wstring presetArg = argv[7];
+            if (presetArg == L"J") preset = NVSDK_NGX_DLSS_Hint_Render_Preset_J;
+            else if (presetArg == L"K") preset = NVSDK_NGX_DLSS_Hint_Render_Preset_K;
+            else if (presetArg == L"L") preset = NVSDK_NGX_DLSS_Hint_Render_Preset_L;
+            else if (presetArg == L"M") preset = NVSDK_NGX_DLSS_Hint_Render_Preset_M;
+        }
+        return runStream(fs::absolute(fs::path(argv[0])).parent_path(), inputWidth, inputHeight,
+                         outputWidth, outputHeight, perf, preset);
+    }
     if (argc < 2 || std::wstring(argv[1]) != L"selftest") {
         std::wcerr << L"usage: dlss_sr_host.exe selftest [dlaa]\n";
         return 2;
@@ -401,6 +622,8 @@ int wmain(int argc, wchar_t** argv)
     }
 
     std::vector<unsigned char> depthBytes(static_cast<size_t>(inputWidth) * inputHeight * sizeof(float));
+    std::fill(reinterpret_cast<float*>(depthBytes.data()),
+              reinterpret_cast<float*>(depthBytes.data()) + static_cast<size_t>(inputWidth) * inputHeight, 1.0f);
     std::vector<unsigned char> motionBytes(static_cast<size_t>(inputWidth) * inputHeight * sizeof(uint32_t));
     std::vector<ComPtr<ID3D12Resource>> uploads;
     context.list->Close();

@@ -16,10 +16,11 @@ from src.core.progress import tracker_callback
 from src.core.user_presets import clear_last_successful_render, load_last_successful_render, load_last_used, save_last_successful_render, save_last_used
 from src.ui.monitoring import metrics_html
 from src.ui.progress_view import progress_html
-from src.ui.tooltips import RTX_TOOLTIPS, DLSS5_TOOLTIPS, setting_label
-from src.ui.preset_controls import delete_dlss, delete_rtx, load_dlss, load_rtx, preset_choices, save_dlss, save_rtx
+from src.ui.tooltips import RTX_TOOLTIPS, DLSS5_TOOLTIPS, DLSS_SR_TOOLTIPS, setting_label
+from src.ui.preset_controls import delete_dlss, delete_rtx, delete_dlss_sr, load_dlss, load_dlss_sr, load_rtx, preset_choices, save_dlss, save_dlss_sr, save_rtx
 from src.video.stream import render_vsr
 from src.video.dlss5 import render_dlss5
+from src.video.dlss_sr import process_dlss_sr_frame, render_dlss_sr
 
 os.environ.setdefault("GRADIO_ANALYTICS_ENABLED","False")
 CONTROLLER = JobController()
@@ -27,8 +28,9 @@ def status_html():
     d = collect()
     rtx = "Ready" if d["rtx_vsr"]["available"] else "Unavailable"
     dlss = "Experimental Ready" if d["dlss5"]["available"] else "Unavailable"
+    sr = "Experimental Ready" if d["dlss_sr"]["state"] == "EXPERIMENTAL READY" else "Unavailable"
     ffmpeg = "Ready" if d["ffmpeg"] == "AVAILABLE" else "Unavailable"
-    return f"<div class=\"app-header\"><h1>NVIDIA Video Enhancer</h1><p>RTX Video Super Resolution + DLSS 5 Neural Rendering</p></div><div class=\"backend-status\"><span class=\"status-badge\">RTX VSR <b>● {rtx}</b></span><span class=\"status-badge\">DLSS 5 <b>● {dlss}</b></span><span class=\"status-badge\">FFmpeg <b>● {ffmpeg}</b></span></div>"
+    return f"<div class=\"app-header\"><h1>NVIDIA Video Enhancer</h1><p>RTX VSR + standalone DLSS SR + DLSS 5 Neural Rendering</p></div><div class=\"backend-status\"><span class=\"status-badge\">RTX VSR <b>● {rtx}</b></span><span class=\"status-badge\">DLSS SR <b>● {sr}</b></span><span class=\"status-badge\">DLSS 5 <b>● {dlss}</b></span><span class=\"status-badge\">FFmpeg <b>● {ffmpeg}</b></span></div>"
 
 def _tip(mapping, key, label):
     return gr.HTML(setting_label(label, mapping[key]), show_label=False, elem_classes="setting-label")
@@ -46,12 +48,19 @@ def inspect(path):
         detail = format_info(i) + ("\n\nWARNING: HDR/high-bit-depth detected; DLSS5 path is SDR RGBA8 only." if i['hdr'] else "")
         return summary, detail
     except Exception as e: return f"<span class=\"error\">Inspection failed: {e}</span>", f"Inspection failed: {e}"
-def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model):
+def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model):
     if not path: return None, None, "Choose an input video."
     try:
         if mode.startswith("DLSS SR"):
-            status = DLSSSRBackend().status()
-            return None, None, f"{status.name} {status.state}: {status.reason}"
+            backend = DLSSSRBackend(); status = backend.status()
+            if status.state not in {"EXPERIMENTAL READY"}:
+                return None, None, f"{status.name} {status.state}: {status.reason}"
+            source_frame=TEMP/f"preview_source_{os.getpid()}.png"; preview_frame(path,timestamp,source_frame)
+            from PIL import Image
+            image = Image.open(source_frame).convert("RGBA")
+            enhanced = process_dlss_sr_frame(__import__("numpy").asarray(image), backend, sr_mode, sr_model)
+            out=TEMP/f"preview_{os.getpid()}.png"; Image.fromarray(enhanced).save(out)
+            return str(source_frame), str(out), f"DLSS SR verified | {sr_mode} | Model {sr_model} | {image.width}x{image.height} -> {enhanced.shape[1]}x{enhanced.shape[0]}"
         available = DLSS5Backend().status().available if mode.startswith("DLSS") else RTXVSRBackend().status().available
         if not available:
             return None, None, f"{mode} unavailable. No substitute processing was performed. Install and audit the genuine runtime first."
@@ -100,7 +109,7 @@ def mode_visibility(selected):
 
 def available_mode_choices():
     choices = [("RTX VSR", "RTX VSR only"), ("DLSS 5", "DLSS 5 only")]
-    if DLSSSRBackend().status().available:
+    if DLSSSRBackend().status().state == "EXPERIMENTAL READY":
         choices.append(("DLSS SR", "DLSS SR only"))
     return choices
 
@@ -115,16 +124,21 @@ def load_last_render():
         return None, '<span class="error">Previous render is not a readable video.</span>', detail, None, None, None, "Previous render is not a readable video.", gr.update(interactive=False)
     return path, summary, detail, None, None, None, f"Loaded last successful render: {Path(path).name}", gr.update(interactive=True)
 
-def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, codec_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model):
+def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, codec_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model):
     if not path: return None, "Choose an input video."
-    if processing_mode.startswith("DLSS SR"):
-        return None, "DLSS SR unavailable: " + DLSSSRBackend().status().reason
     job = None
     try:
         job = CONTROLLER.start(); MONITOR.set_active(True); destination = output_path(Path(path), processing_mode, container_value, float(dlss_scale))
-        _save_last("dlss5" if processing_mode == "DLSS 5 only" else "rtx_vsr", {"mode": vsr_mode, "scale": float(scale_value), "quality": quality_value} if processing_mode != "DLSS 5 only" else {"scale": float(dlss_scale), "nr_preset": nrpreset, "nr_style": style, "model_preset": model, "intensity": float(intensity), "local_tone": float(tone), "local_structure": float(structure), "skin_structure": float(skin), "automatic_mask": mask == "On"})
+        if processing_mode.startswith("DLSS SR"):
+            backend = DLSSSRBackend(); status = backend.status()
+            if status.state != "EXPERIMENTAL READY": raise RuntimeError(f"DLSS SR {status.state}: {status.reason}")
+            save_last_used("dlss_sr", {"mode": sr_mode, "model_preset": sr_model})
+        else:
+            _save_last("dlss5" if processing_mode == "DLSS 5 only" else "rtx_vsr", {"mode": vsr_mode, "scale": float(scale_value), "quality": quality_value} if processing_mode != "DLSS 5 only" else {"scale": float(dlss_scale), "nr_preset": nrpreset, "nr_style": style, "model_preset": model, "intensity": float(intensity), "local_tone": float(tone), "local_structure": float(structure), "skin_structure": float(skin), "automatic_mask": mask == "On"})
         progress = tracker_callback(job.progress)
-        if processing_mode == "DLSS 5 only":
+        if processing_mode.startswith("DLSS SR"):
+            stats = render_dlss_sr(path, destination, backend, sr_mode, sr_model, codec=codec_value, cancel=job.cancel_event, progress=progress)
+        elif processing_mode == "DLSS 5 only":
             backend = DLSS5Backend(); stats = render_dlss5(path, destination, backend, _dlss_options(backend, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model), codec=codec_value, cancel=job.cancel_event, progress=progress)
         else:
             stats = render_vsr(path, destination, RTXVSRBackend(), float(scale_value), quality_value, vsr_mode, job.cancel_event, progress=progress)
@@ -138,15 +152,17 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
         if job: MONITOR.set_active(False); CONTROLLER.finish("FAILED", str(exc))
         return None, f"Render failed: {exc}"
 
-def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, start_timestamp, duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model):
+def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, start_timestamp, duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model):
     if not path: return None, "Choose an input video."
-    if processing_mode.startswith("DLSS SR"):
-        return None, "DLSS SR unavailable: " + DLSSSRBackend().status().reason
     job = None
     try:
         job = CONTROLLER.start(); MONITOR.set_active(True); progress = tracker_callback(job.progress); destination = TEMP / f"preview_clip_{os.getpid()}.{container_value.lower()}"
-        _save_last("dlss5" if processing_mode == "DLSS 5 only" else "rtx_vsr", {"mode": vsr_mode, "scale": float(scale_value), "quality": quality_value} if processing_mode != "DLSS 5 only" else {"scale": float(dlss_scale), "nr_preset": nrpreset, "nr_style": style, "model_preset": model, "intensity": float(intensity), "local_tone": float(tone), "local_structure": float(structure), "skin_structure": float(skin), "automatic_mask": mask == "On"})
-        if processing_mode == "DLSS 5 only":
+        if processing_mode.startswith("DLSS SR"):
+            backend = DLSSSRBackend(); status = backend.status()
+            if status.state != "EXPERIMENTAL READY": raise RuntimeError(f"DLSS SR {status.state}: {status.reason}")
+            save_last_used("dlss_sr", {"mode": sr_mode, "model_preset": sr_model})
+            stats = render_dlss_sr(path, destination, backend, sr_mode, sr_model, start=float(start_timestamp), duration=float(duration), codec="H.264", cancel=job.cancel_event, progress=progress)
+        elif processing_mode == "DLSS 5 only":
             backend = DLSS5Backend(); stats = render_dlss5(path, destination, backend, _dlss_options(backend, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model), start=float(start_timestamp), duration=float(duration), codec="H.264", cancel=job.cancel_event, progress=progress)
         else:
             clip_source = TEMP / f"preview_input_{os.getpid()}.mp4"
@@ -166,10 +182,11 @@ def build():
     last = load_last_used()
     rlast = last.get("rtx_vsr", {})
     dlast = last.get("dlss5", {})
+    srlast = last.get("dlss_sr", {})
     previous_render = load_last_successful_render()
     with gr.Blocks(title="NVIDIA Video Enhancer", analytics_enabled=False) as ui:
         status = gr.HTML(status_html(), elem_classes="status-header")
-        gr.HTML('<details class="advanced-diagnostics"><summary>Advanced diagnostics</summary><div>DLSS SR — unsupported by current protocol. The backend remains available for future capability detection.</div></details>')
+        gr.HTML('<details class="advanced-diagnostics"><summary>Advanced diagnostics</summary><div>DLSS SR uses a separate native D3D12 NGX host with optical-flow motion guidance. Video mode is SDR, has no renderer depth or jitter, and requires the approved local NVIDIA runtime.</div></details>')
         metrics = gr.HTML(metrics_html())
         progress_panel = gr.HTML(progress_html(CONTROLLER.snapshot()))
         refresh_timer = gr.Timer(0.5)
@@ -217,7 +234,10 @@ def build():
                     mask = gr.Dropdown(["Off", "On"], value="On" if dlast.get("automatic_mask", False) else "Off", show_label=False)
                 with gr.Group(visible=False, elem_classes="backend-group") as sr_group:
                     gr.Markdown("### DLSS SR Settings")
-                    gr.Markdown("Standalone DLSS SR is not currently available in the approved runtime.")
+                    _tip(DLSS_SR_TOOLTIPS, "mode", "Mode")
+                    sr_mode = gr.Dropdown(["DLAA", "Quality", "Balanced", "Performance", "Ultra Performance"], value=srlast.get("mode", "Quality"), show_label=False)
+                    _tip(DLSS_SR_TOOLTIPS, "model_preset", "Model preset")
+                    sr_model = gr.Dropdown(["Default", "J", "K", "L", "M"], value=srlast.get("model_preset", "K"), show_label=False)
                 with gr.Accordion("Saved settings", open=False):
                     rtx_saved = gr.Dropdown(preset_choices("rtx_vsr"), label="RTX VSR saved preset")
                     rtx_name = gr.Textbox(label="Preset name", max_length=80)
@@ -226,9 +246,14 @@ def build():
                     rtx_message = gr.Markdown()
                     dlss_saved = gr.Dropdown(preset_choices("dlss5"), label="DLSS5 saved preset")
                     dlss_name = gr.Textbox(label="Preset name", max_length=80)
-                    with gr.Row():
-                        dlss_load = gr.Button("Load"); dlss_save = gr.Button("Save"); dlss_delete = gr.Button("Delete"); dlss_reset = gr.Button("Reset")
-                    dlss_message = gr.Markdown()
+                     with gr.Row():
+                         dlss_load = gr.Button("Load"); dlss_save = gr.Button("Save"); dlss_delete = gr.Button("Delete"); dlss_reset = gr.Button("Reset")
+                     dlss_message = gr.Markdown()
+                     sr_saved = gr.Dropdown(preset_choices("dlss_sr"), label="DLSS SR saved preset")
+                     sr_name = gr.Textbox(label="Preset name", max_length=80)
+                     with gr.Row():
+                         sr_load = gr.Button("Load"); sr_save = gr.Button("Save"); sr_delete = gr.Button("Delete"); sr_reset = gr.Button("Reset")
+                     sr_message = gr.Markdown()
                 with gr.Accordion("Output settings", open=False):
                     codec = gr.Dropdown(["H.264", "HEVC"], value="H.264", label="Codec")
                     container = gr.Dropdown(["MP4", "MKV", "MOV"], value="MP4", label="Container")
@@ -256,9 +281,9 @@ def build():
         mode.change(lambda value: value, mode, state)
         mode.change(visibility, mode, [rtx_group, dlss_group, sr_group])
         preset.change(apply_preset, preset, [nrpreset, style, intensity, tone, structure, skin, mask])
-        frame.click(do_frame, [inp, timestamp, state, vsr_mode, scale, quality, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model], [before, after, job])
-        clip.click(preview_clip, [inp, state, vsr_mode, scale, quality, container, timestamp, preview_duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model], [result_video, job])
-        render.click(render_video, [inp, state, vsr_mode, scale, quality, container, codec, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model], [result_video, job])
+        frame.click(do_frame, [inp, timestamp, state, vsr_mode, scale, quality, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model], [before, after, job])
+        clip.click(preview_clip, [inp, state, vsr_mode, scale, quality, container, timestamp, preview_duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model], [result_video, job])
+        render.click(render_video, [inp, state, vsr_mode, scale, quality, container, codec, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model], [result_video, job])
         stop.click(lambda: (CONTROLLER.cancel() or "Cancellation requested."), None, job)
         refresh_timer.tick(lambda: (metrics_html(), progress_html(CONTROLLER.snapshot())), outputs=[metrics, progress_panel], show_progress="hidden", queue=False)
         rtx_save.click(save_rtx, [rtx_name, vsr_mode, scale, quality], [rtx_saved, rtx_message])
@@ -269,6 +294,10 @@ def build():
         dlss_load.click(load_dlss, dlss_saved, [dlss_scale, nrpreset, style, model, intensity, tone, structure, skin, mask, dlss_message])
         dlss_delete.click(delete_dlss, dlss_saved, [dlss_saved, dlss_message])
         dlss_reset.click(lambda: (1.0, "Default", "Natural", "Default", .60, .40, .40, .15, "Off", "DLSS5 settings reset."), outputs=[dlss_scale, nrpreset, style, model, intensity, tone, structure, skin, mask, dlss_message])
+        sr_save.click(save_dlss_sr, [sr_name, sr_mode, sr_model], [sr_saved, sr_message])
+        sr_load.click(load_dlss_sr, sr_saved, [sr_mode, sr_model, sr_message])
+        sr_delete.click(delete_dlss_sr, sr_saved, [sr_saved, sr_message])
+        sr_reset.click(lambda: ("Quality", "K", "DLSS SR settings reset."), outputs=[sr_mode, sr_model, sr_message])
         gr.Markdown("### Runtime notes\nA missing backend is never substituted with sharpening or another upscaler. Configure legitimate NVIDIA runtimes, then restart and refresh diagnostics.")
     return ui
 

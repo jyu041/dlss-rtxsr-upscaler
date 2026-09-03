@@ -20,8 +20,8 @@ DLSS5_TOOLTIPS = {
 }
 
 DLSS_SR_TOOLTIPS = {
-    "scale": "Standalone DLSS Super Resolution would select native/DLAA or an upscale mode, but the approved worker currently exposes no SR-only protocol path.",
-    "model_preset": "Standalone SR model selection is not exposed because the approved worker always continues into its DLSS5 Feature-18 pass.",
+    "mode": "DLAA runs genuine DLSS Super Resolution at native output resolution. Quality is approximately 1.5x, Balanced 1.724x, Performance 2x, and Ultra Performance 3x output scaling. Larger ratios trade fine reconstruction quality for higher output resolution.",
+    "model_preset": "Controls the NVIDIA NGX render/model preset hint. Different hints can affect temporal behavior and fine reconstruction. Default is the general-purpose starting choice.",
 }
 
 

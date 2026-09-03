@@ -4,7 +4,12 @@ import sys
 import time
 from urllib.request import urlopen
 
-import gradio as gr
+import pytest
+
+try:
+    import gradio as gr
+except ImportError as exc:
+    pytest.skip(f"WebUI dependency is unavailable in this Python environment: {exc}", allow_module_level=True)
 
 from src.ui.app import build, mode_visibility
 

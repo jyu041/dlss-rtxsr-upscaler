@@ -16,6 +16,10 @@ Preview frames, preview clips, and render complete videos through three independ
 
 </div>
 
+<div align="center">
+  <img src="docs/assets/ui-overview.png" alt="NVIDIA Video Enhancer interface showing RTX VSR, DLSS Super Resolution, and DLSS 5 controls" width="100%">
+</div>
+
 ## Choose Your Backend
 
 The backends are selected explicitly. If a required runtime is missing or unapproved, that backend reports diagnostics and stops; it never silently switches to another processor.

@@ -12,4 +12,6 @@ The pinned generic protocol reference is `third_party/ComfyUI-DLSS5-Enhancer` at
 
 The UI includes cached live CPU/RAM/GPU/VRAM metrics, persistent job progress and ETA, accessible setting help icons, and independent saved RTX VSR/DLSS5 settings. User presets are stored in gitignored `config/user_presets.json`; last-used settings are stored in gitignored `config/settings.local.json`. Neither file contains native binaries, runtime hashes, input paths, or video content.
 
+DLSS Super Resolution is shown as a separate capability, but is intentionally unavailable with the approved runtime. Its v4 protocol has no request that disables the DLSS5 Feature-18 addon, so the application never substitutes a resize, RTX VSR, or DLSS5 result.
+
 Manual checks: `conda run -n dlss-rtxsr-upscaler python -m pip check`, `conda run -n dlss-rtxsr-upscaler python -m pip_audit`, and `conda run -n dlss-rtxsr-upscaler python -m src.core.diagnostics`.

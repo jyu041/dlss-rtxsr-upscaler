@@ -19,6 +19,11 @@ DLSS5_TOOLTIPS = {
     "mask": "Enables the runtime automatic targeted mask. It gates the skin-specific processing path where supported; it does not guarantee face detection accuracy.",
 }
 
+DLSS_SR_TOOLTIPS = {
+    "scale": "Standalone DLSS Super Resolution would select native/DLAA or an upscale mode, but the approved worker currently exposes no SR-only protocol path.",
+    "model_preset": "Standalone SR model selection is not exposed because the approved worker always continues into its DLSS5 Feature-18 pass.",
+}
+
 
 def help_icon(text: str, label: str = "More information") -> str:
     return f'<span class="setting-help" tabindex="0" role="button" aria-label="{escape(label)}">&#9432;<span class="setting-tooltip">{escape(text)}</span></span>'

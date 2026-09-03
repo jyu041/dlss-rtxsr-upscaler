@@ -56,3 +56,10 @@ Gradio, NumPy, Pillow, psutil, setuptools, pytest, and pip-audit are pinned in `
 - The pinned standalone protocol reference is `Blueforcer/ComfyUI-DLSS5-Enhancer` at commit `796ed5927a202ba50b5c929cd08e16b365041162`, under `third_party/ComfyUI-DLSS5-Enhancer`. Only its generic `dlss5.*` protocol/session/settings/motion/diagnostic code is used; ComfyUI is not installed or imported.
 - Controlled local execution passed: protocol v4, 5 synthetic RGBA8 frames at 128x128, RTX 3070, clean exit, and signed Feature-18 evidence. DLSS5 status is now **EXPERIMENTAL READY** only after this result and exact hash revalidation.
 - Decision: **APPROVED FOR LOCAL EXPERIMENTAL USE** after manual review. This is not a claim that the files are completely safe; the closed-source worker and residual detections remain risks. The tracked approval record is `docs/DLSS5_APPROVAL.md`.
+
+## Standalone DLSS Super Resolution investigation
+
+- The approved worker client speaks protocol v4 with a header field for DLSS/DLAA performance-quality selection, but no field or command-line option to disable the RenoDX DLSS5 addon or its NGX Feature-18 evaluation.
+- The pinned client documents and logs the chain as DLSS/DLAA input followed by DLSS5 Neural Rendering. Its only self-test criterion is signed Feature-18 evidence. Therefore its 1x/1.5x/1.724x/2x/3x modes cannot establish standalone DLSS SR.
+- `src/backends/dlss_sr.py` reports this capability boundary as `FAILED SELFTEST` and refuses processing. `src/backends/dlss_sr_selftest.py` deliberately exits without launching the worker. No resize, RTX VSR, or DLSS5 fallback is exposed as SR.
+- A future SR-capable worker must be separately sourced, hash-approved, and tested before this backend can become available. No new runtime was downloaded or modified in this investigation.

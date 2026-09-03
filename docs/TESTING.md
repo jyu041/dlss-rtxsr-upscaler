@@ -10,4 +10,6 @@ This approved local run completed the DLSS5 synthetic matrix: protocol v4 Featur
 
 The UX test coverage includes 15 unit tests for progress/ETA, monitoring snapshots, tooltip coverage/escaping, and independent Unicode/corrupt-store preset handling. The real Gradio launch test passed (`2 passed`). Hardware progress coverage passed for both DLSS5 and RTX VSR. `pip check` reported no broken requirements; `pip-audit` reported no known vulnerabilities and could not audit the local CUDA Torch build because it is not published on PyPI.
 
+The standalone SR investigation is negative by design: `python -m src.backends.dlss_sr_selftest` exits nonzero without launching native code and reports that protocol v4 always runs the DLSS5 Feature-18 addon. This prevents a false standalone-SR success claim.
+
 This sprint's verified GPU run used an RTX 3070 and the official NVIDIA wheel: 90 frames, 320x240 to 640x480, 15.93 FPS, H.264 NVENC, and AAC audio preserved. The 1000-frame stability run is recorded in the sprint report when executed; measurements must not be inferred from this short run.

@@ -5,6 +5,7 @@ from src.core.config import load_settings, save_settings, load_presets
 from src.core.diagnostics import collect
 from src.backends.rtx_vsr import RTXVSRBackend
 from src.backends.dlss5 import DLSS5Backend
+from src.backends.dlss_sr import DLSSSRBackend
 from src.video.ffmpeg import preview_frame
 from src.core.paths import TEMP
 from src.core.paths import output_path
@@ -23,7 +24,7 @@ from src.video.dlss5 import render_dlss5
 os.environ.setdefault("GRADIO_ANALYTICS_ENABLED","False")
 CONTROLLER = JobController()
 def status_html():
-    d=collect(); return " | ".join(f"<b>{k.replace('_',' ').upper()}</b>: {v['state'] if isinstance(v,dict) else v}" for k,v in [("RTX VSR",d['rtx_vsr']),("DLSS5",d['dlss5']),("FFmpeg",d['ffmpeg'])])
+    d=collect(); return " | ".join(f"<b>{k.replace('_',' ').upper()}</b>: {v['state'] if isinstance(v,dict) else v}" for k,v in [("RTX VSR",d['rtx_vsr']),("DLSS SR",d['dlss_sr']),("DLSS5",d['dlss5']),("FFmpeg",d['ffmpeg'])])
 
 def _tip(mapping, key, label):
     return gr.HTML(help_html(mapping[key], label), show_label=False)
@@ -40,6 +41,9 @@ def inspect(path):
 def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model):
     if not path: return None, None, "Choose an input video."
     try:
+        if mode.startswith("DLSS SR"):
+            status = DLSSSRBackend().status()
+            return None, None, f"{status.name} {status.state}: {status.reason}"
         available = DLSS5Backend().status().available if mode.startswith("DLSS") else RTXVSRBackend().status().available
         if not available:
             return None, None, f"{mode} unavailable. No substitute processing was performed. Install and audit the genuine runtime first."
@@ -87,6 +91,8 @@ def _dlss_options(backend, dlss_scale, nrpreset, style, intensity, tone, structu
 
 def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, codec_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model):
     if not path: return None, "Choose an input video."
+    if processing_mode.startswith("DLSS SR"):
+        return None, "DLSS SR unavailable: " + DLSSSRBackend().status().reason
     if processing_mode == "DLSS 5 → RTX VSR": return None, "Combined full-video mode is deferred until a lossless in-memory bridge is implemented."
     job = None
     try:
@@ -108,6 +114,8 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
 
 def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, start_timestamp, duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model):
     if not path: return None, "Choose an input video."
+    if processing_mode.startswith("DLSS SR"):
+        return None, "DLSS SR unavailable: " + DLSSSRBackend().status().reason
     if processing_mode == "DLSS 5 → RTX VSR": return None, "Combined preview mode is deferred until a lossless bridge is implemented."
     job = None
     try:
@@ -144,7 +152,7 @@ def build():
                 inp = gr.Video(label="Input video")
                 info = gr.Textbox(label="Media inspection", lines=5, interactive=False)
                 state = gr.State()
-                mode = gr.Radio(["RTX VSR only", "DLSS 5 only", "DLSS 5 → RTX VSR"], value="DLSS 5 only", label="Processing order")
+                mode = gr.Radio(["RTX VSR only", "DLSS SR only", "DLSS 5 only", "DLSS 5 → RTX VSR"], value="DLSS 5 only", label="Processing order")
             with gr.Column(scale=1):
                 with gr.Tab("RTX Super Resolution"):
                     _tip(RTX_TOOLTIPS, "mode", "RTX VSR mode help")
@@ -192,6 +200,9 @@ def build():
                         dlss_delete = gr.Button("Delete")
                         dlss_reset = gr.Button("Reset")
                     dlss_message = gr.Markdown()
+                with gr.Tab("DLSS Super Resolution"):
+                    gr.Markdown("### Standalone DLSS Super Resolution\n**Unavailable in the approved runtime**\n\nThe v4 worker protocol exposes DLSS/DLAA only as the input path to the DLSS5 Neural Rendering addon. It has no SR-only request or Feature-18 disable switch. No resize, RTX VSR, or other fallback is used.")
+                    sr_status = gr.Markdown(DLSSSRBackend().status().reason)
                 with gr.Tab("Output"):
                     codec = gr.Dropdown(["H.264", "HEVC"], value="H.264", label="Codec")
                     container = gr.Dropdown(["MP4", "MKV", "MOV"], value="MP4", label="Container")

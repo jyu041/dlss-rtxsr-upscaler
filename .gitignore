@@ -11,6 +11,7 @@ temp/*
 !temp/.gitkeep
 logs/*
 !logs/.gitkeep
+logs/*.json
 runtime/*
 !runtime/.gitkeep
 !runtime/README.md

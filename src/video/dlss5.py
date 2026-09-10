@@ -9,6 +9,7 @@ from pathlib import Path
 
 from src.core.media_info import frame_total, probe
 from src.core.progress import report_progress
+from src.video.nvenc import format_preflight_failure, nvenc_preflight
 
 
 def render_dlss5(source, destination, backend, options, *, start=0.0, duration=None, codec="H.264", cancel=None, progress=None):
@@ -47,6 +48,9 @@ def render_dlss5(source, destination, backend, options, *, start=0.0, duration=N
         first, first_meta = next(rendered)
         output_height, output_width = first.shape[:2]
         encoder_name = {"H.264": "h264_nvenc", "HEVC": "hevc_nvenc", "AV1": "av1_nvenc"}[codec]
+        preflight = nvenc_preflight(codec, output_width, output_height)
+        if not preflight["available"]:
+            raise RuntimeError(format_preflight_failure(preflight))
         encoder = subprocess.Popen(
             ["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{output_width}x{output_height}", "-r", str(fps), "-i", "-", "-an", "-c:v", encoder_name, "-preset", "p5", "-cq", "19", str(video_only)],
             stdin=subprocess.PIPE,

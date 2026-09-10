@@ -20,6 +20,19 @@ Backend validation classes:
 - DLSS5: user-approved runtime, firewall check, protocol test, and signed
   Feature-18 evidence.
 
+DLSS5 diagnostics and the benchmark are explicit commands and are not part of
+pytest:
+
+```powershell
+python -m src.backends.dlss5_diagnostics
+python -m src.backends.dlss5_benchmark --frames 24 --warmup 4
+```
+
+The benchmark uses synthetic frames at 128x128 (contract reference),
+960x540, 1280x720, 1920x1080, and 2560x1440. Each case is isolated and has a
+bounded timeout. Use `DLSS5_HARDWARE_TEST=1` only for the existing integration
+regression tests, not for performance measurement.
+
 Use synthetic or owned media. Do not run unrestricted recursive pytest
 discovery when an extracted local runtime tree exists; target `tests`
 explicitly.

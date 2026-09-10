@@ -10,5 +10,13 @@ driver. If DLSS SR is unavailable, verify the native host, the approved
 the local approval manifest, all exact hashes, the signed Feature-18 evidence,
 and the worker's exact outbound Firewall block.
 
+For a passive DLSS5 report run `python -m src.backends.dlss5_diagnostics`.
+Use `--self-test` only when an approved runtime and compatible RTX hardware are
+already present. For measurements use
+`python -m src.backends.dlss5_benchmark`; it writes an ignored JSON report and
+continues after a timed-out resolution. An encoder error after a successful
+first Feature-18 output is reported as an FFmpeg/NVENC preflight failure, not
+as a DLSS5 failure. Inspect and redact local paths before sharing reports.
+
 The application does not download replacement runtimes or silently switch
 backends. The DLSS paths are SDR-oriented and do not promise HDR preservation.

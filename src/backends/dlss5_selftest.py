@@ -104,7 +104,7 @@ def main() -> int:
         if not feature.get("verified"):
             raise RuntimeError("Feature-18 verification did not succeed")
         render_seconds = sum(submit_times)
-        warmup_seconds = submit_times[0] if submit_times else 0.0
+        first_submit_seconds = submit_times[0] if submit_times else 0.0
         result = {
             "runtime_approved": True,
             "runtime_hashes_verified": True,
@@ -133,7 +133,7 @@ def main() -> int:
             "new_runtime_files": sorted(_files(runtime) - before),
             "runtime_validation_seconds": round(runtime_validation_seconds, 6),
             "session_initialization_seconds": round(session_initialization_seconds, 6),
-            "warmup_seconds": round(warmup_seconds, 6),
+            "first_submit_seconds": round(first_submit_seconds, 6),
             "render_seconds": round(render_seconds, 6),
             "submit_roundtrip_seconds": round(render_seconds, 6),
             "total_seconds": round(time.perf_counter() - started, 6),

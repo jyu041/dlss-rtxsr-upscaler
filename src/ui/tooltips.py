@@ -9,6 +9,7 @@ RTX_TOOLTIPS = {
 DLSS5_TOOLTIPS = {
     "builtin_preset": "Built-in application preset that fills the DLSS5 controls. It is separate from named user settings.",
     "scale": "Neural Rendering output scale: 1.0x is native/DLAA-style, 1.5x Quality, approximately 1.724x Balanced, 2.0x Performance, and 3.0x Ultra Performance. Higher scales are substantially slower on RTX 30.",
+    "working_scale": "Experimental. Runs optical flow and Neural Rendering at a smaller resolution, then applies the neural residual to the native frame. This is separate from DLSS output scale and currently requires 1.0x output.",
     "nr_preset": "Selects the Neural Rendering profile exposed by the runtime. Preset #1, #2, and #3 are runtime profiles; no universal quality ranking is assumed.",
     "nr_style": "Rendering character. Natural is more restrained; Cinematic applies a stronger stylized response; Default leaves the runtime choice active.",
     "model_preset": "NVIDIA model-preset hint affecting fine detail, temporal behavior, and reconstruction. Default is the safest general choice.",

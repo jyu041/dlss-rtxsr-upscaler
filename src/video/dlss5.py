@@ -12,7 +12,7 @@ from src.core.progress import report_progress
 from src.video.nvenc import format_preflight_failure, nvenc_preflight
 
 
-def render_dlss5(source, destination, backend, options, *, start=0.0, duration=None, codec="H.264", cancel=None, progress=None):
+def render_dlss5(source, destination, backend, options, *, start=0.0, duration=None, codec="H.264", cancel=None, progress=None, nr_working_scale=1.0):
     info = probe(str(source))
     width, height, fps = int(info["width"]), int(info["height"]), float(info["fps"])
     frame_count, estimated = frame_total(info, duration)
@@ -44,7 +44,7 @@ def render_dlss5(source, destination, backend, options, *, start=0.0, duration=N
                 import numpy as np
                 yield np.frombuffer(raw_frame, dtype=np.uint8).reshape(height, width, 4).copy()
 
-        rendered = backend.process_frames(frames(), width=width, height=height, frame_count=session_frame_count, options=options, cancel=cancel)
+        rendered = backend.process_frames(frames(), width=width, height=height, frame_count=session_frame_count, options=options, cancel=cancel, nr_working_scale=nr_working_scale)
         first, first_meta = next(rendered)
         output_height, output_width = first.shape[:2]
         encoder_name = {"H.264": "h264_nvenc", "HEVC": "hevc_nvenc", "AV1": "av1_nvenc"}[codec]

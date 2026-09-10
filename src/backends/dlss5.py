@@ -7,10 +7,13 @@ import json
 import os
 import subprocess
 import sys
+import time
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from .base import Backend, BackendStatus
+from .dlss5_recompose import compute_working_dimensions, downsample_for_nr, residual_recompose, validate_nr_working_scale
 
 ROOT = Path(__file__).resolve().parents[2]
 APPROVAL = ROOT / "runtime" / "dlss5-v3" / "approval.json"
@@ -22,6 +25,14 @@ REQUIRED_HASHES = {
     "dxgi_sha256": ("dxgi.dll",),
     "dlss_sha256": ("nvngx_dlss.dll",),
 }
+
+
+def validate_working_scale_for_options(options, scale: float) -> float:
+    """Validate the independent NR working scale/output-scale restriction."""
+    value = validate_nr_working_scale(scale)
+    if value < 1.0 and abs(options.upscaling_factor - 1.0) >= 1e-9:
+        raise ValueError("Reduced DLSS5 NR working resolution currently requires DLSS5 output scale 1.0x.")
+    return value
 
 
 def _sha256(path: Path) -> str:
@@ -192,7 +203,7 @@ class DLSS5Backend(Backend):
 
         return DlssOptions.create(**values)
 
-    def process_frame(self, rgba, *, options=None):
+    def process_frame(self, rgba, *, options=None, nr_working_scale=1.0):
         """Process one HWC uint8 RGB/RGBA frame through Feature 18."""
         self._require_ready()
         import numpy as np
@@ -208,24 +219,35 @@ class DLSS5Backend(Backend):
         if frame.shape[2] == 3:
             frame = np.concatenate((frame, np.full((*frame.shape[:2], 1), 255, dtype=np.uint8)), axis=2)
         options = options or self.options(upscaling_mode=1.0)
-        with DlssSession(self.layout, options, input_width=frame.shape[1], input_height=frame.shape[0], frame_count=1) as session:
-            source = fit_frame(frame, session.render_width, session.render_height)
+        scale = validate_working_scale_for_options(options, nr_working_scale)
+        native = frame
+        working_width, working_height = compute_working_dimensions(frame.shape[1], frame.shape[0], scale)
+        session_options = options if scale == 1.0 else self.options(**{**asdict(options), "upscaling_mode": 1.0})
+        with DlssSession(self.layout, session_options, input_width=working_width if scale < 1.0 else frame.shape[1], input_height=working_height if scale < 1.0 else frame.shape[0], frame_count=1) as session:
+            source = fit_frame(native, session.render_width, session.render_height) if scale == 1.0 else downsample_for_nr(native, working_width, working_height)
             guide = TemporalGuide(session.render_width, session.render_height, enabled=False)
             motion = guide.process(source)
             output, _ = session.submit(index=0, rgba=source, motion=motion.motion, reset=True, pts=0)
         session.feature_report()
-        return output
+        return output if scale == 1.0 else residual_recompose(native, source, output)
 
-    def process_frames(self, frames, *, width, height, frame_count, options=None, cancel=None):
+    def process_frames(self, frames, *, width, height, frame_count, options=None, cancel=None, nr_working_scale=1.0, telemetry=None):
         """Yield temporally processed RGBA frames from one owned worker session."""
         self._require_ready()
+        import numpy as np
         _client_root()
         from dlss5.imaging import fit_frame
         from dlss5.motion import TemporalGuide
         from dlss5.session import DlssSession
 
+        scale = validate_working_scale_for_options(options or self.options(upscaling_mode=1.0), nr_working_scale)
         options = options or self.options(upscaling_mode=1.0, motion_mode="optical_flow")
-        with DlssSession(self.layout, options, input_width=width, input_height=height, frame_count=frame_count) as session:
+        working_width, working_height = compute_working_dimensions(width, height, scale)
+        session_options = options if scale == 1.0 else self.options(**{**asdict(options), "upscaling_mode": 1.0})
+        session_started = time.perf_counter()
+        with DlssSession(self.layout, session_options, input_width=working_width if scale < 1.0 else width, input_height=working_height if scale < 1.0 else height, frame_count=frame_count) as session:
+            if telemetry is not None:
+                telemetry["session_initialization_ms"] = (time.perf_counter() - session_started) * 1000
             guide = TemporalGuide(
                 session.render_width,
                 session.render_height,
@@ -236,12 +258,31 @@ class DLSS5Backend(Backend):
             for index, frame in enumerate(frames):
                 if cancel is not None and cancel.is_set():
                     raise InterruptedError("DLSS5 render cancelled")
-                source = fit_frame(frame, session.render_width, session.render_height)
+                native = np.asarray(frame, dtype=np.uint8)
+                loop_started = time.perf_counter()
+                preprocess_started = time.perf_counter()
+                source = fit_frame(native, session.render_width, session.render_height) if scale == 1.0 else downsample_for_nr(native, working_width, working_height)
+                preprocess_ms = (time.perf_counter() - preprocess_started) * 1000
+                motion_started = time.perf_counter()
                 motion = guide.process(source)
+                motion_ms = (time.perf_counter() - motion_started) * 1000
+                submit_started = time.perf_counter()
                 output, pts = session.submit(index=index, rgba=source, motion=motion.motion, reset=motion.reset, pts=index)
-                yield output, {"index": index, "pts": pts, "reset": motion.reset, "scene_score": motion.scene_score}
+                feature_submit_ms = (time.perf_counter() - submit_started) * 1000
+                motion_plus_submit_ms = (time.perf_counter() - motion_started) * 1000
+                recompose_started = time.perf_counter()
+                final = output if scale == 1.0 else residual_recompose(native, source, output)
+                recompose_ms = (time.perf_counter() - recompose_started) * 1000
+                processing_loop_ms = (time.perf_counter() - loop_started) * 1000
+                metadata = {"index": index, "pts": pts, "reset": motion.reset, "scene_score": motion.scene_score, "native_dimensions": [width, height], "working_dimensions": [working_width, working_height], "nr_working_scale": scale, "preprocess_ms": preprocess_ms, "motion_ms": motion_ms, "feature_submit_ms": feature_submit_ms, "motion_plus_submit_ms": motion_plus_submit_ms, "recompose_ms": recompose_ms, "processing_loop_ms": processing_loop_ms}
+                if telemetry is not None:
+                    telemetry.setdefault("frames", []).append(metadata)
+                yield final, metadata
             session.close()
             feature = session.feature_report()
+            if telemetry is not None:
+                telemetry["feature_18_verified"] = bool(feature.get("verified"))
+                telemetry["feature_18_evidence"] = feature.get("evidence")
             if not feature.get("verified"):
                 raise RuntimeError("DLSS5 Feature-18 verification failed after temporal render")
 

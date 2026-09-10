@@ -18,5 +18,10 @@ continues after a timed-out resolution. An encoder error after a successful
 first Feature-18 output is reported as an FFmpeg/NVENC preflight failure, not
 as a DLSS5 failure. Inspect and redact local paths before sharing reports.
 
+If reduced NR is selected with a DLSS5 output scale other than 1.0x, the job is
+rejected intentionally. Select `100% (Native)` NR working resolution or change
+the DLSS5 output scale to 1.0x. Reduced working resolution changes the internal
+motion/Feature-18 workload, not the final video dimensions.
+
 The application does not download replacement runtimes or silently switch
 backends. The DLSS paths are SDR-oriented and do not promise HDR preservation.

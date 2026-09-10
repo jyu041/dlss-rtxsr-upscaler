@@ -17,8 +17,8 @@ import numpy as np
 
 from .dlss5 import DLSS5Backend, ROOT
 from .dlss5_diagnostics import collect
-from .dlss5_metrics import effect_metrics, effect_observed, statistics
-from .dlss5_recompose import compute_working_dimensions, validate_nr_working_scale
+from .dlss5_metrics import comparison_metrics, effect_metrics, effect_observed, statistics
+from .dlss5_recompose import compute_working_dimensions, residual_recompose_cpu, validate_nr_working_scale
 
 DEFAULT_RESOLUTIONS = ((128, 128), (960, 540), (1280, 720), (1920, 1080), (2560, 1440))
 
@@ -89,7 +89,7 @@ def _stage_stats(metadata: list[dict[str, Any]], name: str) -> dict[str, float |
     return statistics([float(item[name]) for item in metadata])
 
 
-def run_case(width: int, height: int, scale: float, warmup: int, frames: int) -> dict[str, Any]:
+def run_case(width: int, height: int, scale: float, warmup: int, frames: int, recompose_backend: str = "auto") -> dict[str, Any]:
     backend = DLSS5Backend()
     scale = validate_nr_working_scale(scale)
     working = compute_working_dimensions(width, height, scale)
@@ -102,13 +102,13 @@ def run_case(width: int, height: int, scale: float, warmup: int, frames: int) ->
     sampler = _VramSampler()
     rendered = None
     try:
-        rendered = backend.process_frames(native_frames, width=width, height=height, frame_count=len(native_frames), options=options, nr_working_scale=scale, telemetry=telemetry)
+        telemetry["capture_compositor_samples"] = True
+        rendered = backend.process_frames(native_frames, width=width, height=height, frame_count=len(native_frames), options=options, nr_working_scale=scale, telemetry=telemetry, recompose_backend=recompose_backend)
         first = next(rendered)
         after_init = _vram_mib()
         sampler.start()
         results = [first, *rendered]
         peak = sampler.stop()
-        feature = telemetry.get("feature", {})
         metadata = [item[1] for item in results]
         if len(results) != len(native_frames):
             return {"status": "FAILED", "native_resolution": [width, height], "working_scale": scale, "working_resolution": list(working), "reason": "Unexpected frame count"}
@@ -121,7 +121,12 @@ def run_case(width: int, height: int, scale: float, warmup: int, frames: int) ->
         if not valid:
             return {"status": "FAILED", "native_resolution": [width, height], "working_scale": scale, "working_resolution": list(working), "reason": "Feature-18, output shape, or worker validation failed"}
         effect_mae = mean([item["mean_absolute_difference"] for item in effects]) if effects else 0.0
-        return {"status": "PASS", "native_resolution": [width, height], "working_scale": scale, "working_resolution": list(working), "session_initialization_ms": telemetry.get("session_initialization_ms"), "warmup_total_ms": sum(item["processing_loop_ms"] for item in metadata[:warmup]), "warmup_average_ms": mean([item["processing_loop_ms"] for item in metadata[:warmup]]) if warmup else 0.0, "feature_submit_mean_ms": feature_stats["mean_ms"], "feature_submit_median_ms": feature_stats["median_ms"], "feature_submit_p95_ms": feature_stats["p95_ms"], "feature_submit_min_ms": feature_stats["min_ms"], "feature_submit_max_ms": feature_stats["max_ms"], "feature_submit_fps": 1000 / feature_stats["mean_ms"] if feature_stats["mean_ms"] else None, "motion_mean_ms": motion_stats["mean_ms"], "motion_median_ms": motion_stats["median_ms"], "motion_p95_ms": motion_stats["p95_ms"], "motion_plus_submit_mean_ms": combined_stats["mean_ms"], "motion_plus_submit_median_ms": combined_stats["median_ms"], "motion_plus_submit_p95_ms": combined_stats["p95_ms"], "motion_plus_submit_fps": 1000 / combined_stats["mean_ms"] if combined_stats["mean_ms"] else None, "preprocess_mean_ms": _stage_stats(metadata[warmup:], "preprocess_ms")["mean_ms"], "recompose_mean_ms": _stage_stats(metadata[warmup:], "recompose_ms")["mean_ms"], "processing_loop_mean_ms": loop_stats["mean_ms"], "processing_loop_median_ms": loop_stats["median_ms"], "processing_loop_p95_ms": loop_stats["p95_ms"], "processing_loop_fps": 1000 / loop_stats["mean_ms"] if loop_stats["mean_ms"] else None, "vram_before_mib": before, "vram_after_init_mib": after_init, "vram_peak_mib": peak, "vram_delta_peak_mib": peak - before if peak is not None and before is not None else None, "effect_metrics": effects, "effect_mae": effect_mae, "nr_effect_observed": any(effect_observed(item) for item in effects), "feature_18_evidence": telemetry.get("feature_18_evidence")}
+        parity = []
+        for sample in telemetry.get("compositor_samples", []):
+            parity.append(comparison_metrics(residual_recompose_cpu(sample["native"], sample["source"], sample["nr"]), sample["cuda"]))
+        parity_summary = {"cpu_cuda_mae": mean(item["mae"] for item in parity) if parity else None, "cpu_cuda_rmse": mean(item["rmse"] for item in parity) if parity else None, "cpu_cuda_max_error": max(item["max_error"] for item in parity) if parity else None, "cpu_cuda_changed_pixel_ratio": mean(item["changed_pixel_ratio"] for item in parity) if parity else None, "cpu_cuda_psnr_db": mean(item["psnr_db"] for item in parity if item["psnr_db"] is not None) if parity and any(item["psnr_db"] is not None for item in parity) else None, "cpu_cuda_identical": bool(parity) and all(item["identical"] for item in parity)}
+        used = "bypassed" if scale == 1.0 else telemetry.get("recompose_backend_used", recompose_backend)
+        return {"status": "PASS", "native_resolution": [width, height], "working_scale": scale, "working_resolution": list(working), "recompose_backend_requested": "bypassed" if scale == 1.0 else recompose_backend, "recompose_backend_used": used, "recompose_fallback_reason": telemetry.get("recompose_fallback_reason"), "session_initialization_ms": telemetry.get("session_initialization_ms"), "cuda_compositor_initialization_ms": telemetry.get("cuda_compositor_initialization_ms"), "warmup_total_ms": sum(item["processing_loop_ms"] for item in metadata[:warmup]), "warmup_average_ms": mean([item["processing_loop_ms"] for item in metadata[:warmup]]) if warmup else 0.0, "feature_submit_mean_ms": feature_stats["mean_ms"], "feature_submit_median_ms": feature_stats["median_ms"], "feature_submit_p95_ms": feature_stats["p95_ms"], "feature_submit_min_ms": feature_stats["min_ms"], "feature_submit_max_ms": feature_stats["max_ms"], "feature_submit_fps": 1000 / feature_stats["mean_ms"] if feature_stats["mean_ms"] else None, "motion_mean_ms": motion_stats["mean_ms"], "motion_median_ms": motion_stats["median_ms"], "motion_p95_ms": motion_stats["p95_ms"], "motion_plus_submit_mean_ms": combined_stats["mean_ms"], "motion_plus_submit_median_ms": combined_stats["median_ms"], "motion_plus_submit_p95_ms": combined_stats["p95_ms"], "motion_plus_submit_fps": 1000 / combined_stats["mean_ms"] if combined_stats["mean_ms"] else None, "preprocess_mean_ms": _stage_stats(metadata[warmup:], "preprocess_ms")["mean_ms"], "recompose_mean_ms": _stage_stats(metadata[warmup:], "recompose_ms")["mean_ms"], "recompose_wall_mean_ms": _stage_stats(metadata[warmup:], "recompose_wall_ms")["mean_ms"], "processing_loop_mean_ms": loop_stats["mean_ms"], "processing_loop_median_ms": loop_stats["median_ms"], "processing_loop_p95_ms": loop_stats["p95_ms"], "processing_loop_fps": 1000 / loop_stats["mean_ms"] if loop_stats["mean_ms"] else None, "vram_before_mib": before, "vram_after_init_mib": after_init, "vram_peak_mib": peak, "vram_delta_peak_mib": peak - before if peak is not None and before is not None else None, "effect_metrics": effects, "effect_mae": effect_mae, "nr_effect_observed": any(effect_observed(item) for item in effects), "cuda_h2d_mean_ms": _stage_stats(metadata[warmup:], "gpu_h2d_ms")["mean_ms"] if used == "cuda" else None, "cuda_residual_compute_mean_ms": _stage_stats(metadata[warmup:], "gpu_residual_compute_ms")["mean_ms"] if used == "cuda" else None, "cuda_d2h_mean_ms": _stage_stats(metadata[warmup:], "gpu_d2h_ms")["mean_ms"] if used == "cuda" else None, "cuda_total_mean_ms": _stage_stats(metadata[warmup:], "gpu_total_ms")["mean_ms"] if used == "cuda" else None, "cuda_total_p95_ms": _stage_stats(metadata[warmup:], "gpu_total_ms")["p95_ms"] if used == "cuda" else None, "pytorch_allocator": telemetry.get("cuda_allocator"), "cpu_cuda_parity": parity, **parity_summary, "feature_18_evidence": telemetry.get("feature_18_evidence")}
     finally:
         if sampler._thread is not None:
             sampler.stop()
@@ -158,6 +163,7 @@ def main() -> int:
     parser.add_argument("--warmup", type=int, default=4)
     parser.add_argument("--resolutions", default=",".join(f"{w}x{h}" for w, h in DEFAULT_RESOLUTIONS))
     parser.add_argument("--working-scales", default="1.0")
+    parser.add_argument("--recompose-backends", default="auto", choices=("auto", "cpu", "cuda"))
     parser.add_argument("--timeout", type=float, default=180.0)
     parser.add_argument("--case", help=argparse.SUPPRESS)
     args = parser.parse_args()
@@ -167,7 +173,7 @@ def main() -> int:
         width, height = parse_resolutions(args.case)[0]
         scale = parse_working_scales(args.working_scales)[0]
         try:
-            print(json.dumps(run_case(width, height, scale, args.warmup, args.frames), separators=(",", ":")))
+            print(json.dumps(run_case(width, height, scale, args.warmup, args.frames, args.recompose_backends), separators=(",", ":")))
             return 0
         except Exception as exc:
             print(json.dumps({"status": "FAILED", "reason": str(exc), "native_resolution": [width, height], "working_scale": scale}))
@@ -179,19 +185,21 @@ def main() -> int:
     cases = []
     for width, height in parse_resolutions(args.resolutions):
         for scale in parse_working_scales(args.working_scales):
-            command = [sys.executable, "-m", "src.backends.dlss5_benchmark", "--case", f"{width}x{height}", "--frames", str(args.frames), "--warmup", str(args.warmup), "--working-scales", str(scale)]
-            child = subprocess.Popen(command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            try:
-                stdout, stderr = child.communicate(timeout=args.timeout)
+            selected_backends = ("bypassed",) if scale == 1.0 else (args.recompose_backends,)
+            for selected_backend in selected_backends:
+                command = [sys.executable, "-m", "src.backends.dlss5_benchmark", "--case", f"{width}x{height}", "--frames", str(args.frames), "--warmup", str(args.warmup), "--working-scales", str(scale), "--recompose-backends", "auto" if selected_backend == "bypassed" else selected_backend]
+                child = subprocess.Popen(command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 try:
-                    case = json.loads(stdout.strip().splitlines()[-1])
-                except (ValueError, IndexError):
-                    case = {"status": "FAILED", "reason": stderr[-2000:] or "Invalid child benchmark result", "native_resolution": [width, height], "working_scale": scale}
-            except subprocess.TimeoutExpired:
-                _kill_owned_tree(child.pid)
-                case = {"status": "TIMEOUT", "reason": f"case exceeded {args.timeout:g}s", "native_resolution": [width, height], "working_scale": scale, "working_resolution": list(compute_working_dimensions(width, height, scale))}
-            cases.append(case)
-            print(f"{width}x{height} scale={scale:g} {case.get('status','FAILED'):<10} work={case.get('working_resolution','-')} feature_fps={case.get('feature_submit_fps','-')} loop_fps={case.get('processing_loop_fps','-')} median={case.get('processing_loop_median_ms','-')} p95={case.get('processing_loop_p95_ms','-')} motion={case.get('motion_mean_ms','-')} vram={case.get('vram_peak_mib','-')} effect={case.get('nr_effect_observed','-')}")
+                    stdout, stderr = child.communicate(timeout=args.timeout)
+                    try:
+                        case = json.loads(stdout.strip().splitlines()[-1])
+                    except (ValueError, IndexError):
+                        case = {"status": "FAILED", "reason": stderr[-2000:] or "Invalid child benchmark result", "native_resolution": [width, height], "working_scale": scale, "recompose_backend_requested": selected_backend}
+                except subprocess.TimeoutExpired:
+                    _kill_owned_tree(child.pid)
+                    case = {"status": "TIMEOUT", "reason": f"case exceeded {args.timeout:g}s", "native_resolution": [width, height], "working_scale": scale, "working_resolution": list(compute_working_dimensions(width, height, scale)), "recompose_backend_requested": selected_backend}
+                cases.append(case)
+                print(f"{width}x{height} scale={scale:g} backend={selected_backend} {case.get('status','FAILED'):<10} work={case.get('working_resolution','-')} feature_fps={case.get('feature_submit_fps','-')} loop_fps={case.get('processing_loop_fps','-')} median={case.get('processing_loop_median_ms','-')} p95={case.get('processing_loop_p95_ms','-')} motion={case.get('motion_mean_ms','-')} vram={case.get('vram_peak_mib','-')} effect={case.get('nr_effect_observed','-')}")
     native_cases = {(tuple(case.get("native_resolution", [])), case.get("working_scale")): case for case in cases if case.get("status") == "PASS"}
     for case in cases:
         if case.get("status") == "PASS":
@@ -199,7 +207,7 @@ def main() -> int:
             case["effect_mae_ratio_vs_native"] = case["effect_mae"] / native["effect_mae"] if native and native.get("effect_mae") else None
     valid = [case for case in cases if case.get("status") == "PASS" and case.get("nr_effect_observed")]
     fastest = min(valid, key=lambda c: c.get("processing_loop_mean_ms", float("inf"))) if valid else None
-    report = {"schema_version": 2, "timestamp": datetime.now(timezone.utc).isoformat(), "git_commit": _commit(), "system": environment["application"], "gpu": environment["gpu"], "driver": environment["gpu"].get("driver_version"), "runtime": {"directory": environment["runtime_directory"], "files": environment["runtime_files"], "actual_sha256": environment["actual_sha256"], "expected_sha256": environment["expected_sha256"], "hash_match": environment["hash_match"]}, "benchmark_settings": {"resolutions": args.resolutions, "working_scales": parse_working_scales(args.working_scales), "warmup": args.warmup, "frames": args.frames, "timeout_seconds": args.timeout}, "cases": cases, "summary": {"fastest_valid_case": {"native_resolution": fastest["native_resolution"], "working_scale": fastest["working_scale"], "working_resolution": fastest["working_resolution"]} if fastest else None, "highest_valid_resolution": max(valid, key=lambda c: c["native_resolution"][0]).get("native_resolution") if valid else None, "failed_cases": [c.get("native_resolution") for c in cases if c.get("status") == "FAILED"], "timed_out_cases": [c.get("native_resolution") for c in cases if c.get("status") == "TIMEOUT"]}}
+    report = {"schema_version": 3, "timestamp": datetime.now(timezone.utc).isoformat(), "git_commit": _commit(), "system": environment["application"], "gpu": environment["gpu"], "driver": environment["gpu"].get("driver_version"), "runtime": {"directory": environment["runtime_directory"], "files": environment["runtime_files"], "actual_sha256": environment["actual_sha256"], "expected_sha256": environment["expected_sha256"], "hash_match": environment["hash_match"]}, "benchmark_settings": {"resolutions": args.resolutions, "working_scales": parse_working_scales(args.working_scales), "recompose_backends": args.recompose_backends, "warmup": args.warmup, "frames": args.frames, "timeout_seconds": args.timeout}, "cases": cases, "summary": {"fastest_valid_case": {"native_resolution": fastest["native_resolution"], "working_scale": fastest["working_scale"], "working_resolution": fastest["working_resolution"], "recompose_backend": fastest.get("recompose_backend_used")} if fastest else None, "highest_valid_resolution": max(valid, key=lambda c: c["native_resolution"][0]).get("native_resolution") if valid else None, "failed_cases": [c.get("native_resolution") for c in cases if c.get("status") == "FAILED"], "timed_out_cases": [c.get("native_resolution") for c in cases if c.get("status") == "TIMEOUT"]}}
     path = ROOT / "logs" / f"dlss5-benchmark-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
     path.parent.mkdir(exist_ok=True)
     path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

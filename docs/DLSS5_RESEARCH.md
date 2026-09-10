@@ -32,6 +32,16 @@ values measure the magnitude of the neural edit, not image quality. Future
 research will evaluate this speed/fidelity tradeoff; decoder/encoder pipelining
 is not part of this sprint.
 
+At 1080p/50%, CPU residual recomposition was approximately 55 ms and became
+the dominant bottleneck. CUDA recomposition is now available through PyTorch:
+the CPU compositor remains the correctness reference and fallback. CUDA Event
+measurements describe device H2D, compute, D2H, and total timelines; wall time
+also includes host staging, dispatch, synchronization, and ownership copies.
+PyTorch allocator values cover only PyTorch allocations, while whole-GPU
+`nvidia-smi` values include the Feature-18 worker and other processes. No GPU
+resource sharing with the community runtime is attempted. 100% NR bypasses
+recomposition completely, and CPU/GPU frame overlap remains future work.
+
 ## Commands
 
 ```powershell

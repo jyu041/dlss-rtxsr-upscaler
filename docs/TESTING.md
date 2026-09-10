@@ -27,6 +27,7 @@ pytest:
 python -m src.backends.dlss5_diagnostics
 python -m src.backends.dlss5_benchmark --frames 24 --warmup 4
 python -m src.backends.dlss5_benchmark --resolutions 1920x1080 --working-scales 1,0.75,0.6666666667,0.5 --frames 24 --warmup 4
+python -m src.backends.dlss5_benchmark --resolutions 1920x1080 --working-scales 0.75,0.6666666667,0.5 --recompose-backends cpu --frames 24 --warmup 4
 ```
 
 The benchmark uses synthetic frames at 128x128 (contract reference),
@@ -39,6 +40,11 @@ submit and processing-loop FPS include the serial work used by the production
 backend. Reduced NR runs motion and Feature 18 at the working resolution, then
 recomposes the residual onto the native frame; it currently requires output
 scale 1.0x.
+
+Use `--recompose-backends cuda` for the PyTorch CUDA compositor or `auto` for
+CUDA preference with initialization-time CPU fallback. CUDA-specific tests skip
+when CUDA is unavailable. CUDA timings are device-event timings; wall-clock
+recomposition remains the authoritative latency measurement.
 
 Use synthetic or owned media. Do not run unrestricted recursive pytest
 discovery when an extracted local runtime tree exists; target `tests`

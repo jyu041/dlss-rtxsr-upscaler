@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import Backend, BackendStatus
-from .dlss5_recompose import compute_working_dimensions, downsample_for_nr, residual_recompose, validate_nr_working_scale
+from .dlss5_recompose import compute_working_dimensions, downsample_for_nr, residual_recompose_cpu, validate_nr_working_scale
 
 ROOT = Path(__file__).resolve().parents[2]
 APPROVAL = ROOT / "runtime" / "dlss5-v3" / "approval.json"
@@ -32,6 +32,12 @@ def validate_working_scale_for_options(options, scale: float) -> float:
     value = validate_nr_working_scale(scale)
     if value < 1.0 and abs(options.upscaling_factor - 1.0) >= 1e-9:
         raise ValueError("Reduced DLSS5 NR working resolution currently requires DLSS5 output scale 1.0x.")
+    return value
+
+
+def _validate_recompose_backend(value: str) -> str:
+    if value not in {"auto", "cuda", "cpu"}:
+        raise ValueError("recompose_backend must be auto, cuda, or cpu")
     return value
 
 
@@ -203,7 +209,7 @@ class DLSS5Backend(Backend):
 
         return DlssOptions.create(**values)
 
-    def process_frame(self, rgba, *, options=None, nr_working_scale=1.0):
+    def process_frame(self, rgba, *, options=None, nr_working_scale=1.0, recompose_backend="auto", telemetry=None):
         """Process one HWC uint8 RGB/RGBA frame through Feature 18."""
         self._require_ready()
         import numpy as np
@@ -220,6 +226,7 @@ class DLSS5Backend(Backend):
             frame = np.concatenate((frame, np.full((*frame.shape[:2], 1), 255, dtype=np.uint8)), axis=2)
         options = options or self.options(upscaling_mode=1.0)
         scale = validate_working_scale_for_options(options, nr_working_scale)
+        requested_backend = _validate_recompose_backend(recompose_backend)
         native = frame
         working_width, working_height = compute_working_dimensions(frame.shape[1], frame.shape[0], scale)
         session_options = options if scale == 1.0 else self.options(**{**asdict(options), "upscaling_mode": 1.0})
@@ -229,9 +236,36 @@ class DLSS5Backend(Backend):
             motion = guide.process(source)
             output, _ = session.submit(index=0, rgba=source, motion=motion.motion, reset=True, pts=0)
         session.feature_report()
-        return output if scale == 1.0 else residual_recompose(native, source, output)
+        if scale == 1.0:
+            return output
+        try:
+            compositor = self._create_compositor(requested_backend, frame.shape[1], frame.shape[0], working_width, working_height)
+        except Exception:
+            if requested_backend == "auto":
+                if telemetry is not None:
+                    telemetry["recompose_backend_requested"] = requested_backend
+                    telemetry["recompose_backend_used"] = "cpu"
+                    telemetry["recompose_fallback_reason"] = "No usable CUDA compositor"
+                return residual_recompose_cpu(native, source, output)
+            raise
+        if compositor is None:
+            if telemetry is not None:
+                telemetry["recompose_backend_requested"] = requested_backend
+                telemetry["recompose_backend_used"] = "cpu"
+            return residual_recompose_cpu(native, source, output)
+        try:
+            result, composition_telemetry = compositor.compose(native, source, output)
+            if telemetry is not None:
+                telemetry.update(composition_telemetry)
+                telemetry["recompose_backend_requested"] = requested_backend
+                telemetry["recompose_backend_used"] = "cuda"
+            return result
+        except Exception:
+            raise
+        finally:
+            compositor.close()
 
-    def process_frames(self, frames, *, width, height, frame_count, options=None, cancel=None, nr_working_scale=1.0, telemetry=None):
+    def process_frames(self, frames, *, width, height, frame_count, options=None, cancel=None, nr_working_scale=1.0, telemetry=None, recompose_backend="auto"):
         """Yield temporally processed RGBA frames from one owned worker session."""
         self._require_ready()
         import numpy as np
@@ -242,12 +276,29 @@ class DLSS5Backend(Backend):
 
         scale = validate_working_scale_for_options(options or self.options(upscaling_mode=1.0), nr_working_scale)
         options = options or self.options(upscaling_mode=1.0, motion_mode="optical_flow")
+        requested_backend = _validate_recompose_backend(recompose_backend)
         working_width, working_height = compute_working_dimensions(width, height, scale)
         session_options = options if scale == 1.0 else self.options(**{**asdict(options), "upscaling_mode": 1.0})
         session_started = time.perf_counter()
         with DlssSession(self.layout, session_options, input_width=working_width if scale < 1.0 else width, input_height=working_height if scale < 1.0 else height, frame_count=frame_count) as session:
             if telemetry is not None:
                 telemetry["session_initialization_ms"] = (time.perf_counter() - session_started) * 1000
+            compositor = None
+            if scale < 1.0:
+                compositor_started = time.perf_counter()
+                try:
+                    compositor = self._create_compositor(requested_backend, width, height, working_width, working_height)
+                except Exception as exc:
+                    if requested_backend == "auto":
+                        if telemetry is not None:
+                            telemetry["recompose_fallback_reason"] = str(exc)
+                        compositor = None
+                    else:
+                        raise
+                if telemetry is not None:
+                    telemetry["cuda_compositor_initialization_ms"] = (time.perf_counter() - compositor_started) * 1000 if compositor is not None else None
+                    telemetry["recompose_backend_requested"] = requested_backend
+                    telemetry["recompose_backend_used"] = "cuda" if compositor is not None else "cpu"
             guide = TemporalGuide(
                 session.render_width,
                 session.render_height,
@@ -271,10 +322,24 @@ class DLSS5Backend(Backend):
                 feature_submit_ms = (time.perf_counter() - submit_started) * 1000
                 motion_plus_submit_ms = (time.perf_counter() - motion_started) * 1000
                 recompose_started = time.perf_counter()
-                final = output if scale == 1.0 else residual_recompose(native, source, output)
+                cuda_telemetry = {}
+                if scale == 1.0:
+                    final = output
+                elif compositor is None:
+                    final = residual_recompose_cpu(native, source, output)
+                else:
+                    final, cuda_telemetry = compositor.compose(native, source, output)
                 recompose_ms = (time.perf_counter() - recompose_started) * 1000
                 processing_loop_ms = (time.perf_counter() - loop_started) * 1000
-                metadata = {"index": index, "pts": pts, "reset": motion.reset, "scene_score": motion.scene_score, "native_dimensions": [width, height], "working_dimensions": [working_width, working_height], "nr_working_scale": scale, "preprocess_ms": preprocess_ms, "motion_ms": motion_ms, "feature_submit_ms": feature_submit_ms, "motion_plus_submit_ms": motion_plus_submit_ms, "recompose_ms": recompose_ms, "processing_loop_ms": processing_loop_ms}
+                metadata = {"index": index, "pts": pts, "reset": motion.reset, "scene_score": motion.scene_score, "native_dimensions": [width, height], "working_dimensions": [working_width, working_height], "nr_working_scale": scale, "preprocess_ms": preprocess_ms, "motion_ms": motion_ms, "feature_submit_ms": feature_submit_ms, "motion_plus_submit_ms": motion_plus_submit_ms, "recompose_ms": recompose_ms, "recompose_wall_ms": recompose_ms, "processing_loop_ms": processing_loop_ms}
+                if scale < 1.0:
+                    metadata.update({"recompose_backend_requested": requested_backend, "recompose_backend_used": "cuda" if compositor is not None else "cpu"})
+                    if cuda_telemetry:
+                        metadata.update(cuda_telemetry)
+                        if telemetry is not None:
+                            telemetry["cuda_allocator"] = compositor.allocator_stats()
+                            if telemetry.get("capture_compositor_samples") and index in {0, frame_count // 2, frame_count - 1}:
+                                telemetry.setdefault("compositor_samples", []).append({"native": native.copy(), "source": source.copy(), "nr": output.copy(), "cuda": final.copy()})
                 if telemetry is not None:
                     telemetry.setdefault("frames", []).append(metadata)
                 yield final, metadata
@@ -285,6 +350,17 @@ class DLSS5Backend(Backend):
                 telemetry["feature_18_evidence"] = feature.get("evidence")
             if not feature.get("verified"):
                 raise RuntimeError("DLSS5 Feature-18 verification failed after temporal render")
+            if compositor is not None:
+                compositor.close()
+
+    def _create_compositor(self, requested_backend, native_width, native_height, working_width, working_height):
+        if requested_backend == "cpu":
+            return None
+        from .dlss5_cuda_recompose import CudaResidualCompositor, select_cuda_device
+        device = select_cuda_device(self.gpu.get("name") if isinstance(self.gpu, dict) else None)
+        if device is None:
+            raise RuntimeError("No unambiguous CUDA device matches the DLSS5 runtime GPU")
+        return CudaResidualCompositor(native_width, native_height, working_width, working_height, device=device)
 
     def process(self, *args, **kwargs):
         raise RuntimeError("Use process_frame/process_video after the signed Feature-18 self-test")

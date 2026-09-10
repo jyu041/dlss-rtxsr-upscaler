@@ -4,6 +4,7 @@ from src.backends.dlss5_metrics import (
     EFFECT_MIN_CHANGED_RATIO,
     effect_metrics,
     effect_observed,
+    comparison_metrics,
     statistics,
 )
 
@@ -30,3 +31,12 @@ def test_statistics_p95_is_bounded_and_json_safe():
     assert result["median_ms"] == 3
     assert result["p95_ms"] == 4.8
     assert statistics([])["p95_ms"] is None
+
+
+def test_comparison_metrics_use_json_safe_psnr():
+    frame = np.zeros((2, 2, 4), dtype=np.uint8)
+    identical = comparison_metrics(frame, frame)
+    assert identical["identical"] is True
+    assert identical["psnr_db"] is None
+    changed = frame.copy(); changed[..., 0] = 1
+    assert comparison_metrics(frame, changed)["psnr_db"] is not None

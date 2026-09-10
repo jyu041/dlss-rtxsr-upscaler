@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import math
 from statistics import mean, median, quantiles
 from typing import Any
 
@@ -48,3 +47,15 @@ def statistics(values: list[float]) -> dict[str, float | None]:
         return {"mean_ms": None, "median_ms": None, "p95_ms": None, "min_ms": None, "max_ms": None}
     p95 = quantiles(values, n=20, method="inclusive")[18] if len(values) > 1 else values[0]
     return {"mean_ms": mean(values), "median_ms": median(values), "p95_ms": p95, "min_ms": min(values), "max_ms": max(values)}
+
+
+def comparison_metrics(reference: np.ndarray, candidate: np.ndarray) -> dict[str, Any]:
+    """Measure compositor parity, not quality against a ground truth image."""
+    reference = np.asarray(reference, dtype=np.uint8)[..., :3].astype(np.int16)
+    candidate = np.asarray(candidate, dtype=np.uint8)[..., :3].astype(np.int16)
+    if reference.shape != candidate.shape:
+        raise ValueError("Compositor parity frames must have equal RGB shapes")
+    difference = reference - candidate
+    absolute = np.abs(difference)
+    mse = float(np.mean(np.square(difference.astype(np.float32))))
+    return {"mae": float(np.mean(absolute)), "rmse": float(np.sqrt(mse)), "max_error": int(np.max(absolute)), "changed_pixel_ratio": float(np.mean(np.any(absolute != 0, axis=2))), "psnr_db": None if mse == 0 else float(10.0 * np.log10((255.0 * 255.0) / mse)), "identical": bool(np.array_equal(reference, candidate))}

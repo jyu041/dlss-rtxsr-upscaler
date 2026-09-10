@@ -36,7 +36,7 @@ def downsample_for_nr(native_rgba: np.ndarray, working_width: int, working_heigh
     return np.ascontiguousarray(cv2.resize(frame, (working_width, working_height), interpolation=cv2.INTER_AREA))
 
 
-def residual_recompose(native_rgba: np.ndarray, working_source: np.ndarray, working_nr: np.ndarray) -> np.ndarray:
+def residual_recompose_cpu(native_rgba: np.ndarray, working_source: np.ndarray, working_nr: np.ndarray) -> np.ndarray:
     native = np.asarray(native_rgba, dtype=np.uint8)
     source = np.asarray(working_source, dtype=np.uint8)
     nr = np.asarray(working_nr, dtype=np.uint8)
@@ -46,3 +46,8 @@ def residual_recompose(native_rgba: np.ndarray, working_source: np.ndarray, work
     residual = cv2.resize(residual, (native.shape[1], native.shape[0]), interpolation=cv2.INTER_LINEAR)
     result = np.rint(native[..., :3].astype(np.float32) + residual).clip(0.0, 255.0).astype(np.uint8)
     return np.ascontiguousarray(np.dstack((result, native[..., 3])))
+
+
+def residual_recompose(native_rgba: np.ndarray, working_source: np.ndarray, working_nr: np.ndarray) -> np.ndarray:
+    """Compatibility name for the OpenCV CPU reference compositor."""
+    return residual_recompose_cpu(native_rgba, working_source, working_nr)

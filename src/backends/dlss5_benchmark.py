@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import platform
 import subprocess
 import sys
 import threading
@@ -19,7 +18,7 @@ import numpy as np
 from .dlss5 import DLSS5Backend, ROOT
 from .dlss5_diagnostics import collect
 from .dlss5_metrics import effect_metrics, effect_observed, statistics
-from .dlss5_recompose import SUPPORTED_NR_WORKING_SCALES, compute_working_dimensions, validate_nr_working_scale
+from .dlss5_recompose import compute_working_dimensions, validate_nr_working_scale
 
 DEFAULT_RESOLUTIONS = ((128, 128), (960, 540), (1280, 720), (1920, 1080), (2560, 1440))
 
@@ -199,7 +198,8 @@ def main() -> int:
             native = native_cases.get((tuple(case["native_resolution"]), 1.0))
             case["effect_mae_ratio_vs_native"] = case["effect_mae"] / native["effect_mae"] if native and native.get("effect_mae") else None
     valid = [case for case in cases if case.get("status") == "PASS" and case.get("nr_effect_observed")]
-    report = {"schema_version": 2, "timestamp": datetime.now(timezone.utc).isoformat(), "git_commit": _commit(), "system": environment["application"], "gpu": environment["gpu"], "driver": environment["gpu"].get("driver_version"), "runtime": {"directory": environment["runtime_directory"], "files": environment["runtime_files"], "actual_sha256": environment["actual_sha256"], "expected_sha256": environment["expected_sha256"], "hash_match": environment["hash_match"]}, "benchmark_settings": {"resolutions": args.resolutions, "working_scales": parse_working_scales(args.working_scales), "warmup": args.warmup, "frames": args.frames, "timeout_seconds": args.timeout}, "cases": cases, "summary": {"fastest_valid_case": min(valid, key=lambda c: c.get("processing_loop_mean_ms", float("inf"))).get("native_resolution") if valid else None, "highest_valid_resolution": max(valid, key=lambda c: c["native_resolution"][0]).get("native_resolution") if valid else None, "failed_cases": [c.get("native_resolution") for c in cases if c.get("status") == "FAILED"], "timed_out_cases": [c.get("native_resolution") for c in cases if c.get("status") == "TIMEOUT"]}}
+    fastest = min(valid, key=lambda c: c.get("processing_loop_mean_ms", float("inf"))) if valid else None
+    report = {"schema_version": 2, "timestamp": datetime.now(timezone.utc).isoformat(), "git_commit": _commit(), "system": environment["application"], "gpu": environment["gpu"], "driver": environment["gpu"].get("driver_version"), "runtime": {"directory": environment["runtime_directory"], "files": environment["runtime_files"], "actual_sha256": environment["actual_sha256"], "expected_sha256": environment["expected_sha256"], "hash_match": environment["hash_match"]}, "benchmark_settings": {"resolutions": args.resolutions, "working_scales": parse_working_scales(args.working_scales), "warmup": args.warmup, "frames": args.frames, "timeout_seconds": args.timeout}, "cases": cases, "summary": {"fastest_valid_case": {"native_resolution": fastest["native_resolution"], "working_scale": fastest["working_scale"], "working_resolution": fastest["working_resolution"]} if fastest else None, "highest_valid_resolution": max(valid, key=lambda c: c["native_resolution"][0]).get("native_resolution") if valid else None, "failed_cases": [c.get("native_resolution") for c in cases if c.get("status") == "FAILED"], "timed_out_cases": [c.get("native_resolution") for c in cases if c.get("status") == "TIMEOUT"]}}
     path = ROOT / "logs" / f"dlss5-benchmark-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
     path.parent.mkdir(exist_ok=True)
     path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

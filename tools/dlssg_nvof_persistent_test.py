@@ -7,12 +7,14 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+import struct
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.backends.dlssg_worker import (  # noqa: E402
     DlssgWorker,
+    MOTION_MODE_EXTERNAL_R16G16_FLOAT,
     MOTION_MODE_NVIDIA_OPTICAL_FLOW,
 )
 
@@ -40,6 +42,8 @@ def main() -> int:
     parser.add_argument("--width", type=int, default=256)
     parser.add_argument("--height", type=int, default=256)
     parser.add_argument("--quiet-worker-log", action="store_true")
+    parser.add_argument("--multiplier", type=int, choices=(2, 3, 4), default=2)
+    parser.add_argument("--motion-mode", choices=("nvof", "external"), default="nvof")
     args = parser.parse_args()
     width, height = args.width, args.height
     if width < 64 or height < 64:
@@ -54,14 +58,18 @@ def main() -> int:
     hashes: set[str] = set()
     try:
         client.start()
-        client.create(width, height, motion_mode=MOTION_MODE_NVIDIA_OPTICAL_FLOW)
+        motion_mode = MOTION_MODE_NVIDIA_OPTICAL_FLOW if args.motion_mode == "nvof" else MOTION_MODE_EXTERNAL_R16G16_FLOAT
+        client.create(width, height, multiplier=args.multiplier, motion_mode=motion_mode)
         frame_id = 0
         for sequence, count, origin, delta in ((1, 12, 32, 4), (2, 4, 176, -4)):
             if sequence == 2:
                 client.reset_history()
             for index in range(count):
                 color = frame(width, height, origin + index * delta)
-                result = client.process(frame_id, color, reset=index == 0)
+                motion = None if args.motion_mode == "nvof" else (
+                    bytes(width * height * 4) if index == 0 else struct.pack("<ee", -4.0, 0.0) * (width * height)
+                )
+                result = client.process(frame_id, color, motion, reset=index == 0)
                 record: dict[str, object] = {
                     "frame_id": frame_id,
                     "sequence": sequence,
@@ -81,23 +89,30 @@ def main() -> int:
                 if index == 0:
                     assert result.reset_only and not result.output
                 else:
-                    assert result.generated_count == 1 and result.disable_interpolation == 0
-                    assert len(result.output) == width * height * 4
-                    assert any(result.output) and len(set(result.output)) > 1
-                    assert result.output != color
-                    digest = hashlib.sha256(result.output).hexdigest().upper()
-                    assert digest not in hashes, f"stale generated output {digest}"
-                    hashes.add(digest)
-                    record["sha256"] = digest
+                    expected_count = args.multiplier - 1
+                    assert result.generated_count == expected_count and result.disable_interpolation == 0
+                    assert len(result.outputs) == expected_count
+                    digests = []
+                    for output in result.outputs:
+                        assert len(output) == width * height * 4
+                        assert any(output) and len(set(output)) > 1
+                        assert output != color
+                        digest = hashlib.sha256(output).hexdigest().upper()
+                        assert digest not in hashes, f"stale generated output {digest}"
+                        hashes.add(digest); digests.append(digest)
+                    assert len(set(result.outputs)) == expected_count
+                    record["sha256"] = digests
+                    record["generated_count"] = expected_count
                 records.append(record)
                 frame_id += 1
     finally:
         client.close()
-    generated = sum(1 for record in records if "sha256" in record)
-    assert len(records) == 16 and generated == 14 and len(hashes) == 14
+    generated = sum(len(record.get("sha256", [])) for record in records)
+    assert len(records) == 16 and generated == 14 * (args.multiplier - 1) and len(hashes) == generated
     manifest = {
         "status": "PASS",
-        "motion_mode": "NVIDIA_OPTICAL_FLOW_INTERNAL",
+        "motion_mode": "NVIDIA_OPTICAL_FLOW_INTERNAL" if args.motion_mode == "nvof" else "EXTERNAL_R16G16_FLOAT",
+        "multiplier": args.multiplier,
         "input_frames": len(records),
         "generated_outputs": generated,
         "unique_generated_hashes": len(hashes),

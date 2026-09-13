@@ -47,6 +47,11 @@ using CreateFn = NVSDK_NGX_Result (NVSDK_CONV *)(ID3D12GraphicsCommandList *, NV
 using EvalFn = NVSDK_NGX_Result (NVSDK_CONV *)(ID3D12GraphicsCommandList *, const NVSDK_NGX_Handle *,
     const NVSDK_NGX_Parameter *, PFN_NVSDK_NGX_ProgressCallback);
 using ReleaseFeatureFn = NVSDK_NGX_Result (NVSDK_CONV *)(const NVSDK_NGX_Handle *);
+// These are provider-internal exports, absent from the public SDK headers.
+// Their argument order is established from the pinned DLL's x64 stubs:
+// PopulateDeviceParameters(device, parameters), then PopulateParameters(parameters).
+using PopulateParametersFn = NVSDK_NGX_Result (NVSDK_CONV *)(NVSDK_NGX_Parameter *);
+using PopulateDeviceParametersFn = NVSDK_NGX_Result (NVSDK_CONV *)(ID3D12Device *, NVSDK_NGX_Parameter *);
 
 struct Texture {
     const char *name = nullptr;
@@ -210,6 +215,34 @@ static bool VerifyResource(NVSDK_NGX_Parameter *p, const char *key, ID3D12Resour
         static_cast<void *>(expected), static_cast<void *>(actual), match ? 1 : 0); return match;
 }
 
+static int QueryCapabilityValue(NVSDK_NGX_Parameter *parameters, const char *stage) {
+    int available = 0, maximum = 0, superSampling = 0;
+    unsigned int featureInit = 0;
+    const NVSDK_NGX_Result availableResult = parameters
+        ? parameters->Get(NVSDK_NGX_Parameter_FrameGeneration_Available, &available)
+        : NVSDK_NGX_Result_FAIL_InvalidParameter;
+    const NVSDK_NGX_Result maximumResult = parameters
+        ? parameters->Get(NVSDK_NGX_DLSSG_Parameter_MultiFrameCountMax, &maximum)
+        : NVSDK_NGX_Result_FAIL_InvalidParameter;
+    const NVSDK_NGX_Result featureInitResult = parameters
+        ? parameters->Get(NVSDK_NGX_Parameter_FrameGeneration_FeatureInitResult, &featureInit)
+        : NVSDK_NGX_Result_FAIL_InvalidParameter;
+    const NVSDK_NGX_Result superSamplingResult = parameters
+        ? parameters->Get(NVSDK_NGX_Parameter_SuperSampling_Available, &superSampling)
+        : NVSDK_NGX_Result_FAIL_InvalidParameter;
+    RunLog("CAPABILITY_STAGE=%s", stage);
+    RunLog("FRAME_GENERATION_AVAILABLE_RESULT=0x%08X VALUE=%s%d", availableResult,
+        NVSDK_NGX_SUCCEED(availableResult) ? "" : "MISSING_", available);
+    RunLog("MULTIFRAME_COUNT_MAX_RESULT=0x%08X VALUE=%s%d", maximumResult,
+        NVSDK_NGX_SUCCEED(maximumResult) ? "" : "MISSING_", maximum);
+    RunLog("FRAME_GENERATION_FEATURE_INIT_RESULT=0x%08X VALUE=%s0x%08X", featureInitResult,
+        NVSDK_NGX_SUCCEED(featureInitResult) ? "" : "MISSING_", featureInit);
+    RunLog("SUPERSAMPLING_AVAILABLE_RESULT=0x%08X VALUE=%s%d", superSamplingResult,
+        NVSDK_NGX_SUCCEED(superSamplingResult) ? "" : "MISSING_", superSampling);
+    if (!NVSDK_NGX_SUCCEED(maximumResult) || maximum < 1 || maximum > 3) return 1;
+    return maximum;
+}
+
 static bool SetOptions(NVSDK_NGX_Parameter *p, ID3D12Resource *color, ID3D12Resource *depth,
     ID3D12Resource *motion, ID3D12Resource *output, ID3D12Resource *disable, bool reset,
     unsigned long long frameId, uint32_t generatedCount, uint32_t generatedIndex, NVSDK_NGX_DLSSG_Opt_Eval_Params &o, bool manifest,
@@ -237,6 +270,11 @@ static bool SetOptions(NVSDK_NGX_Parameter *p, ID3D12Resource *color, ID3D12Reso
     NVSDK_NGX_Parameter_SetUI(p, NVSDK_NGX_DLSSG_Parameter_MultiFrameCount, o.multiFrameCount);
     NVSDK_NGX_Parameter_SetUI(p, NVSDK_NGX_DLSSG_Parameter_MultiFrameIndex, o.multiFrameIndex);
     p->Set(NVSDK_NGX_DLSSG_Parameter_BackbufferFrameID, frameId);
+    unsigned int storedCount = 0, storedIndex = 0;
+    const NVSDK_NGX_Result countResult = p->Get(NVSDK_NGX_DLSSG_Parameter_MultiFrameCount, &storedCount);
+    const NVSDK_NGX_Result indexResult = p->Get(NVSDK_NGX_DLSSG_Parameter_MultiFrameIndex, &storedIndex);
+    RunLog("MFG_REQUEST frame=%llu count=%u index=%u countResult=0x%08X indexResult=0x%08X",
+        frameId, storedCount, storedIndex, countResult, indexResult);
 
 #define SET_F(key, value) NVSDK_NGX_Parameter_SetF(p, key, value)
 #define SET_UI(key, value) NVSDK_NGX_Parameter_SetUI(p, key, value)
@@ -589,27 +627,53 @@ public:
             NVSDK_NGX_ENGINE_TYPE_CUSTOM, "1.0", runtimeDir, device_, &common_, NVSDK_NGX_Version_API);
         RunLog("WORKER_OFFICIAL_INIT_RESULT=0x%08X", official); if (NVSDK_NGX_FAILED(official)) return false;
         const NVSDK_NGX_Result allocated = NVSDK_NGX_D3D12_GetCapabilityParameters(&parameters_);
+        RunLog("CAPABILITY_PARAMETERS_OFFICIAL_GET_RESULT=0x%08X ptr=%p", allocated, static_cast<void *>(parameters_));
         if (NVSDK_NGX_FAILED(allocated) || !parameters_) return false;
+        QueryCapabilityValue(parameters_, "OFFICIAL_GET");
         community_ = LoadLibraryW(communityPath); if (!community_) return false;
         init_ = reinterpret_cast<InitFn>(GetProcAddress(community_, "NVSDK_NGX_D3D12_Init"));
         create_ = reinterpret_cast<CreateFn>(GetProcAddress(community_, "NVSDK_NGX_D3D12_CreateFeature"));
         evaluate_ = reinterpret_cast<EvalFn>(GetProcAddress(community_, "NVSDK_NGX_D3D12_EvaluateFeature"));
         releaseFeature_ = reinterpret_cast<ReleaseFeatureFn>(GetProcAddress(community_, "NVSDK_NGX_D3D12_ReleaseFeature"));
-        if (!init_ || !create_ || !evaluate_ || !releaseFeature_) return false;
+        populateParameters_ = reinterpret_cast<PopulateParametersFn>(GetProcAddress(community_, "NVSDK_NGX_D3D12_PopulateParameters_Impl"));
+        populateDeviceParameters_ = reinterpret_cast<PopulateDeviceParametersFn>(GetProcAddress(community_, "NVSDK_NGX_D3D12_PopulateDeviceParameters_Impl"));
+        RunLog("COMMUNITY_POPULATE_PARAMETERS_EXPORT=%p", reinterpret_cast<void *>(populateParameters_));
+        RunLog("COMMUNITY_POPULATE_DEVICE_PARAMETERS_EXPORT=%p", reinterpret_cast<void *>(populateDeviceParameters_));
+        QueryCapabilityValue(parameters_, "AFTER_COMMUNITY_LOAD_BEFORE_INIT");
+        if (!init_ || !create_ || !evaluate_ || !releaseFeature_ || !populateParameters_ || !populateDeviceParameters_) return false;
         const NVSDK_NGX_Result communityResult = init_(projectId_, NVSDK_NGX_ENGINE_TYPE_CUSTOM, "1.0",
             runtimeDir, device_, &common_, NVSDK_NGX_Version_API);
         RunLog("WORKER_COMMUNITY_INIT_RESULT=0x%08X", communityResult);
         if (NVSDK_NGX_FAILED(communityResult)) return false;
+        QueryCapabilityValue(parameters_, "AFTER_COMMUNITY_INIT");
+        const NVSDK_NGX_Result devicePopulate = populateDeviceParameters_(device_, parameters_);
+        RunLog("COMMUNITY_POPULATE_DEVICE_PARAMETERS_RESULT=0x%08X", devicePopulate);
+        QueryCapabilityValue(parameters_, "AFTER_COMMUNITY_POPULATE_DEVICE_PARAMETERS");
+        const NVSDK_NGX_Result parameterPopulate = populateParameters_(parameters_);
+        RunLog("COMMUNITY_POPULATE_PARAMETERS_RESULT=0x%08X", parameterPopulate);
+        capabilityMax_ = QueryCapabilityValue(parameters_, "AFTER_COMMUNITY_POPULATE_PARAMETERS");
+        RunLog("MULTIFRAME_MAX_SOURCE=COMMUNITY_POPULATE FINAL_GENERATED_COUNT_MAX=%d", capabilityMax_);
+        int available = 0;
+        const NVSDK_NGX_Result availableResult = parameters_->Get(NVSDK_NGX_Parameter_FrameGeneration_Available, &available);
+        if (NVSDK_NGX_SUCCEED(availableResult) && available == 0 && capabilityMax_ >= 1 &&
+            NVSDK_NGX_SUCCEED(devicePopulate) && NVSDK_NGX_SUCCEED(parameterPopulate)) {
+            parameters_->Set(NVSDK_NGX_Parameter_FrameGeneration_Available, 1);
+            int stored = 0;
+            const NVSDK_NGX_Result verifyAvailable = parameters_->Get(NVSDK_NGX_Parameter_FrameGeneration_Available, &stored);
+            RunLog("FRAME_GENERATION_AVAILABLE_SOURCE=DIRECT_HOST_ENABLE SET_RESULT=VOID VERIFY_RESULT=0x%08X VALUE=%d",
+                verifyAvailable, stored);
+        }
+        QueryCapabilityValue(parameters_, "AFTER_DIRECT_HOST_AVAILABILITY_ENABLE");
         ++initCount_; RunLog("WORKER_INIT_COMPLETE initCount=%u", initCount_); return true;
     }
 
     Status Create(const dlssg::protocol::CreateRequest &request,
         dlssg::protocol::CreateResponse &response) {
-        response = {dlssg::protocol::kWorkerVersion, dlssg::protocol::kVersion, 3,
+        response = {dlssg::protocol::kWorkerVersion, dlssg::protocol::kVersion, static_cast<uint32_t>(capabilityMax_),
             static_cast<uint32_t>(dlssg::protocol::DepthMode::ConstantPointFive)};
         if (!request.width || !request.height || request.width > 3840 || request.height > 2160) return Status::InvalidDimensions;
         if (request.pixelFormat != static_cast<uint32_t>(DXGI_FORMAT_R8G8B8A8_UNORM)) return Status::InvalidFormat;
-        if (request.generatedCount < 1 || request.generatedCount > 3 || request.depthMode !=
+        if (request.generatedCount < 1 || request.generatedCount > 3 || request.generatedCount > static_cast<uint32_t>(capabilityMax_) || request.depthMode !=
             static_cast<uint32_t>(dlssg::protocol::DepthMode::ConstantPointFive) ||
             (request.motionMode != static_cast<uint32_t>(dlssg::protocol::MotionMode::ExternalR16G16Float) &&
              request.motionMode != static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow))) return Status::InvalidMessage;
@@ -704,9 +768,7 @@ public:
         if (NVSDK_NGX_FAILED(evalResult) || FAILED(list_->Close())) return Status::NativeFailure;
         ID3D12CommandList *commands[] = {list_}; queue_->ExecuteCommandLists(1, commands); const auto waitStart = Clock::now();
         if (!WaitFence(queue_, fence_, ++fenceValue_, event_, device_, "WORKER_EVALUATE")) return Status::NativeFailure;
-        const auto waitEnd = Clock::now(); history_.Complete(request.frameId);
-        if (motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow))
-            previousColor_.assign(color, color + color_.packed.size());
+        const auto waitEnd = Clock::now();
         response.uploadMs = Milliseconds(uploadStart, uploadEnd); response.evaluateCpuMs = Milliseconds(evaluateStart, evaluateEnd);
         response.gpuWaitMs = Milliseconds(waitStart, waitEnd);
         response.nvofUploadMs = nvofTimings.uploadMs; response.nvofExecuteMs = nvofTimings.executeMs;
@@ -719,12 +781,18 @@ public:
         response.flowNearZeroPercent = flowStatistics.nearZeroPercent;
         response.flowUnusuallyLargePercent = flowStatistics.unusuallyLargePercent;
         if (effectiveReset) {
+            history_.Complete(request.frameId);
             response.totalProcessMs = Milliseconds(totalStart, Clock::now());
             RunLog("WORKER_PROCESS_RESET_COMPLETE frame=%llu", request.frameId); return Status::OkResetNoOutput;
         }
         const auto readbackStart = Clock::now(); uint32_t disableValue = 0; std::vector<uint8_t> one;
         if (!Readback(output_, disable_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_, one, disableValue)) return Status::NativeFailure;
-        if (disableValue != 0) return Status::InterpolationDisabled;
+        if (disableValue != 0) {
+            RunLog("WORKER_OUTPUT_DISABLED frame=%llu reset=%d generatedCount=%u generatedIndex=1 disableValue=%u capabilityMax=%d evalResult=0x%08X deviceRemoved=0x%08X",
+                request.frameId, effectiveReset ? 1 : 0, generatedPerGroup_, disableValue, capabilityMax_, evalResult,
+                static_cast<unsigned>(device_->GetDeviceRemovedReason()));
+            return Status::InterpolationDisabled;
+        }
         const auto validOutput = [&](const std::vector<uint8_t> &value) {
             return value != output_.packed && !std::all_of(value.begin(), value.end(), [](uint8_t item) { return item == 0; }) &&
                 !( !value.empty() && std::all_of(value.begin(), value.end(), [&](uint8_t item) { return item == value.front(); }) );
@@ -744,13 +812,21 @@ public:
             if (!WaitFence(queue_, fence_, ++fenceValue_, event_, device_, "WORKER_MFG_EVALUATE")) return Status::NativeFailure;
             response.gpuWaitMs += Milliseconds(nextWait, Clock::now()); one.clear(); disableValue = 0;
             if (!Readback(output_, disable_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_, one, disableValue)) return Status::NativeFailure;
-            if (disableValue != 0) return Status::InterpolationDisabled;
+            if (disableValue != 0) {
+                RunLog("WORKER_OUTPUT_DISABLED frame=%llu reset=0 generatedCount=%u generatedIndex=%u disableValue=%u capabilityMax=%d evalResult=0x%08X deviceRemoved=0x%08X",
+                    request.frameId, generatedPerGroup_, index, disableValue, capabilityMax_, next,
+                    static_cast<unsigned>(device_->GetDeviceRemovedReason()));
+                return Status::InterpolationDisabled;
+            }
             if (!validOutput(one)) return Status::InvalidOutput;
             generated.insert(generated.end(), one.begin(), one.end());
         }
         const auto readbackEnd = Clock::now(); response.readbackMs = Milliseconds(readbackStart, readbackEnd);
         response.totalProcessMs = Milliseconds(totalStart, readbackEnd); response.disableInterpolation = 0;
         response.generatedCount = generatedPerGroup_; response.outputBytes = static_cast<uint32_t>(generated.size());
+        history_.Complete(request.frameId);
+        if (motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow))
+            previousColor_.assign(color, color + color_.packed.size());
         generatedCount_ += generatedPerGroup_; RunLog("WORKER_OUTPUT frame=%llu outputs=%u sha256=%s generatedCount=%u totalMs=%.3f",
             request.frameId, generatedPerGroup_, Sha256(generated).c_str(), generatedCount_, response.totalProcessMs);
         return Status::Ok;
@@ -813,11 +889,13 @@ private:
     std::wstring runtimeDir_{}; const wchar_t *runtimePaths_[1]{};
     NVSDK_NGX_Parameter *parameters_ = nullptr; HMODULE community_ = nullptr; InitFn init_ = nullptr;
     CreateFn create_ = nullptr; EvalFn evaluate_ = nullptr; ReleaseFeatureFn releaseFeature_ = nullptr;
+    PopulateParametersFn populateParameters_ = nullptr; PopulateDeviceParametersFn populateDeviceParameters_ = nullptr;
     NVSDK_NGX_Handle *feature_ = nullptr;
     Texture color_{}, depth_{}, motion_{}, output_{}; Buffer disable_{}; HistoryState history_{};
     NvofD3D12 nvof_{}; std::vector<uint8_t> previousColor_{};
     bool nvofHistoryValid_ = false;
     uint32_t width_ = 0, height_ = 0, motionMode_ = 0, generatedPerGroup_ = 1;
+    int capabilityMax_ = 1;
     bool created_ = false; uint32_t initCount_ = 0, createCount_ = 0, evaluateCount_ = 0, generatedCount_ = 0;
 };
 

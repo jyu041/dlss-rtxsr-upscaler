@@ -1,4 +1,9 @@
-param([string]$NgxSdk = 'C:\Users\mark\AppData\Local\Temp\dlssg-phase3-research\DLSS', [string]$NvApi = 'C:\Users\mark\Desktop\dlss-community-research\renodx\external\NVAPI', [string]$Output = "$PSScriptRoot\bin")
+param(
+    [string]$NgxSdk = 'C:\Users\mark\AppData\Local\Temp\dlssg-phase3-research\DLSS',
+    [string]$NvApi = 'C:\Users\mark\Desktop\dlss-community-research\renodx\external\NVAPI',
+    [string]$NvOfSdk = $env:NVOF_SDK,
+    [string]$Output = "$PSScriptRoot\bin"
+)
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force -Path $Output | Out-Null
 $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
@@ -12,4 +17,11 @@ if (-not $includeLine -or -not $libLine -or -not $pathLine) { throw 'Visual Stud
 [Environment]::SetEnvironmentVariable('LIB', $libLine.Substring($libLine.IndexOf('=') + 1), 'Process')
 [Environment]::SetEnvironmentVariable('Path', $pathLine.Substring($pathLine.IndexOf('=') + 1), 'Process')
 $inc = Join-Path $NgxSdk 'include'; $lib = Join-Path $NgxSdk 'lib\Windows_x86_64\x64'
-cl /nologo /std:c++17 /O2 /EHsc /W4 /Zi /MD /I"$inc" /I"$NvApi" /Fe:"$Output\dlssg_sm86_offline.exe" "$PSScriptRoot\dlssg_sm86_offline.cpp" "$PSScriptRoot\resource_pipeline.cpp" "$PSScriptRoot\community_run2x.cpp" /link /DEBUG /LIBPATH:"$lib" nvsdk_ngx_d.lib d3d12.lib dxgi.lib version.lib advapi32.lib user32.lib bcrypt.lib
+if (-not $NvOfSdk) {
+    $candidate = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'third_party\local\nvidia-optical-flow-sdk'
+    if (Test-Path -LiteralPath (Join-Path $candidate 'nvOpticalFlowD3D12.h')) { $NvOfSdk = $candidate }
+}
+if (-not $NvOfSdk -or -not (Test-Path -LiteralPath (Join-Path $NvOfSdk 'nvOpticalFlowD3D12.h'))) {
+    throw 'NVIDIA Optical Flow SDK D3D12 headers not found. Pass -NvOfSdk or set NVOF_SDK.'
+}
+cl /nologo /std:c++17 /O2 /EHsc /W4 /Zi /MD /I"$inc" /I"$NvApi" /I"$NvOfSdk" /Fe:"$Output\dlssg_sm86_offline.exe" "$PSScriptRoot\dlssg_sm86_offline.cpp" "$PSScriptRoot\resource_pipeline.cpp" "$PSScriptRoot\community_run2x.cpp" "$PSScriptRoot\nvof_d3d12.cpp" /link /DEBUG /LIBPATH:"$lib" nvsdk_ngx_d.lib d3d12.lib dxgi.lib version.lib advapi32.lib user32.lib bcrypt.lib

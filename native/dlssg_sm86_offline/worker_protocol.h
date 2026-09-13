@@ -5,8 +5,8 @@
 namespace dlssg::protocol {
 
 constexpr uint32_t kMagic = 0x47534C44u; // "DLSG" in little-endian byte order.
-constexpr uint16_t kVersion = 1;
-constexpr uint32_t kWorkerVersion = 1;
+constexpr uint16_t kVersion = 2;
+constexpr uint32_t kWorkerVersion = 2;
 constexpr uint32_t kMaximumPayloadBytes = 64u * 1024u * 1024u;
 
 enum class Command : uint16_t {
@@ -35,6 +35,11 @@ enum class Status : int32_t {
 enum class DepthMode : uint32_t {
     ConstantPointFive = 1,
     CallerR32Float = 2,
+};
+
+enum class MotionMode : uint32_t {
+    ExternalR16G16Float = 1,
+    NvidiaOpticalFlow = 2,
 };
 
 enum ProcessFlags : uint32_t {
@@ -72,7 +77,7 @@ struct CreateRequest {
     uint32_t pixelFormat;
     uint32_t generatedCount;
     uint32_t depthMode;
-    uint32_t reserved;
+    uint32_t motionMode;
 };
 
 struct CreateResponse {
@@ -102,6 +107,9 @@ struct ProcessResponse {
     double gpuWaitMs;
     double readbackMs;
     double totalProcessMs;
+    double nvofUploadMs;
+    double nvofExecuteMs;
+    double flowConversionMs;
 };
 #pragma pack(pop)
 
@@ -111,6 +119,6 @@ static_assert(sizeof(HelloResponse) == 16);
 static_assert(sizeof(CreateRequest) == 24);
 static_assert(sizeof(CreateResponse) == 16);
 static_assert(sizeof(ProcessRequest) == 24);
-static_assert(sizeof(ProcessResponse) == 64);
+static_assert(sizeof(ProcessResponse) == 88);
 
 } // namespace dlssg::protocol

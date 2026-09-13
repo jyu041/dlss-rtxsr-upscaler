@@ -17,8 +17,8 @@ import warnings
 from typing import BinaryIO, Callable
 
 MAGIC = 0x47534C44
-PROTOCOL_VERSION = 1
-WORKER_VERSION = 1
+PROTOCOL_VERSION = 2
+WORKER_VERSION = 2
 KNOWN_COMMUNITY_SHA256 = "C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2"
 
 COMMAND_HELLO = 1
@@ -32,6 +32,8 @@ STATUS_OK_RESET_NO_OUTPUT = 1
 
 PIXEL_FORMAT_RGBA8_UNORM = 28
 DEPTH_MODE_CONSTANT_0_5 = 1
+MOTION_MODE_EXTERNAL_R16G16_FLOAT = 1
+MOTION_MODE_NVIDIA_OPTICAL_FLOW = 2
 PROCESS_FLAG_RESET = 1
 
 REQUEST_HEADER = struct.Struct("<IHHII")
@@ -40,7 +42,7 @@ HELLO_RESPONSE = struct.Struct("<IIII")
 CREATE_REQUEST = struct.Struct("<IIIIII")
 CREATE_RESPONSE = struct.Struct("<IIII")
 PROCESS_REQUEST = struct.Struct("<QIIII")
-PROCESS_RESPONSE = struct.Struct("<IIIIIIddddd")
+PROCESS_RESPONSE = struct.Struct("<IIIIIIdddddddd")
 
 
 class DlssgWorkerError(RuntimeError):
@@ -81,6 +83,9 @@ class ProcessResult:
     gpu_wait_ms: float
     readback_ms: float
     total_process_ms: float
+    nvof_upload_ms: float
+    nvof_execute_ms: float
+    flow_conversion_ms: float
     reset_only: bool
 
     @property
@@ -162,6 +167,7 @@ class DlssgWorker:
         self._stderr_thread: threading.Thread | None = None
         self.width: int | None = None
         self.height: int | None = None
+        self.motion_mode: int | None = None
 
     @property
     def diagnostics(self) -> tuple[str, ...]:
@@ -250,20 +256,26 @@ class DlssgWorker:
             raise DlssgNativeError(status, command, tail)
         return response_payload
 
-    def create(self, width: int = 256, height: int = 256) -> dict[str, int]:
+    def create(
+        self,
+        width: int = 256,
+        height: int = 256,
+        *,
+        motion_mode: int = MOTION_MODE_EXTERNAL_R16G16_FLOAT,
+    ) -> dict[str, int]:
         request = CREATE_REQUEST.pack(
             width,
             height,
             PIXEL_FORMAT_RGBA8_UNORM,
             1,
             DEPTH_MODE_CONSTANT_0_5,
-            0,
+            motion_mode,
         )
         payload = self._exchange(COMMAND_CREATE, request)
         if len(payload) != CREATE_RESPONSE.size:
             raise DlssgWorkerProtocolError("invalid CREATE response size")
         worker, protocol, maximum, depth_mode = CREATE_RESPONSE.unpack(payload)
-        self.width, self.height = width, height
+        self.width, self.height, self.motion_mode = width, height, motion_mode
         return {
             "worker_version": worker,
             "protocol_version": protocol,
@@ -275,18 +287,26 @@ class DlssgWorker:
         self,
         frame_id: int,
         color_rgba8: bytes,
-        motion_r16g16_float: bytes,
+        motion_r16g16_float: bytes | None = None,
         *,
         reset: bool = False,
     ) -> ProcessResult:
         if self.width is None or self.height is None:
             raise DlssgWorkerError("CREATE must succeed before PROCESS")
         color = bytes(color_rgba8)
-        motion = bytes(motion_r16g16_float)
+        if self.motion_mode == MOTION_MODE_NVIDIA_OPTICAL_FLOW:
+            if motion_r16g16_float not in (None, b""):
+                raise ValueError("internal NVIDIA Optical Flow mode does not accept caller motion vectors")
+            motion = b""
+        else:
+            if motion_r16g16_float is None:
+                raise ValueError("external motion-vector mode requires R16G16_FLOAT data")
+            motion = bytes(motion_r16g16_float)
         expected = self.width * self.height * 4
         if len(color) != expected:
             raise ValueError(f"color payload is {len(color)} bytes; expected {expected}")
-        validate_motion_vectors(motion, self.width, self.height)
+        if self.motion_mode == MOTION_MODE_EXTERNAL_R16G16_FLOAT:
+            validate_motion_vectors(motion, self.width, self.height)
         fixed = PROCESS_REQUEST.pack(
             frame_id,
             PROCESS_FLAG_RESET if reset else 0,

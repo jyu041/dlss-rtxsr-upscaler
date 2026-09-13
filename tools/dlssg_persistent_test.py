@@ -165,7 +165,7 @@ def main() -> int:
     assert generated == 19
     args.manifest.parent.mkdir(parents=True, exist_ok=True)
     manifest = {
-        "protocol_version": 1,
+        "protocol_version": 2,
         "process_count": 1,
         "feature_instances": counts["create"],
         "input_frames": 21,

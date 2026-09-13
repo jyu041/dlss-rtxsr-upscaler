@@ -8,9 +8,10 @@ mode. No swapchain or Present is used.
 
 ## External dependencies
 
-The build requires a locally staged official NVIDIA NGX SDK and public NVAPI
-headers. Their paths can be passed to `build.ps1` with `-NgxSdk` and `-NvApi`.
-These SDK payloads are not part of this repository.
+The build requires locally staged official NVIDIA NGX, public NVAPI, and
+NVIDIA Optical Flow D3D12 headers. Their paths can be passed to `build.ps1`
+with `-NgxSdk`, `-NvApi`, and `-NvOfSdk`. These SDK payloads are not part of
+this repository.
 
 The community `version.dll` is an external, user-supplied runtime dependency.
 It is not downloaded, embedded, committed, or redistributed by this project.
@@ -29,6 +30,8 @@ to the runtime.
 ```powershell
 .\build.ps1
 .\bin\dlssg_sm86_offline.exe --selftest
+.\bin\dlssg_sm86_offline.exe --nvof-probe
+.\bin\dlssg_sm86_offline.exe --nvof-flow-test
 .\bin\dlssg_sm86_offline.exe --resource-pipeline-test
 .\bin\dlssg_sm86_offline.exe --run-2x <absolute-community-version.dll> <official-runtime-directory>
 .\bin\dlssg_sm86_offline.exe --serve --community-runtime <absolute-community-version.dll> --official-runtime-dir <official-runtime-directory>
@@ -41,15 +44,17 @@ object, one loaded community runtime, and one DLSS-G feature alive for many
 frames. Standard input and output carry the versioned binary protocol in
 `worker_protocol.h`; all native diagnostics go to standard error.
 
-Protocol version 1 supports `HELLO`, `CREATE`, `PROCESS`, `RESET_HISTORY`, and
+Protocol version 2 supports `HELLO`, `CREATE`, `PROCESS`, `RESET_HISTORY`, and
 `CLOSE`. The first `PROCESS` after `CREATE` or `RESET_HISTORY` is forced to be a
 reset/bootstrap frame and intentionally returns no generated frame. Every later
-successful `PROCESS` returns one tightly packed 256x256 RGBA8 midpoint frame.
+successful `PROCESS` returns one tightly packed RGBA8 midpoint frame.
 Frame IDs must increase monotonically for the lifetime of the worker, including
 across history resets.
 
-This first implementation is deliberately fixed to 256x256, 2X, and internally
-maintained constant R32_FLOAT depth 0.5. The caller supplies:
+The implementation supports fixed-resolution 2X sessions up to 3840x2160 and
+internally maintained constant R32_FLOAT depth 0.5. A later CREATE can recreate
+size-dependent resources and the feature without restarting the worker. The
+caller supplies RGBA8 color and selects either:
 
 - current color as tightly packed RGBA8 (`width * height * 4` bytes);
 - motion as tightly packed R16G16_FLOAT (`width * height * 4` bytes), with two
@@ -57,9 +62,14 @@ maintained constant R32_FLOAT depth 0.5. The caller supplies:
 - current-to-previous motion, with the established normalized scale of
   `(1 / width, 1 / height)` used by the native Evaluate contract.
 
-Constant depth is useful for the synthetic proof but is not a production depth
-model for arbitrary footage. Caller-supplied depth and resizing are reserved in
-the protocol but intentionally rejected by version 1.
+or internal NVIDIA Optical Flow. Internal NVOF retains the previous real frame,
+requests 1x1 bidirectional flow, consumes the backward (current-to-previous)
+S10.5 output, and converts it to R16G16_FLOAT. The first frame after CREATE or
+RESET_HISTORY remains a reset-only frame.
+
+Constant depth is useful for the first real-video backend but is not a
+production depth model for arbitrary footage. Caller-supplied depth remains a
+future protocol extension.
 
 The Python API is `src.backends.dlssg_worker.DlssgWorker`:
 

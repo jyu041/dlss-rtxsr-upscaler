@@ -9,6 +9,7 @@
 #include <nvsdk_ngx_defs_dlssg.h>
 #include <nvsdk_ngx_params_dlssg.h>
 #include "worker_protocol.h"
+#include "nvof_d3d12.h"
 
 #include <algorithm>
 #include <array>
@@ -45,6 +46,7 @@ using CreateFn = NVSDK_NGX_Result (NVSDK_CONV *)(ID3D12GraphicsCommandList *, NV
     const NVSDK_NGX_Parameter *, NVSDK_NGX_Handle **);
 using EvalFn = NVSDK_NGX_Result (NVSDK_CONV *)(ID3D12GraphicsCommandList *, const NVSDK_NGX_Handle *,
     const NVSDK_NGX_Parameter *, PFN_NVSDK_NGX_ProgressCallback);
+using ReleaseFeatureFn = NVSDK_NGX_Result (NVSDK_CONV *)(const NVSDK_NGX_Handle *);
 
 struct Texture {
     const char *name = nullptr;
@@ -52,11 +54,21 @@ struct Texture {
     ID3D12Resource *gpu = nullptr, *upload = nullptr, *readback = nullptr;
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};
     UINT64 allocationBytes = 0;
+    UINT width = 0, height = 0, rowBytes = 0;
     D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
     std::vector<uint8_t> packed;
 };
 struct Buffer { ID3D12Resource *gpu = nullptr, *upload = nullptr, *readback = nullptr;
     D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON; };
+
+static void ReleaseTexture(Texture &texture) {
+    RunRelease(texture.gpu); RunRelease(texture.upload); RunRelease(texture.readback);
+    texture = {};
+}
+static void ReleaseBuffer(Buffer &buffer) {
+    RunRelease(buffer.gpu); RunRelease(buffer.upload); RunRelease(buffer.readback);
+    buffer = {};
+}
 
 static std::string Sha256(const std::vector<uint8_t> &bytes) {
     BCRYPT_ALG_HANDLE algorithm = nullptr; BCRYPT_HASH_HANDLE hash = nullptr;
@@ -87,11 +99,13 @@ static ID3D12Resource *MakeBuffer(ID3D12Device *device, UINT64 bytes, D3D12_HEAP
 }
 
 static bool MakeTexture(ID3D12Device *device, Texture &texture, const char *name, DXGI_FORMAT format,
-    D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES initialState) {
+    D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES initialState,
+    UINT width = kWidth, UINT height = kHeight, UINT rowBytes = kRowBytes) {
     texture.name = name; texture.format = format; texture.state = initialState;
+    texture.width = width; texture.height = height; texture.rowBytes = rowBytes;
     D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
     D3D12_RESOURCE_DESC desc{}; desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-    desc.Width = kWidth; desc.Height = kHeight; desc.DepthOrArraySize = 1; desc.MipLevels = 1;
+    desc.Width = width; desc.Height = height; desc.DepthOrArraySize = 1; desc.MipLevels = 1;
     desc.Format = format; desc.SampleDesc.Count = 1; desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
     desc.Flags = flags;
     if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, initialState, nullptr,
@@ -103,9 +117,9 @@ static bool MakeTexture(ID3D12Device *device, Texture &texture, const char *name
         D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
     texture.readback = MakeBuffer(device, texture.allocationBytes, D3D12_HEAP_TYPE_READBACK,
         D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-    texture.packed.resize(static_cast<size_t>(kRowBytes) * kHeight);
+    texture.packed.resize(static_cast<size_t>(rowBytes) * height);
     RunLog("RESOURCE_CREATED name=%s ptr=%p format=%u width=%u height=%u rowPitch=%u initialState=0x%X",
-        name, static_cast<void *>(texture.gpu), static_cast<unsigned>(format), kWidth, kHeight,
+        name, static_cast<void *>(texture.gpu), static_cast<unsigned>(format), width, height,
         texture.footprint.Footprint.RowPitch, static_cast<unsigned>(initialState));
     return texture.upload && texture.readback;
 }
@@ -144,8 +158,8 @@ static bool Upload(Texture &texture, ID3D12Device *device, ID3D12CommandAllocato
     HANDLE eventHandle, UINT64 &fenceValue) {
     uint8_t *mapped = nullptr; const HRESULT mr = texture.upload->Map(0, nullptr, reinterpret_cast<void **>(&mapped));
     if (FAILED(mr)) { RunLog("UPLOAD_MAP_FAILED name=%s hr=0x%08X", texture.name, static_cast<unsigned>(mr)); return false; }
-    for (UINT row = 0; row < kHeight; ++row) std::memcpy(mapped + static_cast<size_t>(row) * texture.footprint.Footprint.RowPitch,
-        texture.packed.data() + static_cast<size_t>(row) * kRowBytes, kRowBytes);
+    for (UINT row = 0; row < texture.height; ++row) std::memcpy(mapped + static_cast<size_t>(row) * texture.footprint.Footprint.RowPitch,
+        texture.packed.data() + static_cast<size_t>(row) * texture.rowBytes, texture.rowBytes);
     texture.upload->Unmap(0, nullptr); if (!ResetList(allocator, list, texture.name)) return false;
     D3D12_TEXTURE_COPY_LOCATION src{}, dst{}; src.pResource = texture.upload;
     src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT; src.PlacedFootprint = texture.footprint;
@@ -198,16 +212,17 @@ static bool VerifyResource(NVSDK_NGX_Parameter *p, const char *key, ID3D12Resour
 
 static bool SetOptions(NVSDK_NGX_Parameter *p, ID3D12Resource *color, ID3D12Resource *depth,
     ID3D12Resource *motion, ID3D12Resource *output, ID3D12Resource *disable, bool reset,
-    unsigned long long frameId, NVSDK_NGX_DLSSG_Opt_Eval_Params &o, bool manifest) {
+    unsigned long long frameId, NVSDK_NGX_DLSSG_Opt_Eval_Params &o, bool manifest,
+    UINT width = kWidth, UINT height = kHeight) {
     o = {}; o.multiFrameCount = 1; o.multiFrameIndex = 1;
     Identity(o.cameraViewToClip); Identity(o.clipToCameraView); Identity(o.clipToLensClip);
     Identity(o.clipToPrevClip); Identity(o.prevClipToClip);
-    o.mvecScale[0] = 1.0f / kWidth; o.mvecScale[1] = 1.0f / kHeight;
+    o.mvecScale[0] = 1.0f / width; o.mvecScale[1] = 1.0f / height;
     o.cameraNear = 0.1f; o.cameraFar = 1000.0f; o.cameraFOV = 1.04719755f; o.cameraAspectRatio = 1.0f;
     o.reset = reset; o.orthoProjection = true; o.motionVectorsInvalidValue = -65500.0f;
-    o.motionVectorsDilated = true; o.mvecsSubrectSize = {kWidth, kHeight};
-    o.depthSubrectSize = {kWidth, kHeight}; o.hudLessSubrectSize = {kWidth, kHeight};
-    o.backbufferSubrectSize = {kWidth, kHeight}; o.outputInterpSubrectSize = {kWidth, kHeight};
+    o.motionVectorsDilated = true; o.mvecsSubrectSize = {width, height};
+    o.depthSubrectSize = {width, height}; o.hudLessSubrectSize = {width, height};
+    o.backbufferSubrectSize = {width, height}; o.outputInterpSubrectSize = {width, height};
 
     SetResource(p, NVSDK_NGX_DLSSG_Parameter_Backbuffer, color);
     SetResource(p, NVSDK_NGX_DLSSG_Parameter_MVecs, motion);
@@ -294,7 +309,8 @@ static bool SetOptions(NVSDK_NGX_Parameter *p, ID3D12Resource *color, ID3D12Reso
     match &= VerifyResource(p, NVSDK_NGX_DLSSG_Parameter_OutputDisableInterpolation, disable);
     if (manifest) {
         RunLog("BOOTSTRAP_MANIFEST_BEGIN");
-        RunLog("CREATE generic=256x256 dlssg=256x256 format=%u internal=256x256 dynamic=0", static_cast<unsigned>(DXGI_FORMAT_R8G8B8A8_UNORM));
+        RunLog("CREATE generic=%ux%u dlssg=%ux%u format=%u internal=%ux%u dynamic=0", width, height,
+            width, height, static_cast<unsigned>(DXGI_FORMAT_R8G8B8A8_UNORM), width, height);
         RunLog("EVAL FrameID=%llu type=ULL Reset=%u MultiFrameCount=1 MultiFrameIndex=1", frameId, reset ? 1u : 0u);
         RunLog("EVAL matrices=%p,%p,%p,%p,%p lifetime=CALLER_OWNED", static_cast<void *>(o.cameraViewToClip),
             static_cast<void *>(o.clipToCameraView), static_cast<void *>(o.clipToLensClip),
@@ -302,7 +318,7 @@ static bool SetOptions(NVSDK_NGX_Parameter *p, ID3D12Resource *color, ID3D12Reso
         RunLog("EVAL jitter=0,0 mvecScale=%.9f,%.9f pinhole=0,0 near=%.3f far=%.3f fov=%.8f aspect=%.3f",
             o.mvecScale[0], o.mvecScale[1], o.cameraNear, o.cameraFar, o.cameraFOV, o.cameraAspectRatio);
         RunLog("EVAL HDR=0 DepthInverted=0 CameraMotionIncluded=0 AutoReset=0 NotRendering=0 Ortho=1 InvalidMV=%.1f Dilated=1 Menu=0", o.motionVectorsInvalidValue);
-        RunLog("EVAL nonnullRects=mvec,depth,hudless,backbuffer,outputInterp base=0,0 size=256x256 nullRects=0,0/0x0");
+        RunLog("EVAL nonnullRects=mvec,depth,hudless,backbuffer,outputInterp base=0,0 size=%ux%u nullRects=0,0/0x0", width, height);
         RunLog("BOOTSTRAP_MANIFEST_END"); RunLog("KNOWN_WORKER_CONTRACT_MATCH=%d", match ? 1 : 0);
     }
     return match;
@@ -344,9 +360,9 @@ static bool Readback(Texture &output, Buffer &disable, ID3D12Device *device,
     if (!WaitFence(queue, fence, ++fenceValue, eventHandle, device, "OUTPUT_READBACK")) return false;
     uint8_t *mapped = nullptr; D3D12_RANGE range{0, static_cast<SIZE_T>(output.allocationBytes)};
     if (FAILED(output.readback->Map(0, &range, reinterpret_cast<void **>(&mapped)))) return false;
-    packed.resize(static_cast<size_t>(kRowBytes) * kHeight);
-    for (UINT row = 0; row < kHeight; ++row) std::memcpy(packed.data() + static_cast<size_t>(row) * kRowBytes,
-        mapped + static_cast<size_t>(row) * output.footprint.Footprint.RowPitch, kRowBytes);
+    packed.resize(static_cast<size_t>(output.rowBytes) * output.height);
+    for (UINT row = 0; row < output.height; ++row) std::memcpy(packed.data() + static_cast<size_t>(row) * output.rowBytes,
+        mapped + static_cast<size_t>(row) * output.footprint.Footprint.RowPitch, output.rowBytes);
     output.readback->Unmap(0, nullptr); uint8_t *disableMapped = nullptr; D3D12_RANGE disableRange{0, 4};
     if (FAILED(disable.readback->Map(0, &disableRange, reinterpret_cast<void **>(&disableMapped)))) return false;
     std::memcpy(&disableValue, disableMapped, 4); disable.readback->Unmap(0, nullptr); return true;
@@ -578,7 +594,8 @@ public:
         init_ = reinterpret_cast<InitFn>(GetProcAddress(community_, "NVSDK_NGX_D3D12_Init"));
         create_ = reinterpret_cast<CreateFn>(GetProcAddress(community_, "NVSDK_NGX_D3D12_CreateFeature"));
         evaluate_ = reinterpret_cast<EvalFn>(GetProcAddress(community_, "NVSDK_NGX_D3D12_EvaluateFeature"));
-        if (!init_ || !create_ || !evaluate_) return false;
+        releaseFeature_ = reinterpret_cast<ReleaseFeatureFn>(GetProcAddress(community_, "NVSDK_NGX_D3D12_ReleaseFeature"));
+        if (!init_ || !create_ || !evaluate_ || !releaseFeature_) return false;
         const NVSDK_NGX_Result communityResult = init_(projectId_, NVSDK_NGX_ENGINE_TYPE_CUSTOM, "1.0",
             runtimeDir, device_, &common_, NVSDK_NGX_Version_API);
         RunLog("WORKER_COMMUNITY_INIT_RESULT=0x%08X", communityResult);
@@ -590,15 +607,28 @@ public:
         dlssg::protocol::CreateResponse &response) {
         response = {dlssg::protocol::kWorkerVersion, dlssg::protocol::kVersion, 1,
             static_cast<uint32_t>(dlssg::protocol::DepthMode::ConstantPointFive)};
-        if (request.width != kWidth || request.height != kHeight) return Status::InvalidDimensions;
+        if (!request.width || !request.height || request.width > 3840 || request.height > 2160) return Status::InvalidDimensions;
         if (request.pixelFormat != static_cast<uint32_t>(DXGI_FORMAT_R8G8B8A8_UNORM)) return Status::InvalidFormat;
         if (request.generatedCount != 1 || request.depthMode !=
-            static_cast<uint32_t>(dlssg::protocol::DepthMode::ConstantPointFive)) return Status::InvalidMessage;
-        if (created_) { history_.Reset(); RunLog("WORKER_CREATE_REUSED historyInvalid=1"); return Status::Ok; }
-        if (!MakeTexture(device_, color_, "WORKER_COLOR", DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST) ||
-            !MakeTexture(device_, depth_, "WORKER_DEPTH", DXGI_FORMAT_R32_FLOAT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST) ||
-            !MakeTexture(device_, motion_, "WORKER_MOTION", DXGI_FORMAT_R16G16_FLOAT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST) ||
-            !MakeTexture(device_, output_, "WORKER_OUTPUT", DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)) return Status::NativeFailure;
+            static_cast<uint32_t>(dlssg::protocol::DepthMode::ConstantPointFive) ||
+            (request.motionMode != static_cast<uint32_t>(dlssg::protocol::MotionMode::ExternalR16G16Float) &&
+             request.motionMode != static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow))) return Status::InvalidMessage;
+        if (created_ && request.width == width_ && request.height == height_ && request.motionMode == motionMode_) {
+            history_.Reset(); previousColor_.clear(); nvofHistoryValid_ = false;
+            RunLog("WORKER_CREATE_REUSED historyInvalid=1"); return Status::Ok;
+        }
+        if (created_ && !DestroyFeatureAndResources()) return Status::NativeFailure;
+        width_ = request.width; height_ = request.height; motionMode_ = request.motionMode;
+        const UINT colorRowBytes = width_ * 4;
+        if (!MakeTexture(device_, color_, "WORKER_COLOR", DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_NONE,
+                D3D12_RESOURCE_STATE_COPY_DEST, width_, height_, colorRowBytes) ||
+            !MakeTexture(device_, depth_, "WORKER_DEPTH", DXGI_FORMAT_R32_FLOAT, D3D12_RESOURCE_FLAG_NONE,
+                D3D12_RESOURCE_STATE_COPY_DEST, width_, height_, width_ * 4) ||
+            !MakeTexture(device_, motion_, "WORKER_MOTION", DXGI_FORMAT_R16G16_FLOAT, D3D12_RESOURCE_FLAG_NONE,
+                D3D12_RESOURCE_STATE_COPY_DEST, width_, height_, width_ * 4) ||
+            !MakeTexture(device_, output_, "WORKER_OUTPUT", DXGI_FORMAT_R8G8B8A8_UNORM,
+                D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                width_, height_, colorRowBytes)) return Status::NativeFailure;
         disable_.gpu = MakeBuffer(device_, 4, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         disable_.upload = MakeBuffer(device_, 4, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
         disable_.readback = MakeBuffer(device_, 4, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
@@ -613,6 +643,8 @@ public:
         }
         if (!MapPackedUpload(output_)) return Status::NativeFailure;
         if (!Upload(depth_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_)) return Status::NativeFailure;
+        if (motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow) &&
+            !nvof_.Initialize(device_, queue_, width_, height_)) return Status::NativeFailure;
         SetCreateParameters(); if (!ResetList(allocator_, list_, "WORKER_CREATE")) return Status::NativeFailure;
         const NVSDK_NGX_Result result = create_(list_, NVSDK_NGX_Feature_FrameGeneration, parameters_, &feature_);
         RunLog("WORKER_CREATE_RESULT=0x%08X handle=%p", result, static_cast<void *>(feature_));
@@ -620,14 +652,15 @@ public:
         ID3D12CommandList *commands[] = {list_}; queue_->ExecuteCommandLists(1, commands);
         if (!WaitFence(queue_, fence_, ++fenceValue_, event_, device_, "WORKER_CREATE")) return Status::NativeFailure;
         created_ = true; history_.Reset(); ++createCount_;
-        RunLog("WORKER_CREATE_COMPLETE createCount=%u feature=%p", createCount_, static_cast<void *>(feature_));
+        RunLog("WORKER_CREATE_COMPLETE createCount=%u feature=%p width=%u height=%u motionMode=%u",
+            createCount_, static_cast<void *>(feature_), width_, height_, motionMode_);
         return Status::Ok;
     }
 
     Status Process(const dlssg::protocol::ProcessRequest &request, const uint8_t *color,
         const uint8_t *motion, dlssg::protocol::ProcessResponse &response,
         std::vector<uint8_t> &generated) {
-        response = {}; response.width = kWidth; response.height = kHeight;
+        response = {}; response.width = width_; response.height = height_;
         response.pixelFormat = static_cast<uint32_t>(DXGI_FORMAT_R8G8B8A8_UNORM);
         if (!created_) return Status::InvalidState;
         bool effectiveReset = false;
@@ -635,7 +668,21 @@ public:
             effectiveReset)) return Status::InvalidFrameId;
         const auto totalStart = Clock::now(); const auto uploadStart = Clock::now();
         std::memcpy(color_.packed.data(), color, color_.packed.size());
-        std::memcpy(motion_.packed.data(), motion, motion_.packed.size());
+        std::vector<uint8_t> internalMotion;
+        NvofTimings nvofTimings{};
+        if (motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow)) {
+            if (effectiveReset) {
+                internalMotion.assign(motion_.packed.size(), 0);
+            } else if (previousColor_.size() != color_.packed.size() ||
+                !nvof_.ComputeBackward(previousColor_.data(), color, !nvofHistoryValid_, internalMotion, nullptr, &nvofTimings)) {
+                RunLog("WORKER_NVOF_FAILED frame=%llu", request.frameId); return Status::NativeFailure;
+            } else {
+                nvofHistoryValid_ = true;
+            }
+            std::memcpy(motion_.packed.data(), internalMotion.data(), motion_.packed.size());
+        } else {
+            std::memcpy(motion_.packed.data(), motion, motion_.packed.size());
+        }
         if (!Upload(color_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_) ||
             !Upload(motion_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_)) return Status::NativeFailure;
         const auto uploadEnd = Clock::now();
@@ -643,7 +690,7 @@ public:
         RecordDisableZero(disable_, list_); if (!effectiveReset) RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         NVSDK_NGX_DLSSG_Opt_Eval_Params options{};
         if (!SetOptions(parameters_, color_.gpu, depth_.gpu, motion_.gpu, output_.gpu, disable_.gpu,
-            effectiveReset, request.frameId, options, false)) return Status::NativeFailure;
+            effectiveReset, request.frameId, options, false, width_, height_)) return Status::NativeFailure;
         const auto evaluateStart = Clock::now(); const NVSDK_NGX_Result evalResult = evaluate_(list_, feature_, parameters_, nullptr);
         const auto evaluateEnd = Clock::now(); ++evaluateCount_;
         RunLog("WORKER_EVALUATE frame=%llu reset=%d result=0x%08X evaluateCount=%u", request.frameId,
@@ -652,8 +699,12 @@ public:
         ID3D12CommandList *commands[] = {list_}; queue_->ExecuteCommandLists(1, commands); const auto waitStart = Clock::now();
         if (!WaitFence(queue_, fence_, ++fenceValue_, event_, device_, "WORKER_EVALUATE")) return Status::NativeFailure;
         const auto waitEnd = Clock::now(); history_.Complete(request.frameId);
+        if (motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow))
+            previousColor_.assign(color, color + color_.packed.size());
         response.uploadMs = Milliseconds(uploadStart, uploadEnd); response.evaluateCpuMs = Milliseconds(evaluateStart, evaluateEnd);
         response.gpuWaitMs = Milliseconds(waitStart, waitEnd);
+        response.nvofUploadMs = nvofTimings.uploadMs; response.nvofExecuteMs = nvofTimings.executeMs;
+        response.flowConversionMs = nvofTimings.conversionMs;
         if (effectiveReset) {
             response.totalProcessMs = Milliseconds(totalStart, Clock::now());
             RunLog("WORKER_PROCESS_RESET_COMPLETE frame=%llu", request.frameId); return Status::OkResetNoOutput;
@@ -674,17 +725,32 @@ public:
         return Status::Ok;
     }
 
-    void ResetHistory() { history_.Reset(); RunLog("WORKER_HISTORY_RESET nextFrameForcedReset=1"); }
+    void ResetHistory() { history_.Reset(); previousColor_.clear(); nvofHistoryValid_ = false; RunLog("WORKER_HISTORY_RESET nextFrameForcedReset=1"); }
+    uint32_t Width() const { return width_; }
+    uint32_t Height() const { return height_; }
+    uint32_t MotionMode() const { return motionMode_; }
     uint32_t InitCount() const { return initCount_; }
     uint32_t CreateCount() const { return createCount_; }
     uint32_t EvaluateCount() const { return evaluateCount_; }
     uint32_t GeneratedCount() const { return generatedCount_; }
 
 private:
+    bool DestroyFeatureAndResources() {
+        nvof_.Shutdown();
+        if (feature_) {
+            const NVSDK_NGX_Result result = releaseFeature_(feature_);
+            RunLog("WORKER_RELEASE_FEATURE_RESULT=0x%08X", result);
+            if (NVSDK_NGX_FAILED(result)) return false;
+            feature_ = nullptr;
+        }
+        ReleaseTexture(color_); ReleaseTexture(depth_); ReleaseTexture(motion_); ReleaseTexture(output_);
+        ReleaseBuffer(disable_); created_ = false; previousColor_.clear(); nvofHistoryValid_ = false; history_.Reset();
+        return true;
+    }
     bool MapPackedUpload(Texture &texture) {
         uint8_t *mapped = nullptr; if (FAILED(texture.upload->Map(0, nullptr, reinterpret_cast<void **>(&mapped)))) return false;
-        for (UINT row = 0; row < kHeight; ++row) std::memcpy(mapped + static_cast<size_t>(row) * texture.footprint.Footprint.RowPitch,
-            texture.packed.data() + static_cast<size_t>(row) * kRowBytes, kRowBytes);
+        for (UINT row = 0; row < texture.height; ++row) std::memcpy(mapped + static_cast<size_t>(row) * texture.footprint.Footprint.RowPitch,
+            texture.packed.data() + static_cast<size_t>(row) * texture.rowBytes, texture.rowBytes);
         texture.upload->Unmap(0, nullptr); return true;
     }
     void SetCreateParameters() {
@@ -695,13 +761,13 @@ private:
             NVSDK_NGX_DLSSG_ResourceFlags_BidirectionalDistortionField | NVSDK_NGX_DLSSG_ResourceFlags_OutputReal;
         NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_Parameter_CreationNodeMask, 1);
         NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_Parameter_VisibilityNodeMask, 1);
-        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_Parameter_Width, kWidth);
-        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_Parameter_Height, kHeight);
-        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_Width, kWidth);
-        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_Height, kHeight);
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_Parameter_Width, width_);
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_Parameter_Height, height_);
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_Width, width_);
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_Height, height_);
         NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_BackbufferFormat, static_cast<unsigned>(DXGI_FORMAT_R8G8B8A8_UNORM));
-        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_InternalWidth, kWidth);
-        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_InternalHeight, kHeight);
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_InternalWidth, width_);
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_InternalHeight, height_);
         NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_DynamicResolution, 0);
         NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_ResourceAlwaysProvided_Flags, always);
         NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_ResourceNeverProvided_Flags, never);
@@ -715,8 +781,12 @@ private:
     HANDLE event_ = nullptr; UINT64 fenceValue_ = 0; NVSDK_NGX_FeatureCommonInfo common_{};
     std::wstring runtimeDir_{}; const wchar_t *runtimePaths_[1]{};
     NVSDK_NGX_Parameter *parameters_ = nullptr; HMODULE community_ = nullptr; InitFn init_ = nullptr;
-    CreateFn create_ = nullptr; EvalFn evaluate_ = nullptr; NVSDK_NGX_Handle *feature_ = nullptr;
+    CreateFn create_ = nullptr; EvalFn evaluate_ = nullptr; ReleaseFeatureFn releaseFeature_ = nullptr;
+    NVSDK_NGX_Handle *feature_ = nullptr;
     Texture color_{}, depth_{}, motion_{}, output_{}; Buffer disable_{}; HistoryState history_{};
+    NvofD3D12 nvof_{}; std::vector<uint8_t> previousColor_{};
+    bool nvofHistoryValid_ = false;
+    uint32_t width_ = 0, height_ = 0, motionMode_ = 0;
     bool created_ = false; uint32_t initCount_ = 0, createCount_ = 0, evaluateCount_ = 0, generatedCount_ = 0;
 };
 
@@ -745,7 +815,7 @@ bool WorkerProtocolSelfTest() {
     if (history.Begin(1, false, reset)) return false; history.Reset();
     if (!history.Begin(2, false, reset) || !reset) return false;
     return sizeof(dlssg::protocol::RequestHeader) == 16 && sizeof(dlssg::protocol::ResponseHeader) == 20 &&
-        sizeof(dlssg::protocol::ProcessResponse) == 64;
+        sizeof(dlssg::protocol::ProcessResponse) == 88;
 }
 
 int RunServer(const wchar_t *communityPath, const wchar_t *runtimeDir) {
@@ -772,8 +842,10 @@ int RunServer(const wchar_t *communityPath, const wchar_t *runtimeDir) {
             if (payload.size() < sizeof(dlssg::protocol::ProcessRequest)) { if (!SendResponse(output, header, Status::InvalidPayloadSize)) return 74; continue; }
             dlssg::protocol::ProcessRequest request{}; std::memcpy(&request, payload.data(), sizeof(request));
             const uint64_t expected = sizeof(request) + static_cast<uint64_t>(request.colorBytes) + request.motionBytes + request.depthBytes;
-            const uint32_t fixedBytes = kWidth * kHeight * 4;
-            if (expected != payload.size() || request.colorBytes != fixedBytes || request.motionBytes != fixedBytes || request.depthBytes != 0) {
+            const uint64_t fixedBytes64 = static_cast<uint64_t>(worker.Width()) * worker.Height() * 4;
+            const bool external = worker.MotionMode() == static_cast<uint32_t>(dlssg::protocol::MotionMode::ExternalR16G16Float);
+            if (expected != payload.size() || fixedBytes64 > UINT32_MAX || request.colorBytes != fixedBytes64 ||
+                request.motionBytes != (external ? fixedBytes64 : 0) || request.depthBytes != 0) {
                 if (!SendResponse(output, header, Status::InvalidPayloadSize)) return 74; continue;
             }
             dlssg::protocol::ProcessResponse response{}; std::vector<uint8_t> generated;

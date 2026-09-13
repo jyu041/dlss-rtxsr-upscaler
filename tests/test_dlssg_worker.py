@@ -37,7 +37,7 @@ def test_protocol_layout_sizes_and_roundtrip():
     assert worker.RESPONSE_HEADER.size == 20
     assert worker.CREATE_REQUEST.size == 24
     assert worker.PROCESS_REQUEST.size == 24
-    assert worker.PROCESS_RESPONSE.size == 64
+    assert worker.PROCESS_RESPONSE.size == 88
     packed = worker.REQUEST_HEADER.pack(
         worker.MAGIC, worker.PROTOCOL_VERSION, worker.COMMAND_PROCESS, 7, 123
     )
@@ -92,8 +92,21 @@ def test_process_rejects_incorrect_color_size_before_protocol_io(tmp_path):
         tmp_path / "runtime",
     )
     client.width = client.height = 2
+    client.motion_mode = worker.MOTION_MODE_EXTERNAL_R16G16_FLOAT
     with pytest.raises(ValueError, match="color payload"):
         client.process(0, b"bad", struct.pack("<ee", 0.0, 0.0) * 4, reset=True)
+
+
+def test_internal_motion_mode_rejects_external_payload(tmp_path):
+    client = worker.DlssgWorker(
+        tmp_path / "missing.exe",
+        tmp_path / "missing.dll",
+        tmp_path / "runtime",
+    )
+    client.width = client.height = 2
+    client.motion_mode = worker.MOTION_MODE_NVIDIA_OPTICAL_FLOW
+    with pytest.raises(ValueError, match="does not accept"):
+        client.process(0, bytes(16), bytes(16), reset=True)
 
 
 def test_native_error_preserves_status_and_command():

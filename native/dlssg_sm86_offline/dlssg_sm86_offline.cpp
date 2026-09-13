@@ -7,6 +7,7 @@
 #include <nvsdk_ngx.h>
 #include <nvsdk_ngx_defs_dlssg.h>
 #include <nvapi.h>
+#include "nvof_d3d12.h"
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
@@ -151,6 +152,8 @@ int RunServer(const wchar_t *communityPath, const wchar_t *runtimeDir);
 
 int wmain(int argc, wchar_t **argv) {
     if (argc >= 2 && _wcsicmp(argv[1], L"--selftest") == 0) return SelfTest() ? 0 : 1;
+    if (argc >= 2 && _wcsicmp(argv[1], L"--nvof-probe") == 0) return RunNvofProbe();
+    if (argc >= 2 && _wcsicmp(argv[1], L"--nvof-flow-test") == 0) return RunNvofFlowTest();
     if (argc >= 3 && _wcsicmp(argv[1], L"--param-probe") == 0) return ParamProbe(argv[2]) ? 0 : 2;
     if (argc >= 3 && _wcsicmp(argv[1], L"--shutdown-probe") == 0) return ParamProbe(argv[2], true) ? 0 : 2;
     if (argc >= 3 && _wcsicmp(argv[1], L"--runtime-probe") == 0) return RuntimeProbe(argv[2]);

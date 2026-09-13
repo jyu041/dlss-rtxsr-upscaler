@@ -62,14 +62,15 @@ Private repository: sibling path `C:\Users\mark\Desktop\dlss-rtxsr-upscaler-reso
 remote `https://github.com/jyu041/dlss-rtxsr-upscaler-resources.git`, branch
 `main`. It contains LFS rules, the project-owned worker, lock manifest, and
 idempotent `bootstrap.ps1`, `verify.ps1`, and `sync-to-public.ps1`. Latest
-private commit is `b4e184b`; push succeeded and LFS reports no pending objects.
+private commit is `259e517`; push succeeded and LFS reports no pending objects.
 PowerShell syntax checks passed.
 
 ## J. Application
 
 Project diagnostics pass for Windows, GPU, FFmpeg, FFprobe, CUDA, and Python
-packages. The Gradio UI builds as `Blocks` in the pinned environment. DLSS-G is
-currently reported `NOT CONFIGURED` until the user supplies
+packages. The Gradio UI builds as `Blocks` in the pinned environment. With the
+known local community and official runtime paths supplied, DLSS-G reports
+`EXPERIMENTAL READY` and the private `verify.ps1` ends `READY`.
 the community runtime and official runtime directory through
 `DLSSG_COMMUNITY_RUNTIME` and `DLSSG_OFFICIAL_RUNTIME_DIR`. The NVIDIA driver
 Optical Flow runtime is present at `C:\Windows\System32\nvofapi64.dll`.
@@ -77,17 +78,18 @@ Optical Flow runtime is present at `C:\Windows\System32\nvofapi64.dll`.
 ## K–M. Tests and Git
 
 Worker self-test passed; package imports and `pip check` passed; Python tests
-passed (`69 passed, 2 skipped`); public commits `291f520` and `baf3fd7` were
-pushed; private commits `9e94561`, `1ca9f63`, and `b4e184b` were pushed. A fresh
+passed (`69 passed, 2 skipped`); public commits `291f520`, `baf3fd7`, and
+`a61d24a` were pushed; private commits `9e94561`, `1ca9f63`, `b4e184b`, and
+`259e517` were pushed. A fresh
 clone simulation passed for clone, LFS retrieval, synchronization, worker
 self-test, and `git diff --check`. Full native rebuild, NVOF direction test,
 and true DLSS-G UI readiness still require the external SDK/runtime inputs.
 
 ## N–O. Remaining manual actions and primary result
 
-Supply the lawful community runtime and official NVIDIA runtime/SDK on each
-machine, set the two DLSS-G variables, and install the Visual Studio C++ build
-components if rebuilding from source. Until those restricted inputs are
-present, the result is **NOT READY** for a full DLSS-G launch; the bootstrap
-and verification machinery is ready and will fail clearly rather than silently
-using an unrelated runtime.
+On another machine, supply the lawful community runtime and official NVIDIA
+runtime/SDK, set the two DLSS-G variables, and install Visual Studio C++ build
+components if rebuilding from source. The current validation PC meets the
+runtime verification criteria; a live Gradio banner was not captured before
+the brief launch test was terminated, so full video processing remains an
+external-runtime-dependent manual smoke test.

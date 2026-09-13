@@ -114,3 +114,24 @@ def test_native_error_preserves_status_and_command():
     assert error.status == -8
     assert error.command == worker.COMMAND_PROCESS
     assert "diagnostic" in str(error)
+
+
+@pytest.mark.parametrize("multiplier", [0, 1, 5])
+def test_create_rejects_unsupported_multiplier(tmp_path, multiplier):
+    client = worker.DlssgWorker(tmp_path / "worker.exe", tmp_path / "version.dll", tmp_path / "runtime")
+    with pytest.raises(ValueError, match="multiplier"):
+        client.create(multiplier=multiplier)
+
+
+def test_process_splits_ordered_generated_payloads(tmp_path, monkeypatch):
+    client = worker.DlssgWorker(tmp_path / "worker.exe", tmp_path / "version.dll", tmp_path / "runtime")
+    client.width = client.height = 1
+    client.motion_mode = worker.MOTION_MODE_NVIDIA_OPTICAL_FLOW
+    first, second = b"abcd", b"efgh"
+    timings = (0.0,) * 17
+    response = worker.PROCESS_RESPONSE.pack(2, 0, 1, 1, worker.PIXEL_FORMAT_RGBA8_UNORM, 8, *timings)
+    monkeypatch.setattr(client, "_exchange", lambda *_args, **_kwargs: response + first + second)
+    result = client.process(7, b"rgba")
+    assert result.generated_count == 2
+    assert result.outputs == (first, second)
+    assert result.output == first

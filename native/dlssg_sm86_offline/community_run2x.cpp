@@ -212,9 +212,9 @@ static bool VerifyResource(NVSDK_NGX_Parameter *p, const char *key, ID3D12Resour
 
 static bool SetOptions(NVSDK_NGX_Parameter *p, ID3D12Resource *color, ID3D12Resource *depth,
     ID3D12Resource *motion, ID3D12Resource *output, ID3D12Resource *disable, bool reset,
-    unsigned long long frameId, NVSDK_NGX_DLSSG_Opt_Eval_Params &o, bool manifest,
+    unsigned long long frameId, uint32_t generatedCount, uint32_t generatedIndex, NVSDK_NGX_DLSSG_Opt_Eval_Params &o, bool manifest,
     UINT width = kWidth, UINT height = kHeight) {
-    o = {}; o.multiFrameCount = 1; o.multiFrameIndex = 1;
+    o = {}; o.multiFrameCount = generatedCount; o.multiFrameIndex = generatedIndex;
     Identity(o.cameraViewToClip); Identity(o.clipToCameraView); Identity(o.clipToLensClip);
     Identity(o.clipToPrevClip); Identity(o.prevClipToClip);
     o.mvecScale[0] = 1.0f / width; o.mvecScale[1] = 1.0f / height;
@@ -484,7 +484,7 @@ int Run2x(const wchar_t *communityPath, const wchar_t *runtimeDir) {
 
     NVSDK_NGX_DLSSG_Opt_Eval_Params bootstrapOptions{}; if (!ResetList(allocator, list, "BOOTSTRAP")) return 51;
     RecordDisableZero(disable, list);
-    if (!SetOptions(parameters, colorA.gpu, depthA.gpu, motionA.gpu, output.gpu, disable.gpu, true, 0ULL, bootstrapOptions, true)) return 52;
+    if (!SetOptions(parameters, colorA.gpu, depthA.gpu, motionA.gpu, output.gpu, disable.gpu, true, 0ULL, 1, 1, bootstrapOptions, true)) return 52;
     RunLog("BOOTSTRAP_EVALUATE_STARTED"); const NVSDK_NGX_Result bootstrapResult = evaluate(list, feature, parameters, nullptr);
     RunLog("BOOTSTRAP_EVALUATE_RESULT=0x%08X", bootstrapResult); if (NVSDK_NGX_FAILED(bootstrapResult)) return 53;
     if (FAILED(list->Close())) return 54; queue->ExecuteCommandLists(1, commands);
@@ -493,7 +493,7 @@ int Run2x(const wchar_t *communityPath, const wchar_t *runtimeDir) {
     NVSDK_NGX_DLSSG_Opt_Eval_Params measuredOptions{}; if (!ResetList(allocator, list, "MEASURED")) return 56;
     RecordDisableZero(disable, list); RecordTextureUpload(output, list, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     RunLog("OUTPUT_SENTINEL_PREFILLED sha256=%s", kSentinelSha);
-    if (!SetOptions(parameters, colorB.gpu, depthB.gpu, motionB.gpu, output.gpu, disable.gpu, false, 1ULL, measuredOptions, false)) return 57;
+    if (!SetOptions(parameters, colorB.gpu, depthB.gpu, motionB.gpu, output.gpu, disable.gpu, false, 1ULL, 1, 1, measuredOptions, false)) return 57;
     RunLog("MEASURED_EVALUATE_STARTED"); const NVSDK_NGX_Result measuredResult = evaluate(list, feature, parameters, nullptr);
     RunLog("MEASURED_EVALUATE_RESULT=0x%08X", measuredResult); if (NVSDK_NGX_FAILED(measuredResult)) return 58;
     if (FAILED(list->Close())) return 59; queue->ExecuteCommandLists(1, commands);
@@ -605,20 +605,20 @@ public:
 
     Status Create(const dlssg::protocol::CreateRequest &request,
         dlssg::protocol::CreateResponse &response) {
-        response = {dlssg::protocol::kWorkerVersion, dlssg::protocol::kVersion, 1,
+        response = {dlssg::protocol::kWorkerVersion, dlssg::protocol::kVersion, 3,
             static_cast<uint32_t>(dlssg::protocol::DepthMode::ConstantPointFive)};
         if (!request.width || !request.height || request.width > 3840 || request.height > 2160) return Status::InvalidDimensions;
         if (request.pixelFormat != static_cast<uint32_t>(DXGI_FORMAT_R8G8B8A8_UNORM)) return Status::InvalidFormat;
-        if (request.generatedCount != 1 || request.depthMode !=
+        if (request.generatedCount < 1 || request.generatedCount > 3 || request.depthMode !=
             static_cast<uint32_t>(dlssg::protocol::DepthMode::ConstantPointFive) ||
             (request.motionMode != static_cast<uint32_t>(dlssg::protocol::MotionMode::ExternalR16G16Float) &&
              request.motionMode != static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow))) return Status::InvalidMessage;
-        if (created_ && request.width == width_ && request.height == height_ && request.motionMode == motionMode_) {
+        if (created_ && request.width == width_ && request.height == height_ && request.motionMode == motionMode_ && request.generatedCount == generatedPerGroup_) {
             history_.Reset(); previousColor_.clear(); nvofHistoryValid_ = false;
             RunLog("WORKER_CREATE_REUSED historyInvalid=1"); return Status::Ok;
         }
         if (created_ && !DestroyFeatureAndResources()) return Status::NativeFailure;
-        width_ = request.width; height_ = request.height; motionMode_ = request.motionMode;
+        width_ = request.width; height_ = request.height; motionMode_ = request.motionMode; generatedPerGroup_ = request.generatedCount;
         const UINT colorRowBytes = width_ * 4;
         if (!MakeTexture(device_, color_, "WORKER_COLOR", DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_NONE,
                 D3D12_RESOURCE_STATE_COPY_DEST, width_, height_, colorRowBytes) ||
@@ -670,13 +670,17 @@ public:
         std::memcpy(color_.packed.data(), color, color_.packed.size());
         std::vector<uint8_t> internalMotion;
         NvofTimings nvofTimings{};
+        // Normal rendering only needs the converted motion texture.  The full
+        // distribution statistics allocate/sample on the CPU after the NVOF
+        // readback and are deliberately reserved for the standalone
+        // diagnostics harnesses.
         NvofFlowStatistics flowStatistics{};
         if (motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow)) {
             if (effectiveReset) {
                 internalMotion.assign(motion_.packed.size(), 0);
             } else if (previousColor_.size() != color_.packed.size() ||
                 !nvof_.ComputeBackward(previousColor_.data(), color, !nvofHistoryValid_, internalMotion,
-                    nullptr, &flowStatistics, &nvofTimings)) {
+                    nullptr, nullptr, &nvofTimings)) {
                 RunLog("WORKER_NVOF_FAILED frame=%llu", request.frameId); return Status::NativeFailure;
             } else {
                 nvofHistoryValid_ = true;
@@ -692,11 +696,11 @@ public:
         RecordDisableZero(disable_, list_); if (!effectiveReset) RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         NVSDK_NGX_DLSSG_Opt_Eval_Params options{};
         if (!SetOptions(parameters_, color_.gpu, depth_.gpu, motion_.gpu, output_.gpu, disable_.gpu,
-            effectiveReset, request.frameId, options, false, width_, height_)) return Status::NativeFailure;
+            effectiveReset, request.frameId, generatedPerGroup_, 1, options, false, width_, height_)) return Status::NativeFailure;
         const auto evaluateStart = Clock::now(); const NVSDK_NGX_Result evalResult = evaluate_(list_, feature_, parameters_, nullptr);
         const auto evaluateEnd = Clock::now(); ++evaluateCount_;
-        RunLog("WORKER_EVALUATE frame=%llu reset=%d result=0x%08X evaluateCount=%u", request.frameId,
-            effectiveReset ? 1 : 0, evalResult, evaluateCount_);
+        RunLog("WORKER_EVALUATE frame=%llu reset=%d generatedCount=%u generatedIndex=1 result=0x%08X evaluateCount=%u", request.frameId,
+            effectiveReset ? 1 : 0, generatedPerGroup_, evalResult, evaluateCount_);
         if (NVSDK_NGX_FAILED(evalResult) || FAILED(list_->Close())) return Status::NativeFailure;
         ID3D12CommandList *commands[] = {list_}; queue_->ExecuteCommandLists(1, commands); const auto waitStart = Clock::now();
         if (!WaitFence(queue_, fence_, ++fenceValue_, event_, device_, "WORKER_EVALUATE")) return Status::NativeFailure;
@@ -718,19 +722,37 @@ public:
             response.totalProcessMs = Milliseconds(totalStart, Clock::now());
             RunLog("WORKER_PROCESS_RESET_COMPLETE frame=%llu", request.frameId); return Status::OkResetNoOutput;
         }
-        const auto readbackStart = Clock::now(); uint32_t disableValue = 0;
-        if (!Readback(output_, disable_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_, generated, disableValue)) return Status::NativeFailure;
-        const auto readbackEnd = Clock::now(); response.readbackMs = Milliseconds(readbackStart, readbackEnd);
-        response.totalProcessMs = Milliseconds(totalStart, readbackEnd); response.disableInterpolation = disableValue;
+        const auto readbackStart = Clock::now(); uint32_t disableValue = 0; std::vector<uint8_t> one;
+        if (!Readback(output_, disable_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_, one, disableValue)) return Status::NativeFailure;
         if (disableValue != 0) return Status::InterpolationDisabled;
-        const bool sentinel = generated == output_.packed;
-        const bool zero = std::all_of(generated.begin(), generated.end(), [](uint8_t value) { return value == 0; });
-        const bool constant = !generated.empty() && std::all_of(generated.begin(), generated.end(),
-            [&](uint8_t value) { return value == generated.front(); });
-        if (sentinel || zero || constant) return Status::InvalidOutput;
-        response.generatedCount = 1; response.outputBytes = static_cast<uint32_t>(generated.size());
-        ++generatedCount_; RunLog("WORKER_OUTPUT frame=%llu sha256=%s generatedCount=%u totalMs=%.3f",
-            request.frameId, Sha256(generated).c_str(), generatedCount_, response.totalProcessMs);
+        const auto validOutput = [&](const std::vector<uint8_t> &value) {
+            return value != output_.packed && !std::all_of(value.begin(), value.end(), [](uint8_t item) { return item == 0; }) &&
+                !( !value.empty() && std::all_of(value.begin(), value.end(), [&](uint8_t item) { return item == value.front(); }) );
+        };
+        if (!validOutput(one)) return Status::InvalidOutput;
+        generated = one;
+        for (uint32_t index = 2; index <= generatedPerGroup_; ++index) {
+            if (!ResetList(allocator_, list_, "WORKER_MFG_EVALUATE")) return Status::NativeFailure;
+            RecordDisableZero(disable_, list_); RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            if (!SetOptions(parameters_, color_.gpu, depth_.gpu, motion_.gpu, output_.gpu, disable_.gpu,
+                false, request.frameId, generatedPerGroup_, index, options, false, width_, height_)) return Status::NativeFailure;
+            const auto nextStart = Clock::now(); const NVSDK_NGX_Result next = evaluate_(list_, feature_, parameters_, nullptr);
+            response.evaluateCpuMs += Milliseconds(nextStart, Clock::now()); ++evaluateCount_;
+            RunLog("WORKER_EVALUATE frame=%llu reset=0 generatedCount=%u generatedIndex=%u result=0x%08X evaluateCount=%u", request.frameId, generatedPerGroup_, index, next, evaluateCount_);
+            if (NVSDK_NGX_FAILED(next) || FAILED(list_->Close())) return Status::NativeFailure;
+            queue_->ExecuteCommandLists(1, commands); const auto nextWait = Clock::now();
+            if (!WaitFence(queue_, fence_, ++fenceValue_, event_, device_, "WORKER_MFG_EVALUATE")) return Status::NativeFailure;
+            response.gpuWaitMs += Milliseconds(nextWait, Clock::now()); one.clear(); disableValue = 0;
+            if (!Readback(output_, disable_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_, one, disableValue)) return Status::NativeFailure;
+            if (disableValue != 0) return Status::InterpolationDisabled;
+            if (!validOutput(one)) return Status::InvalidOutput;
+            generated.insert(generated.end(), one.begin(), one.end());
+        }
+        const auto readbackEnd = Clock::now(); response.readbackMs = Milliseconds(readbackStart, readbackEnd);
+        response.totalProcessMs = Milliseconds(totalStart, readbackEnd); response.disableInterpolation = 0;
+        response.generatedCount = generatedPerGroup_; response.outputBytes = static_cast<uint32_t>(generated.size());
+        generatedCount_ += generatedPerGroup_; RunLog("WORKER_OUTPUT frame=%llu outputs=%u sha256=%s generatedCount=%u totalMs=%.3f",
+            request.frameId, generatedPerGroup_, Sha256(generated).c_str(), generatedCount_, response.totalProcessMs);
         return Status::Ok;
     }
 
@@ -795,7 +817,7 @@ private:
     Texture color_{}, depth_{}, motion_{}, output_{}; Buffer disable_{}; HistoryState history_{};
     NvofD3D12 nvof_{}; std::vector<uint8_t> previousColor_{};
     bool nvofHistoryValid_ = false;
-    uint32_t width_ = 0, height_ = 0, motionMode_ = 0;
+    uint32_t width_ = 0, height_ = 0, motionMode_ = 0, generatedPerGroup_ = 1;
     bool created_ = false; uint32_t initCount_ = 0, createCount_ = 0, evaluateCount_ = 0, generatedCount_ = 0;
 };
 

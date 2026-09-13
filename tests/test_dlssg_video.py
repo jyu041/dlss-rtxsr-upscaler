@@ -21,6 +21,16 @@ def test_output_frame_count_duration_policy():
     assert output_frame_count(1) == 2
     assert output_frame_count(4) == 8
     assert output_frame_count(4, duplicate_terminal_frame=False) == 7
+    assert output_frame_count(4, multiplier=3) == 12
+    assert output_frame_count(4, multiplier=4) == 16
+    assert output_frame_count(4, duplicate_terminal_frame=False, multiplier=3) == 10
+    assert output_frame_count(4, duplicate_terminal_frame=False, multiplier=4) == 13
+
+
+@pytest.mark.parametrize("multiplier", [0, 1, 5])
+def test_output_frame_count_rejects_unsupported_multiplier(multiplier):
+    with pytest.raises(ValueError, match="multiplier"):
+        output_frame_count(4, multiplier=multiplier)
 
 
 def test_raw_frame_reader_handles_short_pipe_reads():

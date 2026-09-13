@@ -5,8 +5,8 @@
 namespace dlssg::protocol {
 
 constexpr uint32_t kMagic = 0x47534C44u; // "DLSG" in little-endian byte order.
-constexpr uint16_t kVersion = 3;
-constexpr uint32_t kWorkerVersion = 3;
+constexpr uint16_t kVersion = 4;
+constexpr uint32_t kWorkerVersion = 4;
 constexpr uint32_t kMaximumPayloadBytes = 64u * 1024u * 1024u;
 
 enum class Command : uint16_t {

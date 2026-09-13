@@ -37,13 +37,18 @@ def main() -> int:
     parser.add_argument("--community-runtime", type=Path, required=True)
     parser.add_argument("--official-runtime-dir", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, default=ROOT / "runtime" / "dlssg_nvof_persistent.json")
+    parser.add_argument("--width", type=int, default=256)
+    parser.add_argument("--height", type=int, default=256)
+    parser.add_argument("--quiet-worker-log", action="store_true")
     args = parser.parse_args()
-    width = height = 256
+    width, height = args.width, args.height
+    if width < 64 or height < 64:
+        raise ValueError("width and height must each be at least 64")
     client = DlssgWorker(
         args.worker.resolve(),
         args.community_runtime.resolve(),
         args.official_runtime_dir.resolve(),
-        diagnostic_callback=lambda line: print(line, file=sys.stderr, flush=True),
+        diagnostic_callback=None if args.quiet_worker_log else lambda line: print(line, file=sys.stderr, flush=True),
     )
     records: list[dict[str, object]] = []
     hashes: set[str] = set()

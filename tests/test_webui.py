@@ -11,6 +11,7 @@ try:
 except ImportError as exc:
     pytest.skip(f"WebUI dependency is unavailable in this Python environment: {exc}", allow_module_level=True)
 
+from src.ui import app as webui
 from src.ui.app import build, mode_visibility
 from src.core import user_presets
 
@@ -65,6 +66,15 @@ def test_ui_build_uses_saved_dlssg_values(tmp_path, monkeypatch):
     fields = {component.get("props", {}).get("label"): component.get("props", {}).get("value") for component in ui.config["components"]}
     assert fields["Community runtime (absolute version.dll path)"] == "C:/saved/version.dll"
     assert fields["Official NGX runtime directory"] == "C:/saved/ngx"
+    assert fields["Frame multiplier"] == 2
+
+
+def test_preview_directory_keeps_recent_playable_clips(tmp_path, monkeypatch):
+    monkeypatch.setattr(webui, "TEMP", tmp_path)
+    created = [webui._preview_directory() for _ in range(5)]
+    retained = [directory for directory in created if directory.exists()]
+    assert len(retained) == 4
+    assert created[-1].exists()
 
 
 def test_dlssg_startup_precedence_saved_then_environment_then_default(tmp_path, monkeypatch):
@@ -90,3 +100,4 @@ def test_ui_has_no_redundant_processing_or_sr_workflow():
     assert 'gr.Tab("Output")' not in source
     assert 'Load Last Render' in source
     assert 'show_label=False' in source
+    assert "3X and 4X use the generalized worker contract but remain experimental" in source

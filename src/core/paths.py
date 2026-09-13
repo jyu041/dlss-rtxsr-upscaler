@@ -24,6 +24,6 @@ def aligned_dimensions(width: int, height: int, scale: float = 1.0, target: tupl
         raw = target
     return max(8, round(raw[0] / 8) * 8), max(8, round(raw[1] / 8) * 8)
 
-def output_path(source: Path, mode: str, container: str, scale: float = 1) -> Path:
-    tag = "dlssg_2x" if "Frame Generation" in mode else "dlss_sr" if mode.startswith("DLSS SR") else "dlss5" if mode.startswith("DLSS") else f"rtxvsr_{scale:g}x"
+def output_path(source: Path, mode: str, container: str, scale: float = 1, multiplier: int = 2) -> Path:
+    tag = f"dlssg_{multiplier}x" if "Frame Generation" in mode else "dlss_sr" if mode.startswith("DLSS SR") else "dlss5" if mode.startswith("DLSS") else f"rtxvsr_{scale:g}x"
     return OUTPUTS / f"{source.stem}_{tag}.{container.lower()}"

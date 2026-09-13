@@ -62,11 +62,13 @@ def test_dlssg_settings_roundtrip_and_validation(tmp_path, monkeypatch):
     monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
     values = {"community_runtime": "  C:/runtime/version.dll  ", "official_runtime_dir": "", "motion_provider": "NVIDIA Optical Flow", "depth_mode": "Constant 0.5"}
     user_presets.save_last_used("dlssg", values)
-    assert user_presets.load_last_used()["dlssg"] == {**values, "community_runtime": "C:/runtime/version.dll"}
+    assert user_presets.load_last_used()["dlssg"] == {**values, "community_runtime": "C:/runtime/version.dll", "multiplier": 2}
     with pytest.raises(ValueError):
         user_presets.save_last_used("dlssg", {**values, "motion_provider": "CPU"})
     with pytest.raises(ValueError):
         user_presets.save_last_used("dlssg", {**values, "depth_mode": "Depth"})
+    with pytest.raises(ValueError):
+        user_presets.save_last_used("dlssg", {**values, "multiplier": 5})
 
 
 def test_schema_v1_without_dlssg_and_existing_backends_are_preserved(tmp_path, monkeypatch):

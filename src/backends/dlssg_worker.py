@@ -1,4 +1,4 @@
-"""Binary client for the persistent offline Ampere DLSS-G 2X worker.
+"""Binary client for the persistent offline Ampere DLSS-G worker.
 
 The native executable and NVIDIA/community runtimes are external build/runtime
 dependencies. This module never downloads or redistributes them.
@@ -17,8 +17,8 @@ import warnings
 from typing import BinaryIO, Callable
 
 MAGIC = 0x47534C44
-PROTOCOL_VERSION = 3
-WORKER_VERSION = 3
+PROTOCOL_VERSION = 4
+WORKER_VERSION = 4
 KNOWN_COMMUNITY_SHA256 = "C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2"
 
 COMMAND_HELLO = 1
@@ -77,7 +77,7 @@ class ProcessResult:
     width: int
     height: int
     pixel_format: int
-    output: bytes
+    outputs: tuple[bytes, ...]
     upload_ms: float
     evaluate_cpu_ms: float
     gpu_wait_ms: float
@@ -96,6 +96,11 @@ class ProcessResult:
     flow_near_zero_percent: float
     flow_unusually_large_percent: float
     reset_only: bool
+
+    @property
+    def output(self) -> bytes:
+        """Compatibility accessor for the first generated frame in a group."""
+        return self.outputs[0] if self.outputs else b""
 
     @property
     def sha256(self) -> str | None:
@@ -177,6 +182,7 @@ class DlssgWorker:
         self.width: int | None = None
         self.height: int | None = None
         self.motion_mode: int | None = None
+        self.multiplier: int | None = None
 
     @property
     def diagnostics(self) -> tuple[str, ...]:
@@ -270,13 +276,16 @@ class DlssgWorker:
         width: int = 256,
         height: int = 256,
         *,
+        multiplier: int = 2,
         motion_mode: int = MOTION_MODE_EXTERNAL_R16G16_FLOAT,
     ) -> dict[str, int]:
+        if multiplier not in (2, 3, 4):
+            raise ValueError("multiplier must be 2, 3, or 4")
         request = CREATE_REQUEST.pack(
             width,
             height,
             PIXEL_FORMAT_RGBA8_UNORM,
-            1,
+            multiplier - 1,
             DEPTH_MODE_CONSTANT_0_5,
             motion_mode,
         )
@@ -284,7 +293,7 @@ class DlssgWorker:
         if len(payload) != CREATE_RESPONSE.size:
             raise DlssgWorkerProtocolError("invalid CREATE response size")
         worker, protocol, maximum, depth_mode = CREATE_RESPONSE.unpack(payload)
-        self.width, self.height, self.motion_mode = width, height, motion_mode
+        self.width, self.height, self.motion_mode, self.multiplier = width, height, motion_mode, multiplier
         return {
             "worker_version": worker,
             "protocol_version": protocol,
@@ -337,15 +346,17 @@ class DlssgWorker:
             raise DlssgWorkerProtocolError(
                 f"PROCESS output is {len(output)} bytes; header declares {output_bytes}"
             )
+        expected_frame_bytes = width * height * 4
+        if generated_count == 0:
+            if output:
+                raise DlssgWorkerProtocolError("reset PROCESS response unexpectedly contains output")
+            outputs: tuple[bytes, ...] = ()
+        else:
+            if generated_count not in (1, 2, 3) or output_bytes != generated_count * expected_frame_bytes:
+                raise DlssgWorkerProtocolError("invalid generated-frame count or payload size")
+            outputs = tuple(output[index * expected_frame_bytes : (index + 1) * expected_frame_bytes] for index in range(generated_count))
         return ProcessResult(
-            frame_id,
-            generated_count,
-            disable,
-            width,
-            height,
-            pixel_format,
-            output,
-            *timings,
+            frame_id, generated_count, disable, width, height, pixel_format, outputs, *timings,
             reset_only=generated_count == 0,
         )
 

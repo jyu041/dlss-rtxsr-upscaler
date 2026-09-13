@@ -1,4 +1,4 @@
-import os, json, gradio as gr
+import os, json, shutil, tempfile, gradio as gr
 from pathlib import Path
 from src.core.media_info import probe, format_info
 from src.core.config import load_settings, save_settings, load_presets
@@ -22,7 +22,7 @@ from src.ui.preset_controls import delete_dlss, delete_rtx, delete_dlss_sr, load
 from src.video.stream import render_vsr
 from src.video.dlss5 import render_dlss5
 from src.video.dlss_sr import process_dlss_sr_frame, render_dlss_sr
-from src.video.dlssg import ffmpeg_executable, render_dlssg_2x
+from src.video.dlssg import ffmpeg_executable, render_dlssg
 
 os.environ.setdefault("GRADIO_ANALYTICS_ENABLED","False")
 CONTROLLER = JobController()
@@ -43,8 +43,8 @@ def _save_last(backend, values):
         save_last_used(backend, values)
     except Exception:
         pass
-def save_dlssg_settings(community_runtime, official_runtime_dir, motion_provider, depth_mode):
-    _save_last("dlssg", {"community_runtime": community_runtime or "", "official_runtime_dir": official_runtime_dir or "", "motion_provider": motion_provider, "depth_mode": depth_mode})
+def save_dlssg_settings(community_runtime, official_runtime_dir, motion_provider, depth_mode, multiplier=2):
+    _save_last("dlssg", {"community_runtime": community_runtime or "", "official_runtime_dir": official_runtime_dir or "", "motion_provider": motion_provider, "depth_mode": depth_mode, "multiplier": int(multiplier)})
     return "Runtime configuration saved locally."
 def inspect(path):
     if not path: return "<span class=\"muted\">No video selected.</span>", "No video selected."
@@ -135,13 +135,13 @@ def load_last_render():
         return None, '<span class="error">Previous render is not a readable video.</span>', detail, None, None, None, "Previous render is not a readable video.", gr.update(interactive=False)
     return path, summary, detail, None, None, None, f"Loaded last successful render: {Path(path).name}", gr.update(interactive=True)
 
-def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, codec_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", dlssg_runtime="", dlssg_official_runtime="", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5"):
+def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, codec_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", dlssg_runtime="", dlssg_official_runtime="", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5", dlssg_multiplier=2):
     if not path: return None, "Choose an input video."
     job = None
     try:
-        job = CONTROLLER.start(); MONITOR.set_active(True); destination = output_path(Path(path), processing_mode, container_value, float(dlss_scale))
+        job = CONTROLLER.start(); MONITOR.set_active(True); destination = output_path(Path(path), processing_mode, container_value, float(dlss_scale), int(dlssg_multiplier))
         if processing_mode == "DLSS Frame Generation 2X":
-            _save_last("dlssg", {"community_runtime": dlssg_runtime, "official_runtime_dir": dlssg_official_runtime, "motion_provider": dlssg_motion, "depth_mode": dlssg_depth})
+            _save_last("dlssg", {"community_runtime": dlssg_runtime, "official_runtime_dir": dlssg_official_runtime, "motion_provider": dlssg_motion, "depth_mode": dlssg_depth, "multiplier": int(dlssg_multiplier)})
             if dlssg_motion != "NVIDIA Optical Flow" or dlssg_depth != "Constant 0.5": raise RuntimeError("Only NVIDIA Optical Flow + Constant 0.5 depth is implemented")
             backend = DLSSGBackend(community_runtime=dlssg_runtime, official_runtime_dir=dlssg_official_runtime)
         elif processing_mode.startswith("DLSS SR"):
@@ -152,7 +152,7 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
             _save_last("dlss5" if processing_mode == "DLSS 5 only" else "rtx_vsr", {"mode": vsr_mode, "scale": float(scale_value), "quality": quality_value} if processing_mode != "DLSS 5 only" else {"scale": float(dlss_scale), "nr_preset": nrpreset, "nr_style": style, "model_preset": model, "intensity": float(intensity), "local_tone": float(tone), "local_structure": float(structure), "skin_structure": float(skin), "automatic_mask": mask == "On"})
         progress = tracker_callback(job.progress)
         if processing_mode == "DLSS Frame Generation 2X":
-            stats = render_dlssg_2x(path, destination, backend, codec={"H.264":"h264_nvenc", "HEVC":"hevc_nvenc"}[codec_value], cancel=job.cancel_event, progress=progress)
+            stats = render_dlssg(path, destination, backend, multiplier=int(dlssg_multiplier), codec={"H.264":"h264_nvenc", "HEVC":"hevc_nvenc"}[codec_value], cancel=job.cancel_event, progress=progress)
             stats["frames"] = stats["output_frames"]; stats["fps"] = stats["end_to_end_fps"]; stats["dimensions"] = (stats["width"], stats["height"])
         elif processing_mode.startswith("DLSS SR"):
             stats = render_dlss_sr(path, destination, backend, sr_mode, sr_model, codec=codec_value, cancel=job.cancel_event, progress=progress)
@@ -162,7 +162,9 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
             stats = render_vsr(path, destination, RTXVSRBackend(), float(scale_value), quality_value, vsr_mode, job.cancel_event, progress=progress)
         MONITOR.set_active(False); CONTROLLER.finish("COMPLETED", f"Completed: {stats['frames']} frames")
         save_last_successful_render(destination)
-        return str(destination), f"Completed: {stats['frames']} frames at {stats['fps']:.2f} FPS; {stats['dimensions'][0]}x{stats['dimensions'][1]}; audio preserved: {stats['audio_preserved']}"
+        performance = stats.get("timings_mean_ms", {})
+        timing = f"; native median {performance.get('total_process_ms', 0):.1f} ms" if performance else ""
+        return str(destination), f"Completed {stats.get('multiplier', 1)}X: {stats['frames']} frames at {stats['fps']:.2f} FPS; {stats['dimensions'][0]}x{stats['dimensions'][1]}; audio preserved: {stats['audio_preserved']}{timing}"
     except InterruptedError:
         if job: MONITOR.set_active(False); CONTROLLER.finish("CANCELLED", "Render cancelled")
         return None, "Render cancelled; partial output removed."
@@ -170,20 +172,27 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
         if job: MONITOR.set_active(False); CONTROLLER.finish("FAILED", str(exc))
         return None, f"Render failed: {exc}"
 
-def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, start_timestamp, duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", dlssg_runtime="", dlssg_official_runtime="", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5"):
-    if not path: return None, "Choose an input video."
+def _preview_directory() -> Path:
+    root = TEMP / "preview"; root.mkdir(parents=True, exist_ok=True)
+    directory = Path(tempfile.mkdtemp(prefix="clip-", dir=root))
+    old = sorted((item for item in root.iterdir() if item.is_dir() and item != directory), key=lambda item: item.stat().st_mtime)
+    for item in old[:-3]: shutil.rmtree(item, ignore_errors=True)
+    return directory
+
+def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, start_timestamp, duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", dlssg_runtime="", dlssg_official_runtime="", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5", dlssg_multiplier=2):
+    if not path: return None, None, "Choose an input video."
     job = None
     clip_source = None
     try:
-        job = CONTROLLER.start(); MONITOR.set_active(True); progress = tracker_callback(job.progress); destination = TEMP / f"preview_clip_{os.getpid()}.{container_value.lower()}"
+        job = CONTROLLER.start(); MONITOR.set_active(True); progress = tracker_callback(job.progress); preview_dir = _preview_directory(); destination = preview_dir / "processed.mp4"
         if processing_mode == "DLSS Frame Generation 2X":
-            clip_source = TEMP / f"preview_input_{os.getpid()}.mp4"
-            result = __import__('subprocess').run([ffmpeg_executable(), "-y", "-v", "error", "-ss", str(float(start_timestamp)), "-t", str(float(duration)), "-i", str(path), "-c", "copy", str(clip_source)], capture_output=True, text=True, check=False)
+            clip_source = preview_dir / "source.mp4"
+            result = __import__('subprocess').run([ffmpeg_executable(), "-y", "-v", "error", "-ss", str(float(start_timestamp)), "-t", str(float(duration)), "-i", str(path), "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(clip_source)], capture_output=True, text=True, check=False)
             if result.returncode: raise RuntimeError(result.stderr[-1000:])
-            _save_last("dlssg", {"community_runtime": dlssg_runtime, "official_runtime_dir": dlssg_official_runtime, "motion_provider": dlssg_motion, "depth_mode": dlssg_depth})
+            _save_last("dlssg", {"community_runtime": dlssg_runtime, "official_runtime_dir": dlssg_official_runtime, "motion_provider": dlssg_motion, "depth_mode": dlssg_depth, "multiplier": int(dlssg_multiplier)})
             backend = DLSSGBackend(community_runtime=dlssg_runtime, official_runtime_dir=dlssg_official_runtime)
-            stats = render_dlssg_2x(clip_source, destination, backend, codec="h264_nvenc", cancel=job.cancel_event, progress=progress)
-            stats["frames"] = stats["output_frames"]; stats["fps"] = stats["end_to_end_fps"]; stats["dimensions"] = (stats["width"], stats["height"])
+            stats = render_dlssg(clip_source, destination, backend, multiplier=int(dlssg_multiplier), codec="h264_nvenc", cancel=job.cancel_event, progress=progress)
+            stats["frames"] = stats["output_frames"]; stats["fps"] = stats["output_fps"]; stats["dimensions"] = (stats["width"], stats["height"])
         elif processing_mode.startswith("DLSS SR"):
             backend = DLSSSRBackend(); status = backend.status()
             if status.state != "EXPERIMENTAL READY": raise RuntimeError(f"DLSS SR {status.state}: {status.reason}")
@@ -197,16 +206,16 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
             result = run(["ffmpeg", "-y", "-v", "error", "-ss", str(float(start_timestamp)), "-t", str(float(duration)), "-i", str(path), "-c", "copy", str(clip_source)])
             if result.returncode: raise RuntimeError(result.stderr[-1000:])
             stats = render_vsr(clip_source, destination, RTXVSRBackend(), float(scale_value), quality_value, vsr_mode, job.cancel_event, progress=progress)
-        MONITOR.set_active(False); CONTROLLER.finish("COMPLETED", f"Preview completed: {stats['frames']} frames"); return str(destination), f"Preview completed: {stats['frames']} frames at {stats['fps']:.2f} FPS; {stats['dimensions'][0]}x{stats['dimensions'][1]}"
+        MONITOR.set_active(False); CONTROLLER.finish("COMPLETED", f"Preview completed: {stats['frames']} frames")
+        if processing_mode == "DLSS Frame Generation 2X":
+            return str(clip_source), str(destination), f"Preview {stats['multiplier']}X: source {probe(clip_source)['fps']:.3f} FPS → output {stats['output_fps']:.3f} FPS; {stats['generated_frames']} generated frames; {stats['total_wall_seconds']:.2f}s"
+        return None, str(destination), f"Preview completed: {stats['frames']} frames at {stats['fps']:.2f} FPS; {stats['dimensions'][0]}x{stats['dimensions'][1]}"
     except InterruptedError:
         if job: MONITOR.set_active(False); CONTROLLER.finish("CANCELLED", "Preview cancelled")
-        return None, "Preview cancelled; partial output removed."
+        return None, None, "Preview cancelled; partial output removed."
     except Exception as exc:
         if job: MONITOR.set_active(False); CONTROLLER.finish("FAILED", str(exc))
-        return None, f"Preview failed: {exc}"
-    finally:
-        if clip_source is not None:
-            clip_source.unlink(missing_ok=True)
+        return None, None, f"Preview failed: {exc}"
 def build():
     last = load_last_used()
     rlast = last.get("rtx_vsr", {})
@@ -215,6 +224,8 @@ def build():
     dlssglast = last.get("dlssg", {})
     dlssg_runtime_default = dlssglast.get("community_runtime", os.environ.get("DLSSG_COMMUNITY_RUNTIME", ""))
     dlssg_official_default = dlssglast.get("official_runtime_dir", os.environ.get("DLSSG_OFFICIAL_RUNTIME_DIR", ""))
+    dlssg_multiplier_default = dlssglast.get("multiplier", 2)
+    if dlssg_multiplier_default not in {2, 3, 4}: dlssg_multiplier_default = 2
     previous_render = load_last_successful_render()
     with gr.Blocks(title="NVIDIA Video Enhancer", analytics_enabled=False) as ui:
         status = gr.HTML(status_html(), elem_classes="status-header")
@@ -275,14 +286,16 @@ def build():
                     _tip(DLSS_SR_TOOLTIPS, "model_preset", "Model preset")
                     sr_model = gr.Dropdown(["Default", "J", "K", "L", "M"], value=srlast.get("model_preset", "Default"), show_label=False)
                 with gr.Group(visible=False, elem_classes="backend-group") as dlssg_group:
-                    gr.Markdown("### DLSS Frame Generation 2X")
+                    gr.Markdown("### DLSS Frame Generation")
                     gr.Markdown("Offline frame interpolation. The community runtime is external and is never downloaded or redistributed by this app.")
+                    dlssg_multiplier = gr.Dropdown([("2X Frame Generation", 2), ("3X Multi Frame Generation", 3), ("4X Multi Frame Generation", 4)], value=dlssg_multiplier_default, label="Frame multiplier")
                     dlssg_runtime = gr.Textbox(value=dlssg_runtime_default, label="Community runtime (absolute version.dll path)")
                     dlssg_official_runtime = gr.Textbox(value=dlssg_official_default, label="Official NGX runtime directory")
                     dlssg_motion = gr.Dropdown(["NVIDIA Optical Flow"], value=dlssglast.get("motion_provider", "NVIDIA Optical Flow"), label="Motion provider")
                     dlssg_depth = gr.Dropdown(["Constant 0.5"], value=dlssglast.get("depth_mode", "Constant 0.5"), label="Depth mode")
                     dlssg_saved = gr.Markdown()
                     gr.Markdown("Constant depth is a first-generation quality limitation; it is not renderer-quality depth.")
+                    gr.Markdown("2X is hardware-validated. 3X and 4X use the generalized worker contract but remain experimental: the current RTX 3070 Ti/community-runtime 3X probe returned `InterpolationDisabled`, so neither is presented as validated output.")
                 with gr.Accordion("Saved settings", open=False):
                     rtx_saved = gr.Dropdown(preset_choices("rtx_vsr"), label="RTX VSR saved preset")
                     rtx_name = gr.Textbox(label="Preset name", max_length=80)
@@ -307,7 +320,9 @@ def build():
                 with gr.Row(elem_classes="preview-grid"):
                     before = gr.Image(label="Before / source", type="filepath")
                     after = gr.Image(label="After / processed", type="filepath")
-                result_video = gr.Video(label="Rendered / preview video")
+                with gr.Row(elem_classes="preview-grid"):
+                    before_clip = gr.Video(label="Before / source clip")
+                    result_video = gr.Video(label="After / generated clip")
                 gr.Markdown("### Preview / Render")
                 with gr.Row(elem_classes="preview-options"):
                     timestamp = gr.Number(0, label="Timestamp (sec)")
@@ -326,11 +341,11 @@ def build():
         mode.change(lambda value: value, mode, state)
         mode.change(visibility, mode, [rtx_group, dlss_group, sr_group, dlssg_group])
         preset.change(apply_preset, preset, [nrpreset, style, intensity, tone, structure, skin, mask])
-        dlssg_inputs = [dlssg_runtime, dlssg_official_runtime, dlssg_motion, dlssg_depth]
+        dlssg_inputs = [dlssg_runtime, dlssg_official_runtime, dlssg_motion, dlssg_depth, dlssg_multiplier]
         for control in dlssg_inputs:
             control.change(save_dlssg_settings, dlssg_inputs, dlssg_saved, show_progress="hidden")
         frame.click(do_frame, [inp, timestamp, state, vsr_mode, scale, quality, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [before, after, job])
-        clip.click(preview_clip, [inp, state, vsr_mode, scale, quality, container, timestamp, preview_duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [result_video, job])
+        clip.click(preview_clip, [inp, state, vsr_mode, scale, quality, container, timestamp, preview_duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [before_clip, result_video, job])
         render.click(render_video, [inp, state, vsr_mode, scale, quality, container, codec, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [result_video, job])
         stop.click(lambda: (CONTROLLER.cancel() or "Cancellation requested."), None, job)
         refresh_timer.tick(lambda: (metrics_html(), progress_html(CONTROLLER.snapshot())), outputs=[metrics, progress_panel], show_progress="hidden", queue=False)

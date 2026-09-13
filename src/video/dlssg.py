@@ -1,4 +1,4 @@
-"""Real-video 2X interpolation through persistent NVOF + offline DLSS-G."""
+"""Real-video frame generation through persistent NVOF + offline DLSS-G."""
 
 from __future__ import annotations
 
@@ -74,10 +74,12 @@ def probe_video(source: str | Path) -> dict[str, object]:
         }
 
 
-def output_frame_count(input_frames: int, duplicate_terminal_frame: bool = True) -> int:
+def output_frame_count(input_frames: int, duplicate_terminal_frame: bool = True, multiplier: int = 2) -> int:
     if input_frames < 1:
         return 0
-    return 2 * input_frames if duplicate_terminal_frame else 2 * input_frames - 1
+    if multiplier not in (2, 3, 4):
+        raise ValueError("multiplier must be 2, 3, or 4")
+    return multiplier * input_frames if duplicate_terminal_frame else multiplier * input_frames - (multiplier - 1)
 
 
 def _mad(a: bytes, b: bytes) -> float:
@@ -245,7 +247,7 @@ def _write_contact_sheet(directory: Path, candidates: list[tuple], width: int, h
     return str(path)
 
 
-def render_dlssg_2x(
+def render_dlssg(
     source: str | Path,
     destination: str | Path,
     backend: DLSSGBackend,
@@ -259,15 +261,18 @@ def render_dlssg_2x(
     scene_cut_detection: bool = True,
     diagnostic_count: int = 8,
     diagnostic_callback: Callable[[str], None] | None = None,
+    multiplier: int = 2,
 ) -> dict[str, object]:
-    """Interpolate adjacent decoded real frames and preserve duration at 2X CFR.
+    """Generate ordered intermediate frames and preserve duration at multiplier CFR.
 
     The default terminal policy duplicates the last real frame once. N input
-    frames therefore produce N-1 generated midpoints plus N real frames plus
-    one terminal duplicate: 2N frames at exactly twice the input FPS.
+    frames therefore produce N-1 generated groups plus N real frames plus
+    multiplier-1 terminal duplicates: N*multiplier frames at multiplied FPS.
     """
     if terminal_frame_policy not in {"duplicate", "short"}:
         raise ValueError("terminal_frame_policy must be duplicate or short")
+    if multiplier not in (2, 3, 4):
+        raise ValueError("multiplier must be 2, 3, or 4")
     source_path = safe_input(str(source))
     destination_path = Path(destination).expanduser().resolve()
     if destination_path == source_path:
@@ -282,10 +287,11 @@ def render_dlssg_2x(
     config = backend.require_configuration()
     ffmpeg = ffmpeg_executable()
     frame_bytes = width * height * 4
-    output_fps = fps * 2.0
+    generated_per_pair = multiplier - 1
+    output_fps = fps * multiplier
     fps_numerator = int(info["fps_numerator"])
     fps_denominator = int(info["fps_denominator"])
-    output_rate = f"{fps_numerator * 2}/{fps_denominator}" if fps_numerator else f"{output_fps:.12g}"
+    output_rate = f"{fps_numerator * multiplier}/{fps_denominator}" if fps_numerator else f"{output_fps:.12g}"
     h26x_output = "264" in codec.lower() or "265" in codec.lower() or "hevc" in codec.lower()
     temporary = destination_path.with_suffix(".dlssg-video.mp4" if h26x_output else ".dlssg-video.mkv")
     log_path = destination_path.with_suffix(".dlssg-worker.log")
@@ -324,7 +330,7 @@ def render_dlssg_2x(
             "-c:v", codec, "-preset", "medium", "-crf", "18"
         ]
         container_options = (
-            ["-video_track_timescale", str(fps_numerator * 2)]
+            ["-video_track_timescale", str(fps_numerator * multiplier)]
             if h26x_output and fps_numerator else []
         )
         encoder = subprocess.Popen(
@@ -344,7 +350,7 @@ def render_dlssg_2x(
             diagnostic_callback=diagnostics,
         )
         with client:
-            client.create(width, height, motion_mode=MOTION_MODE_NVIDIA_OPTICAL_FLOW)
+            client.create(width, height, multiplier=multiplier, motion_mode=MOTION_MODE_NVIDIA_OPTICAL_FLOW)
             previous: bytes | None = None
             frame_id = 0
             while True:
@@ -378,71 +384,65 @@ def render_dlssg_2x(
                             raise RuntimeError(f"DLSS-G worker reset failed at scene cut frame {frame_id}") from exc
                         if not result.reset_only or result.output:
                             raise RuntimeError(f"scene-cut reset unexpectedly returned output at frame {frame_id}")
-                        scene_cut = {"pair": frame_id, **cut, "hold": "previous"}
+                        scene_cut = {"pair": frame_id, **cut, "hold": "previous", "count": generated_per_pair}
                         scene_cuts.append(scene_cut)
-                        scene_cut_holds += 1
+                        scene_cut_holds += generated_per_pair
                         previous_generated_digest = None
                         _write_contact_triplet(artifacts / "scene_cuts", frame_id, previous, previous, current, width, height)
-                        encode_start = time.perf_counter(); encoder.stdin.write(previous); encoder.stdin.write(current)
+                        encode_start = time.perf_counter()
+                        for _ in range(generated_per_pair): encoder.stdin.write(previous)
+                        encoder.stdin.write(current)
                         encode_seconds += time.perf_counter() - encode_start
-                        output_count += 2
+                        output_count += multiplier
                         frame_id += 1
                         previous = current
                         report_progress(progress, frame_index=input_count, total_frames=int(info["frames"]) or None,
-                                        phase="DLSS-G 2X", message=f"Scene cut reset at frame {input_count}")
+                                        phase=f"DLSS-G {multiplier}X", message=f"Scene cut reset at frame {input_count}")
                         continue
                     try:
                         result = client.process(frame_id, current)
                     except Exception as exc:
                         raise RuntimeError(f"DLSS-G worker failed at input frame {frame_id}") from exc
                     frame_id += 1
-                    if result.generated_count != 1 or result.disable_interpolation:
+                    if result.generated_count != generated_per_pair or len(result.outputs) != generated_per_pair or result.disable_interpolation:
                         interpolation_disabled_ids.append(frame_id - 1)
-                        raise RuntimeError(f"DLSS-G returned no midpoint for input frame {frame_id - 1}")
-                    generated = result.output
-                    digest = hashlib.sha256(generated).hexdigest().upper()
+                        raise RuntimeError(f"DLSS-G returned incomplete generated group for input frame {frame_id - 1}")
                     real_pair_mad = _mad(previous, current)
-                    stale_suspect = previous_generated_digest == digest and real_pair_mad > 1.0
-                    comparison = {
-                        "pair": frame_id - 1,
-                        "sha256": digest,
-                        "identical_previous": generated == previous,
-                        "identical_current": generated == current,
-                        "identical_previous_generated": previous_generated_digest == digest,
-                        "stale_suspect": stale_suspect,
-                        "mad_previous": _mad(generated, previous),
-                        "mad_current": _mad(generated, current),
-                        "mad_real_pair": real_pair_mad,
-                        "flow_mean_x": result.flow_mean_x,
-                        "flow_mean_y": result.flow_mean_y,
-                        "flow_median_x": result.flow_median_x,
-                        "flow_median_y": result.flow_median_y,
-                        "flow_p95_magnitude": result.flow_p95_magnitude,
-                        "flow_maximum_magnitude": result.flow_maximum_magnitude,
-                        "flow_standard_deviation_magnitude": result.flow_standard_deviation_magnitude,
-                        "flow_near_zero_percent": result.flow_near_zero_percent,
-                        "flow_unusually_large_percent": result.flow_unusually_large_percent,
-                    }
-                    hashes.append(digest); comparisons.append(comparison); generated_count += 1
-                    previous_generated_digest = digest
+                    group: list[bytes] = []
+                    for generated_index, generated in enumerate(result.outputs, start=1):
+                        digest = hashlib.sha256(generated).hexdigest().upper()
+                        stale_suspect = previous_generated_digest == digest and real_pair_mad > 1.0
+                        comparison = {"pair": frame_id - 1, "generated_index": generated_index, "sha256": digest,
+                            "identical_previous": generated == previous, "identical_current": generated == current,
+                            "identical_previous_generated": previous_generated_digest == digest, "stale_suspect": stale_suspect,
+                            "mad_previous": _mad(generated, previous), "mad_current": _mad(generated, current), "mad_real_pair": real_pair_mad,
+                            "flow_mean_x": result.flow_mean_x, "flow_mean_y": result.flow_mean_y, "flow_median_x": result.flow_median_x,
+                            "flow_median_y": result.flow_median_y, "flow_p95_magnitude": result.flow_p95_magnitude,
+                            "flow_maximum_magnitude": result.flow_maximum_magnitude, "flow_standard_deviation_magnitude": result.flow_standard_deviation_magnitude,
+                            "flow_near_zero_percent": result.flow_near_zero_percent, "flow_unusually_large_percent": result.flow_unusually_large_percent}
+                        hashes.append(digest); comparisons.append(comparison); group.append(generated); generated_count += 1
+                        previous_generated_digest = digest
                     score = (result.flow_p95_magnitude + result.flow_standard_deviation_magnitude +
                              real_pair_mad / 8.0)
-                    heapq.heappush(candidates, (score, frame_id - 1, previous, generated, current, comparison))
+                    heapq.heappush(candidates, (score, frame_id - 1, previous, group[0], current, comparisons[-1]))
                     if len(candidates) > max(1, diagnostic_count):
                         heapq.heappop(candidates)
-                    encode_start = time.perf_counter(); encoder.stdin.write(generated); encoder.stdin.write(current)
+                    encode_start = time.perf_counter()
+                    for generated in group: encoder.stdin.write(generated)
+                    encoder.stdin.write(current)
                     encode_seconds += time.perf_counter() - encode_start
-                    output_count += 2
+                    output_count += multiplier
                     for name in ("nvof_upload_ms", "nvof_execute_ms", "flow_conversion_ms", "upload_ms",
                                  "evaluate_cpu_ms", "gpu_wait_ms", "readback_ms", "total_process_ms"):
                         timings[name].append(float(getattr(result, name)))
                 previous = current
                 report_progress(progress, frame_index=input_count, total_frames=int(info["frames"]) or None,
-                                phase="DLSS-G 2X", message=f"NVOF + DLSS-G frame {input_count}")
+                                phase=f"DLSS-G {multiplier}X", message=f"NVOF + DLSS-G frame {input_count}")
             if input_count == 0 or previous is None:
                 raise RuntimeError("input video contains no decodable frames")
             if terminal_frame_policy == "duplicate":
-                encoder.stdin.write(previous); output_count += 1
+                for _ in range(generated_per_pair): encoder.stdin.write(previous)
+                output_count += generated_per_pair
         encoder.stdin.close(); encoder.wait(timeout=300)
         if encoder.returncode:
             raise RuntimeError((encoder.stderr.read() if encoder.stderr else b"").decode(errors="replace")[-4000:])
@@ -483,7 +483,7 @@ def render_dlssg_2x(
                 artifacts, pair, previous_bytes, generated_bytes, current_bytes, width, height
             ))
         contact_sheet = _write_contact_sheet(artifacts, selected, width, height)
-        duration_policy = "duplicate final real frame for exact 2X CFR duration" if terminal_frame_policy == "duplicate" else "2N-1 short tail"
+        duration_policy = f"duplicate final real frame {generated_per_pair} times for exact {multiplier}X CFR duration" if terminal_frame_policy == "duplicate" else "short tail"
         summary = {name: sum(values) / len(values) for name, values in timings.items() if values}
         flow_summary = {
             name: sum(float(item[name]) for item in comparisons) / len(comparisons)
@@ -512,13 +512,14 @@ def render_dlssg_2x(
             "height": height,
             "input_fps": fps,
             "output_fps": output_fps,
+            "multiplier": multiplier,
             "input_frames": input_count,
             "generated_frames": generated_count,
             "unique_interpolated_frames": generated_count,
             "scene_cut_hold_frames": scene_cut_holds,
-            "terminal_hold_frames": 1 if terminal_frame_policy == "duplicate" else 0,
+            "terminal_hold_frames": generated_per_pair if terminal_frame_policy == "duplicate" else 0,
             "output_frames": output_count,
-            "expected_output_frames": output_frame_count(input_count, terminal_frame_policy == "duplicate"),
+            "expected_output_frames": output_frame_count(input_count, terminal_frame_policy == "duplicate", multiplier),
             "terminal_policy": duration_policy,
             "audio_preserved": preserve_audio and bool(info["audio"]),
             "input_metadata": info,
@@ -563,3 +564,9 @@ def render_dlssg_2x(
                 except subprocess.TimeoutExpired:
                     process.kill()
         temporary.unlink(missing_ok=True)
+
+
+def render_dlssg_2x(*args, **kwargs) -> dict[str, object]:
+    """Compatibility wrapper for callers that explicitly request 2X FG."""
+    kwargs.setdefault("multiplier", 2)
+    return render_dlssg(*args, **kwargs)

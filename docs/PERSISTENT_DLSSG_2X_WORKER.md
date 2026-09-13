@@ -43,13 +43,13 @@ command list is never reset while open. Inputs are returned to
 as UAV resources except for explicit ordered copy transitions.
 
 Init and feature creation occur once. Fixed-size resources are reused on every
-PROCESS request. Protocol v2 additionally supports internal NVIDIA Optical Flow
+PROCESS request. Protocol v3 additionally supports internal NVIDIA Optical Flow
 and recreates only size-dependent NVOF/DLSS-G state after a changed CREATE.
 
 ## C. Protocol
 
 `native/dlssg_sm86_offline/worker_protocol.h` defines a packed little-endian
-protocol with magic `0x47534C44`, protocol version 2, worker version 2, and
+protocol with magic `0x47534C44`, protocol version 3, worker version 3, and
 compile-time structure-size assertions.
 
 | Command | Request | Response |

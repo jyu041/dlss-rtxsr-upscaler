@@ -37,7 +37,7 @@ def test_protocol_layout_sizes_and_roundtrip():
     assert worker.RESPONSE_HEADER.size == 20
     assert worker.CREATE_REQUEST.size == 24
     assert worker.PROCESS_REQUEST.size == 24
-    assert worker.PROCESS_RESPONSE.size == 88
+    assert worker.PROCESS_RESPONSE.size == 160
     packed = worker.REQUEST_HEADER.pack(
         worker.MAGIC, worker.PROTOCOL_VERSION, worker.COMMAND_PROCESS, 7, 123
     )

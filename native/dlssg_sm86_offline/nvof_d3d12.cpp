@@ -325,7 +325,7 @@ bool NvofD3D12::Initialize(ID3D12Device *device, ID3D12CommandQueue *queue, uint
 
 bool NvofD3D12::ComputeBackward(const uint8_t *previousRgba, const uint8_t *currentRgba,
     bool resetTemporalHints, std::vector<uint8_t> &motionR16G16Float,
-    std::vector<NvofFlowVector> *flowPixels, NvofTimings *timings) {
+    std::vector<NvofFlowVector> *flowPixels, NvofFlowStatistics *statistics, NvofTimings *timings) {
     if (!impl_->handle || !previousRgba || !currentRgba) return false;
     auto &state = *impl_;
     NvofTimings measured{};
@@ -359,6 +359,27 @@ bool NvofD3D12::ComputeBackward(const uint8_t *previousRgba, const uint8_t *curr
     const auto conversionStart = Clock::now();
     motionR16G16Float.resize(raw.size() * 4);
     if (flowPixels) flowPixels->resize(raw.size());
+    std::vector<float> xSamples;
+    std::vector<float> ySamples;
+    std::vector<float> magnitudeSamples;
+    const size_t maximumStatisticSamples = 65536;
+    const size_t sampleStride = statistics
+        ? std::max<size_t>(1, (raw.size() + maximumStatisticSamples - 1) / maximumStatisticSamples)
+        : 1;
+    double sumX = 0.0;
+    double sumY = 0.0;
+    double sumMagnitude = 0.0;
+    double sumSquaredMagnitude = 0.0;
+    double maximumMagnitude = 0.0;
+    size_t nearZero = 0;
+    size_t unusuallyLarge = 0;
+    const double largeThreshold = std::max(state.width, state.height) * 0.25;
+    if (statistics) {
+        const size_t sampleCapacity = (raw.size() + sampleStride - 1) / sampleStride;
+        xSamples.reserve(sampleCapacity);
+        ySamples.reserve(sampleCapacity);
+        magnitudeSamples.reserve(sampleCapacity);
+    }
     for (size_t index = 0; index < raw.size(); ++index) {
         const float x = static_cast<float>(raw[index].flowx) / 32.0f;
         const float y = static_cast<float>(raw[index].flowy) / 32.0f;
@@ -367,6 +388,43 @@ bool NvofD3D12::ComputeBackward(const uint8_t *previousRgba, const uint8_t *curr
         std::memcpy(motionR16G16Float.data() + index * 4, &hx, 2);
         std::memcpy(motionR16G16Float.data() + index * 4 + 2, &hy, 2);
         if (flowPixels) (*flowPixels)[index] = {x, y};
+        if (statistics) {
+            const double magnitude = std::sqrt(static_cast<double>(x) * x + static_cast<double>(y) * y);
+            sumX += x;
+            sumY += y;
+            sumMagnitude += magnitude;
+            sumSquaredMagnitude += magnitude * magnitude;
+            maximumMagnitude = std::max(maximumMagnitude, magnitude);
+            nearZero += magnitude <= 0.5 ? 1u : 0u;
+            unusuallyLarge += magnitude > largeThreshold ? 1u : 0u;
+            if (index % sampleStride == 0) {
+                xSamples.push_back(x);
+                ySamples.push_back(y);
+                magnitudeSamples.push_back(static_cast<float>(magnitude));
+            }
+        }
+    }
+    if (statistics && !raw.empty()) {
+        NvofFlowStatistics summary{};
+        const double count = static_cast<double>(raw.size());
+        summary.meanX = sumX / count;
+        summary.meanY = sumY / count;
+        const auto percentile = [](std::vector<float> values, double fraction) {
+            const size_t index = std::min(values.size() - 1,
+                static_cast<size_t>(std::ceil(fraction * values.size()) - 1));
+            std::nth_element(values.begin(), values.begin() + index, values.end());
+            return static_cast<double>(values[index]);
+        };
+        summary.medianX = percentile(xSamples, 0.5);
+        summary.medianY = percentile(ySamples, 0.5);
+        summary.p95Magnitude = percentile(magnitudeSamples, 0.95);
+        summary.maximumMagnitude = maximumMagnitude;
+        const double meanMagnitude = sumMagnitude / count;
+        const double variance = std::max(0.0, sumSquaredMagnitude / count - meanMagnitude * meanMagnitude);
+        summary.standardDeviationMagnitude = std::sqrt(variance);
+        summary.nearZeroPercent = 100.0 * nearZero / count;
+        summary.unusuallyLargePercent = 100.0 * unusuallyLarge / count;
+        *statistics = summary;
     }
     const auto conversionEnd = Clock::now();
     measured.uploadMs = Milliseconds(uploadStart, uploadEnd);
@@ -566,7 +624,8 @@ int RunNvofFlowTest() {
     std::vector<uint8_t> half;
     std::vector<NvofFlowVector> flow;
     NvofTimings timings{};
-    if (!nvof.ComputeBackward(previous.data(), current.data(), true, half, &flow, &timings)) return 94;
+    NvofFlowStatistics flowStatistics{};
+    if (!nvof.ComputeBackward(previous.data(), current.data(), true, half, &flow, &flowStatistics, &timings)) return 94;
     std::vector<float> objectX;
     std::vector<float> objectY;
     double backgroundMagnitude = 0.0;
@@ -609,6 +668,9 @@ int RunNvofFlowTest() {
     Log("NVOF_OBJECT_MEDIAN_X=%.4f NVOF_OBJECT_MEDIAN_Y=%.4f", medianX, medianY);
     Log("NVOF_BACKGROUND_MEAN_MAGNITUDE=%.4f", backgroundMean);
     Log("NVOF_FLOW_MIN_X=%.4f MAX_X=%.4f MIN_Y=%.4f MAX_Y=%.4f", minimumX, maximumX, minimumY, maximumY);
+    Log("NVOF_FLOW_P95_MAGNITUDE=%.4f NVOF_FLOW_STDDEV_MAGNITUDE=%.4f NVOF_FLOW_NEAR_ZERO_PERCENT=%.3f NVOF_FLOW_UNUSUALLY_LARGE_PERCENT=%.3f",
+        flowStatistics.p95Magnitude, flowStatistics.standardDeviationMagnitude,
+        flowStatistics.nearZeroPercent, flowStatistics.unusuallyLargePercent);
     Log("NVOF_HALF_BYTE_COUNT=%zu", half.size());
     const bool valid = half.size() == static_cast<size_t>(width) * height * 4 &&
         medianX < -4.0 && medianX > -12.0 && std::abs(medianY) < 2.0 && backgroundMean < 2.0;

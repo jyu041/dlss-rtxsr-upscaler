@@ -25,6 +25,9 @@ def main() -> int:
     parser.add_argument("--no-audio", action="store_true")
     parser.add_argument("--terminal-frame-policy", default="duplicate", choices=("duplicate", "short"))
     parser.add_argument("--artifact-dir", type=Path)
+    parser.add_argument("--no-scene-cut-detection", action="store_true")
+    parser.add_argument("--diagnostic-count", type=int, default=8)
+    parser.add_argument("--quiet-worker-log", action="store_true")
     args = parser.parse_args()
     backend = DLSSGBackend(args.worker, args.community_runtime, args.official_runtime_dir)
     result = render_dlssg_2x(
@@ -35,7 +38,9 @@ def main() -> int:
         preserve_audio=not args.no_audio,
         terminal_frame_policy=args.terminal_frame_policy,
         artifact_dir=args.artifact_dir,
-        diagnostic_callback=lambda line: print(line, file=sys.stderr, flush=True),
+        scene_cut_detection=not args.no_scene_cut_detection,
+        diagnostic_count=args.diagnostic_count,
+        diagnostic_callback=None if args.quiet_worker_log else lambda line: print(line, file=sys.stderr, flush=True),
     )
     print(json.dumps(result, indent=2))
     return 0

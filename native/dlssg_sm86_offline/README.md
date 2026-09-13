@@ -44,7 +44,7 @@ object, one loaded community runtime, and one DLSS-G feature alive for many
 frames. Standard input and output carry the versioned binary protocol in
 `worker_protocol.h`; all native diagnostics go to standard error.
 
-Protocol version 2 supports `HELLO`, `CREATE`, `PROCESS`, `RESET_HISTORY`, and
+Protocol version 3 supports `HELLO`, `CREATE`, `PROCESS`, `RESET_HISTORY`, and
 `CLOSE`. The first `PROCESS` after `CREATE` or `RESET_HISTORY` is forced to be a
 reset/bootstrap frame and intentionally returns no generated frame. Every later
 successful `PROCESS` returns one tightly packed RGBA8 midpoint frame.
@@ -64,7 +64,8 @@ caller supplies RGBA8 color and selects either:
 
 or internal NVIDIA Optical Flow. Internal NVOF retains the previous real frame,
 requests 1x1 bidirectional flow, consumes the backward (current-to-previous)
-S10.5 output, and converts it to R16G16_FLOAT. The first frame after CREATE or
+S10.5 output, converts it to R16G16_FLOAT, and returns flow-distribution
+statistics with each PROCESS response. The first frame after CREATE or
 RESET_HISTORY remains a reset-only frame.
 
 Constant depth is useful for the first real-video backend but is not a

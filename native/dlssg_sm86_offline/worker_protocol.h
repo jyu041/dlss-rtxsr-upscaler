@@ -5,8 +5,8 @@
 namespace dlssg::protocol {
 
 constexpr uint32_t kMagic = 0x47534C44u; // "DLSG" in little-endian byte order.
-constexpr uint16_t kVersion = 2;
-constexpr uint32_t kWorkerVersion = 2;
+constexpr uint16_t kVersion = 3;
+constexpr uint32_t kWorkerVersion = 3;
 constexpr uint32_t kMaximumPayloadBytes = 64u * 1024u * 1024u;
 
 enum class Command : uint16_t {
@@ -110,6 +110,15 @@ struct ProcessResponse {
     double nvofUploadMs;
     double nvofExecuteMs;
     double flowConversionMs;
+    double flowMeanX;
+    double flowMeanY;
+    double flowMedianX;
+    double flowMedianY;
+    double flowP95Magnitude;
+    double flowMaximumMagnitude;
+    double flowStandardDeviationMagnitude;
+    double flowNearZeroPercent;
+    double flowUnusuallyLargePercent;
 };
 #pragma pack(pop)
 
@@ -119,6 +128,6 @@ static_assert(sizeof(HelloResponse) == 16);
 static_assert(sizeof(CreateRequest) == 24);
 static_assert(sizeof(CreateResponse) == 16);
 static_assert(sizeof(ProcessRequest) == 24);
-static_assert(sizeof(ProcessResponse) == 88);
+static_assert(sizeof(ProcessResponse) == 160);
 
 } // namespace dlssg::protocol

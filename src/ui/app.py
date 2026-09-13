@@ -169,6 +169,7 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
 def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, start_timestamp, duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", dlssg_runtime="", dlssg_official_runtime="", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5"):
     if not path: return None, "Choose an input video."
     job = None
+    clip_source = None
     try:
         job = CONTROLLER.start(); MONITOR.set_active(True); progress = tracker_callback(job.progress); destination = TEMP / f"preview_clip_{os.getpid()}.{container_value.lower()}"
         if processing_mode == "DLSS Frame Generation 2X":
@@ -178,7 +179,6 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
             backend = DLSSGBackend(community_runtime=dlssg_runtime, official_runtime_dir=dlssg_official_runtime)
             stats = render_dlssg_2x(clip_source, destination, backend, codec="h264_nvenc", cancel=job.cancel_event, progress=progress)
             stats["frames"] = stats["output_frames"]; stats["fps"] = stats["end_to_end_fps"]; stats["dimensions"] = (stats["width"], stats["height"])
-            clip_source.unlink(missing_ok=True)
         elif processing_mode.startswith("DLSS SR"):
             backend = DLSSSRBackend(); status = backend.status()
             if status.state != "EXPERIMENTAL READY": raise RuntimeError(f"DLSS SR {status.state}: {status.reason}")
@@ -192,7 +192,6 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
             result = run(["ffmpeg", "-y", "-v", "error", "-ss", str(float(start_timestamp)), "-t", str(float(duration)), "-i", str(path), "-c", "copy", str(clip_source)])
             if result.returncode: raise RuntimeError(result.stderr[-1000:])
             stats = render_vsr(clip_source, destination, RTXVSRBackend(), float(scale_value), quality_value, vsr_mode, job.cancel_event, progress=progress)
-            clip_source.unlink(missing_ok=True)
         MONITOR.set_active(False); CONTROLLER.finish("COMPLETED", f"Preview completed: {stats['frames']} frames"); return str(destination), f"Preview completed: {stats['frames']} frames at {stats['fps']:.2f} FPS; {stats['dimensions'][0]}x{stats['dimensions'][1]}"
     except InterruptedError:
         if job: MONITOR.set_active(False); CONTROLLER.finish("CANCELLED", "Preview cancelled")
@@ -200,6 +199,9 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
     except Exception as exc:
         if job: MONITOR.set_active(False); CONTROLLER.finish("FAILED", str(exc))
         return None, f"Preview failed: {exc}"
+    finally:
+        if clip_source is not None:
+            clip_source.unlink(missing_ok=True)
 def build():
     last = load_last_used()
     rlast = last.get("rtx_vsr", {})

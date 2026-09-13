@@ -670,11 +670,13 @@ public:
         std::memcpy(color_.packed.data(), color, color_.packed.size());
         std::vector<uint8_t> internalMotion;
         NvofTimings nvofTimings{};
+        NvofFlowStatistics flowStatistics{};
         if (motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow)) {
             if (effectiveReset) {
                 internalMotion.assign(motion_.packed.size(), 0);
             } else if (previousColor_.size() != color_.packed.size() ||
-                !nvof_.ComputeBackward(previousColor_.data(), color, !nvofHistoryValid_, internalMotion, nullptr, &nvofTimings)) {
+                !nvof_.ComputeBackward(previousColor_.data(), color, !nvofHistoryValid_, internalMotion,
+                    nullptr, &flowStatistics, &nvofTimings)) {
                 RunLog("WORKER_NVOF_FAILED frame=%llu", request.frameId); return Status::NativeFailure;
             } else {
                 nvofHistoryValid_ = true;
@@ -705,6 +707,13 @@ public:
         response.gpuWaitMs = Milliseconds(waitStart, waitEnd);
         response.nvofUploadMs = nvofTimings.uploadMs; response.nvofExecuteMs = nvofTimings.executeMs;
         response.flowConversionMs = nvofTimings.conversionMs;
+        response.flowMeanX = flowStatistics.meanX; response.flowMeanY = flowStatistics.meanY;
+        response.flowMedianX = flowStatistics.medianX; response.flowMedianY = flowStatistics.medianY;
+        response.flowP95Magnitude = flowStatistics.p95Magnitude;
+        response.flowMaximumMagnitude = flowStatistics.maximumMagnitude;
+        response.flowStandardDeviationMagnitude = flowStatistics.standardDeviationMagnitude;
+        response.flowNearZeroPercent = flowStatistics.nearZeroPercent;
+        response.flowUnusuallyLargePercent = flowStatistics.unusuallyLargePercent;
         if (effectiveReset) {
             response.totalProcessMs = Milliseconds(totalStart, Clock::now());
             RunLog("WORKER_PROCESS_RESET_COMPLETE frame=%llu", request.frameId); return Status::OkResetNoOutput;
@@ -815,7 +824,7 @@ bool WorkerProtocolSelfTest() {
     if (history.Begin(1, false, reset)) return false; history.Reset();
     if (!history.Begin(2, false, reset) || !reset) return false;
     return sizeof(dlssg::protocol::RequestHeader) == 16 && sizeof(dlssg::protocol::ResponseHeader) == 20 &&
-        sizeof(dlssg::protocol::ProcessResponse) == 88;
+        sizeof(dlssg::protocol::ProcessResponse) == 160;
 }
 
 int RunServer(const wchar_t *communityPath, const wchar_t *runtimeDir) {

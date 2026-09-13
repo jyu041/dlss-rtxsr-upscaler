@@ -17,8 +17,8 @@ import warnings
 from typing import BinaryIO, Callable
 
 MAGIC = 0x47534C44
-PROTOCOL_VERSION = 2
-WORKER_VERSION = 2
+PROTOCOL_VERSION = 3
+WORKER_VERSION = 3
 KNOWN_COMMUNITY_SHA256 = "C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2"
 
 COMMAND_HELLO = 1
@@ -42,7 +42,7 @@ HELLO_RESPONSE = struct.Struct("<IIII")
 CREATE_REQUEST = struct.Struct("<IIIIII")
 CREATE_RESPONSE = struct.Struct("<IIII")
 PROCESS_REQUEST = struct.Struct("<QIIII")
-PROCESS_RESPONSE = struct.Struct("<IIIIIIdddddddd")
+PROCESS_RESPONSE = struct.Struct("<IIIIII" + "d" * 17)
 
 
 class DlssgWorkerError(RuntimeError):
@@ -86,6 +86,15 @@ class ProcessResult:
     nvof_upload_ms: float
     nvof_execute_ms: float
     flow_conversion_ms: float
+    flow_mean_x: float
+    flow_mean_y: float
+    flow_median_x: float
+    flow_median_y: float
+    flow_p95_magnitude: float
+    flow_maximum_magnitude: float
+    flow_standard_deviation_magnitude: float
+    flow_near_zero_percent: float
+    flow_unusually_large_percent: float
     reset_only: bool
 
     @property

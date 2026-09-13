@@ -1,15 +1,21 @@
 # Installation
 
 Use Windows 10 or 11 x64 with a compatible NVIDIA driver, Miniconda or
-Anaconda, and FFmpeg/FFprobe available on `PATH`. Run `setup.bat` from the
+Anaconda, and FFmpeg/FFprobe available on `PATH` (the full Gyan build is
+recommended for NVENC). Run `setup.bat` from the
 repository root, then run `start.bat`. The scripts use only the dedicated
 `dlss-rtxsr-upscaler` Conda environment and do not modify system Python,
 ComfyUI, or another application environment.
 
 The environment installs Python 3.11, Gradio, PyTorch CUDA 12.8, the official
 `nvidia-vfx` package, and the other pinned Python dependencies. NVIDIA and
-PyTorch package indexes are declared in `environment.yml`. FFmpeg is not
-bundled by this repository.
+PyTorch package indexes are declared in `environment.yml`. FFmpeg is a system
+dependency because the Conda-forge build tested on the validation PC could not
+load its Windows DLLs. `setup.bat` verifies
+both tools and requires `h264_nvenc` and `hevc_nvenc`. If the Conda build cannot
+load on your Windows host, install the reputable full build with
+`winget install --id Gyan.FFmpeg --source winget`, restart the shell, and rerun
+`setup.bat`.
 
 ## Backends
 

@@ -50,6 +50,7 @@ cmake_install.cmake
 build.ninja
 rules.ninja
 config/settings.local.json
+runtime.local.ps1
 config/user_presets.json
 config/user_presets.json.corrupt-*
 runtime/dlss5-v3/dlss_sr_selftest.json

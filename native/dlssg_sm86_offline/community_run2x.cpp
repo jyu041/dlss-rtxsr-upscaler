@@ -8,9 +8,11 @@
 #include <nvsdk_ngx.h>
 #include <nvsdk_ngx_defs_dlssg.h>
 #include <nvsdk_ngx_params_dlssg.h>
+#include "worker_protocol.h"
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdarg>
 #include <cstdint>
@@ -148,6 +150,8 @@ static bool Upload(Texture &texture, ID3D12Device *device, ID3D12CommandAllocato
     D3D12_TEXTURE_COPY_LOCATION src{}, dst{}; src.pResource = texture.upload;
     src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT; src.PlacedFootprint = texture.footprint;
     dst.pResource = texture.gpu; dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    Transition(list, texture.gpu, texture.state, D3D12_RESOURCE_STATE_COPY_DEST);
+    texture.state = D3D12_RESOURCE_STATE_COPY_DEST;
     list->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
     Transition(list, texture.gpu, texture.state, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     texture.state = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
@@ -514,4 +518,281 @@ int Run2x(const wchar_t *communityPath, const wchar_t *runtimeDir) {
     RunLog("OUTPUT_RAW_PATH=%ls", rawPath.c_str()); RunLog("OUTPUT_JSON_PATH=%ls", jsonPath.c_str()); RunLog("OUTPUT_PERSISTED=1");
     RunLog("NGX_SHUTDOWN_SKIPPED_KNOWN_HANG=1"); const bool success = disableValue == 0 && !identicalSentinel && !allZero && !constant;
     RunLog("OFFLINE_PUBLIC_NGX_ABI_2X_WORKING=%d", success ? 1 : 0); std::fflush(stderr); ExitProcess(success ? 0 : 65); return 65;
+}
+
+namespace {
+using Clock = std::chrono::steady_clock;
+using dlssg::protocol::Command;
+using dlssg::protocol::Status;
+
+static double Milliseconds(Clock::time_point begin, Clock::time_point end) {
+    return std::chrono::duration<double, std::milli>(end - begin).count();
+}
+
+struct HistoryState {
+    bool valid = false;
+    bool hasFrameId = false;
+    uint64_t lastFrameId = 0;
+
+    bool Begin(uint64_t frameId, bool requestedReset, bool &effectiveReset) {
+        if (hasFrameId && frameId <= lastFrameId) return false;
+        effectiveReset = requestedReset || !valid;
+        return true;
+    }
+    void Complete(uint64_t frameId) { lastFrameId = frameId; hasFrameId = true; valid = true; }
+    void Reset() { valid = false; }
+};
+
+class PersistentWorker {
+public:
+    bool Initialize(const wchar_t *communityPath, const wchar_t *runtimeDir) {
+        runtimeDir_ = runtimeDir;
+        IDXGIAdapter1 *candidate = nullptr;
+        if (FAILED(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory_)))) return false;
+        for (UINT index = 0; factory_->EnumAdapters1(index, &candidate) != DXGI_ERROR_NOT_FOUND; ++index) {
+            DXGI_ADAPTER_DESC1 current{}; candidate->GetDesc1(&current);
+            if (!(current.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) && current.VendorId == 0x10DE) {
+                adapter_ = candidate; adapterDesc_ = current; break;
+            }
+            RunRelease(candidate);
+        }
+        if (!adapter_ || !VerifyNvapi(adapterDesc_)) return false;
+        char name[128]{}; WideCharToMultiByte(CP_UTF8, 0, adapterDesc_.Description, -1, name,
+            static_cast<int>(std::size(name)), nullptr, nullptr);
+        RunLog("WORKER_GPU=%s", name);
+        D3D12_COMMAND_QUEUE_DESC queueDesc{}; queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+        if (FAILED(D3D12CreateDevice(adapter_, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device_))) ||
+            FAILED(device_->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&queue_))) ||
+            FAILED(device_->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocator_))) ||
+            FAILED(device_->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, allocator_, nullptr, IID_PPV_ARGS(&list_))) ||
+            FAILED(device_->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_)))) return false;
+        if (FAILED(list_->Close())) return false;
+        event_ = CreateEventW(nullptr, FALSE, FALSE, nullptr); if (!event_) return false;
+        runtimePaths_[0] = runtimeDir_.c_str(); common_.PathListInfo.Path = runtimePaths_; common_.PathListInfo.Length = 1;
+        const NVSDK_NGX_Result official = NVSDK_NGX_D3D12_Init_with_ProjectID(projectId_,
+            NVSDK_NGX_ENGINE_TYPE_CUSTOM, "1.0", runtimeDir, device_, &common_, NVSDK_NGX_Version_API);
+        RunLog("WORKER_OFFICIAL_INIT_RESULT=0x%08X", official); if (NVSDK_NGX_FAILED(official)) return false;
+        const NVSDK_NGX_Result allocated = NVSDK_NGX_D3D12_GetCapabilityParameters(&parameters_);
+        if (NVSDK_NGX_FAILED(allocated) || !parameters_) return false;
+        community_ = LoadLibraryW(communityPath); if (!community_) return false;
+        init_ = reinterpret_cast<InitFn>(GetProcAddress(community_, "NVSDK_NGX_D3D12_Init"));
+        create_ = reinterpret_cast<CreateFn>(GetProcAddress(community_, "NVSDK_NGX_D3D12_CreateFeature"));
+        evaluate_ = reinterpret_cast<EvalFn>(GetProcAddress(community_, "NVSDK_NGX_D3D12_EvaluateFeature"));
+        if (!init_ || !create_ || !evaluate_) return false;
+        const NVSDK_NGX_Result communityResult = init_(projectId_, NVSDK_NGX_ENGINE_TYPE_CUSTOM, "1.0",
+            runtimeDir, device_, &common_, NVSDK_NGX_Version_API);
+        RunLog("WORKER_COMMUNITY_INIT_RESULT=0x%08X", communityResult);
+        if (NVSDK_NGX_FAILED(communityResult)) return false;
+        ++initCount_; RunLog("WORKER_INIT_COMPLETE initCount=%u", initCount_); return true;
+    }
+
+    Status Create(const dlssg::protocol::CreateRequest &request,
+        dlssg::protocol::CreateResponse &response) {
+        response = {dlssg::protocol::kWorkerVersion, dlssg::protocol::kVersion, 1,
+            static_cast<uint32_t>(dlssg::protocol::DepthMode::ConstantPointFive)};
+        if (request.width != kWidth || request.height != kHeight) return Status::InvalidDimensions;
+        if (request.pixelFormat != static_cast<uint32_t>(DXGI_FORMAT_R8G8B8A8_UNORM)) return Status::InvalidFormat;
+        if (request.generatedCount != 1 || request.depthMode !=
+            static_cast<uint32_t>(dlssg::protocol::DepthMode::ConstantPointFive)) return Status::InvalidMessage;
+        if (created_) { history_.Reset(); RunLog("WORKER_CREATE_REUSED historyInvalid=1"); return Status::Ok; }
+        if (!MakeTexture(device_, color_, "WORKER_COLOR", DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST) ||
+            !MakeTexture(device_, depth_, "WORKER_DEPTH", DXGI_FORMAT_R32_FLOAT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST) ||
+            !MakeTexture(device_, motion_, "WORKER_MOTION", DXGI_FORMAT_R16G16_FLOAT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST) ||
+            !MakeTexture(device_, output_, "WORKER_OUTPUT", DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)) return Status::NativeFailure;
+        disable_.gpu = MakeBuffer(device_, 4, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        disable_.upload = MakeBuffer(device_, 4, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+        disable_.readback = MakeBuffer(device_, 4, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+        disable_.state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        if (!disable_.gpu || !disable_.upload || !disable_.readback) return Status::NativeFailure;
+        uint8_t *mapped = nullptr; if (FAILED(disable_.upload->Map(0, nullptr, reinterpret_cast<void **>(&mapped)))) return Status::NativeFailure;
+        std::memset(mapped, 0, 4); disable_.upload->Unmap(0, nullptr);
+        const float depthValue = 0.5f;
+        for (size_t offset = 0; offset < depth_.packed.size(); offset += 4) std::memcpy(depth_.packed.data() + offset, &depthValue, 4);
+        for (size_t offset = 0; offset < output_.packed.size(); offset += 4) {
+            output_.packed[offset] = 3; output_.packed[offset + 1] = 5; output_.packed[offset + 2] = 7; output_.packed[offset + 3] = 255;
+        }
+        if (!MapPackedUpload(output_)) return Status::NativeFailure;
+        if (!Upload(depth_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_)) return Status::NativeFailure;
+        SetCreateParameters(); if (!ResetList(allocator_, list_, "WORKER_CREATE")) return Status::NativeFailure;
+        const NVSDK_NGX_Result result = create_(list_, NVSDK_NGX_Feature_FrameGeneration, parameters_, &feature_);
+        RunLog("WORKER_CREATE_RESULT=0x%08X handle=%p", result, static_cast<void *>(feature_));
+        if (NVSDK_NGX_FAILED(result) || !feature_ || FAILED(list_->Close())) return Status::NativeFailure;
+        ID3D12CommandList *commands[] = {list_}; queue_->ExecuteCommandLists(1, commands);
+        if (!WaitFence(queue_, fence_, ++fenceValue_, event_, device_, "WORKER_CREATE")) return Status::NativeFailure;
+        created_ = true; history_.Reset(); ++createCount_;
+        RunLog("WORKER_CREATE_COMPLETE createCount=%u feature=%p", createCount_, static_cast<void *>(feature_));
+        return Status::Ok;
+    }
+
+    Status Process(const dlssg::protocol::ProcessRequest &request, const uint8_t *color,
+        const uint8_t *motion, dlssg::protocol::ProcessResponse &response,
+        std::vector<uint8_t> &generated) {
+        response = {}; response.width = kWidth; response.height = kHeight;
+        response.pixelFormat = static_cast<uint32_t>(DXGI_FORMAT_R8G8B8A8_UNORM);
+        if (!created_) return Status::InvalidState;
+        bool effectiveReset = false;
+        if (!history_.Begin(request.frameId, (request.flags & dlssg::protocol::ProcessFlagReset) != 0,
+            effectiveReset)) return Status::InvalidFrameId;
+        const auto totalStart = Clock::now(); const auto uploadStart = Clock::now();
+        std::memcpy(color_.packed.data(), color, color_.packed.size());
+        std::memcpy(motion_.packed.data(), motion, motion_.packed.size());
+        if (!Upload(color_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_) ||
+            !Upload(motion_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_)) return Status::NativeFailure;
+        const auto uploadEnd = Clock::now();
+        if (!ResetList(allocator_, list_, "WORKER_EVALUATE")) return Status::NativeFailure;
+        RecordDisableZero(disable_, list_); if (!effectiveReset) RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        NVSDK_NGX_DLSSG_Opt_Eval_Params options{};
+        if (!SetOptions(parameters_, color_.gpu, depth_.gpu, motion_.gpu, output_.gpu, disable_.gpu,
+            effectiveReset, request.frameId, options, false)) return Status::NativeFailure;
+        const auto evaluateStart = Clock::now(); const NVSDK_NGX_Result evalResult = evaluate_(list_, feature_, parameters_, nullptr);
+        const auto evaluateEnd = Clock::now(); ++evaluateCount_;
+        RunLog("WORKER_EVALUATE frame=%llu reset=%d result=0x%08X evaluateCount=%u", request.frameId,
+            effectiveReset ? 1 : 0, evalResult, evaluateCount_);
+        if (NVSDK_NGX_FAILED(evalResult) || FAILED(list_->Close())) return Status::NativeFailure;
+        ID3D12CommandList *commands[] = {list_}; queue_->ExecuteCommandLists(1, commands); const auto waitStart = Clock::now();
+        if (!WaitFence(queue_, fence_, ++fenceValue_, event_, device_, "WORKER_EVALUATE")) return Status::NativeFailure;
+        const auto waitEnd = Clock::now(); history_.Complete(request.frameId);
+        response.uploadMs = Milliseconds(uploadStart, uploadEnd); response.evaluateCpuMs = Milliseconds(evaluateStart, evaluateEnd);
+        response.gpuWaitMs = Milliseconds(waitStart, waitEnd);
+        if (effectiveReset) {
+            response.totalProcessMs = Milliseconds(totalStart, Clock::now());
+            RunLog("WORKER_PROCESS_RESET_COMPLETE frame=%llu", request.frameId); return Status::OkResetNoOutput;
+        }
+        const auto readbackStart = Clock::now(); uint32_t disableValue = 0;
+        if (!Readback(output_, disable_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_, generated, disableValue)) return Status::NativeFailure;
+        const auto readbackEnd = Clock::now(); response.readbackMs = Milliseconds(readbackStart, readbackEnd);
+        response.totalProcessMs = Milliseconds(totalStart, readbackEnd); response.disableInterpolation = disableValue;
+        if (disableValue != 0) return Status::InterpolationDisabled;
+        const bool sentinel = generated == output_.packed;
+        const bool zero = std::all_of(generated.begin(), generated.end(), [](uint8_t value) { return value == 0; });
+        const bool constant = !generated.empty() && std::all_of(generated.begin(), generated.end(),
+            [&](uint8_t value) { return value == generated.front(); });
+        if (sentinel || zero || constant) return Status::InvalidOutput;
+        response.generatedCount = 1; response.outputBytes = static_cast<uint32_t>(generated.size());
+        ++generatedCount_; RunLog("WORKER_OUTPUT frame=%llu sha256=%s generatedCount=%u totalMs=%.3f",
+            request.frameId, Sha256(generated).c_str(), generatedCount_, response.totalProcessMs);
+        return Status::Ok;
+    }
+
+    void ResetHistory() { history_.Reset(); RunLog("WORKER_HISTORY_RESET nextFrameForcedReset=1"); }
+    uint32_t InitCount() const { return initCount_; }
+    uint32_t CreateCount() const { return createCount_; }
+    uint32_t EvaluateCount() const { return evaluateCount_; }
+    uint32_t GeneratedCount() const { return generatedCount_; }
+
+private:
+    bool MapPackedUpload(Texture &texture) {
+        uint8_t *mapped = nullptr; if (FAILED(texture.upload->Map(0, nullptr, reinterpret_cast<void **>(&mapped)))) return false;
+        for (UINT row = 0; row < kHeight; ++row) std::memcpy(mapped + static_cast<size_t>(row) * texture.footprint.Footprint.RowPitch,
+            texture.packed.data() + static_cast<size_t>(row) * kRowBytes, kRowBytes);
+        texture.upload->Unmap(0, nullptr); return true;
+    }
+    void SetCreateParameters() {
+        const unsigned always = NVSDK_NGX_DLSSG_ResourceFlags_Backbuffer | NVSDK_NGX_DLSSG_ResourceFlags_MVecs |
+            NVSDK_NGX_DLSSG_ResourceFlags_Depth | NVSDK_NGX_DLSSG_ResourceFlags_HUDLess |
+            NVSDK_NGX_DLSSG_ResourceFlags_OutputInterpolated | NVSDK_NGX_DLSSG_ResourceFlags_OutputDisableInterpolation;
+        const unsigned never = NVSDK_NGX_DLSSG_ResourceFlags_UI | NVSDK_NGX_DLSSG_ResourceFlags_UIAlpha |
+            NVSDK_NGX_DLSSG_ResourceFlags_BidirectionalDistortionField | NVSDK_NGX_DLSSG_ResourceFlags_OutputReal;
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_Parameter_CreationNodeMask, 1);
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_Parameter_VisibilityNodeMask, 1);
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_Parameter_Width, kWidth);
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_Parameter_Height, kHeight);
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_Width, kWidth);
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_Height, kHeight);
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_BackbufferFormat, static_cast<unsigned>(DXGI_FORMAT_R8G8B8A8_UNORM));
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_InternalWidth, kWidth);
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_InternalHeight, kHeight);
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_DynamicResolution, 0);
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_ResourceAlwaysProvided_Flags, always);
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_ResourceNeverProvided_Flags, never);
+        NVSDK_NGX_Parameter_SetUI(parameters_, NVSDK_NGX_DLSSG_Parameter_UserInterfaceRecompositionEnabled, 0);
+    }
+
+    const char *projectId_ = "f8a17d65-4f1e-4e82-b0f2-4f6f93a7c8c1";
+    IDXGIFactory6 *factory_ = nullptr; IDXGIAdapter1 *adapter_ = nullptr; DXGI_ADAPTER_DESC1 adapterDesc_{};
+    ID3D12Device *device_ = nullptr; ID3D12CommandQueue *queue_ = nullptr;
+    ID3D12CommandAllocator *allocator_ = nullptr; ID3D12GraphicsCommandList *list_ = nullptr; ID3D12Fence *fence_ = nullptr;
+    HANDLE event_ = nullptr; UINT64 fenceValue_ = 0; NVSDK_NGX_FeatureCommonInfo common_{};
+    std::wstring runtimeDir_{}; const wchar_t *runtimePaths_[1]{};
+    NVSDK_NGX_Parameter *parameters_ = nullptr; HMODULE community_ = nullptr; InitFn init_ = nullptr;
+    CreateFn create_ = nullptr; EvalFn evaluate_ = nullptr; NVSDK_NGX_Handle *feature_ = nullptr;
+    Texture color_{}, depth_{}, motion_{}, output_{}; Buffer disable_{}; HistoryState history_{};
+    bool created_ = false; uint32_t initCount_ = 0, createCount_ = 0, evaluateCount_ = 0, generatedCount_ = 0;
+};
+
+static bool ReadExact(HANDLE input, void *destination, uint32_t bytes) {
+    auto *cursor = static_cast<uint8_t *>(destination); uint32_t remaining = bytes;
+    while (remaining) { DWORD chunk = 0; if (!ReadFile(input, cursor, remaining, &chunk, nullptr) || chunk == 0) return false;
+        cursor += chunk; remaining -= chunk; } return true;
+}
+static bool WriteExact(HANDLE output, const void *source, uint32_t bytes) {
+    const auto *cursor = static_cast<const uint8_t *>(source); uint32_t remaining = bytes;
+    while (remaining) { DWORD chunk = 0; if (!WriteFile(output, cursor, remaining, &chunk, nullptr) || chunk == 0) return false;
+        cursor += chunk; remaining -= chunk; } return true;
+}
+static bool SendResponse(HANDLE output, const dlssg::protocol::RequestHeader &request, Status status,
+    const void *payload = nullptr, uint32_t payloadBytes = 0) {
+    const dlssg::protocol::ResponseHeader response{dlssg::protocol::kMagic, dlssg::protocol::kVersion,
+        request.command, request.requestId, static_cast<int32_t>(status), payloadBytes};
+    return WriteExact(output, &response, sizeof(response)) && (!payloadBytes || WriteExact(output, payload, payloadBytes));
+}
+} // namespace
+
+bool WorkerProtocolSelfTest() {
+    HistoryState history{}; bool reset = false;
+    if (!history.Begin(0, false, reset) || !reset) return false; history.Complete(0);
+    if (!history.Begin(1, false, reset) || reset) return false; history.Complete(1);
+    if (history.Begin(1, false, reset)) return false; history.Reset();
+    if (!history.Begin(2, false, reset) || !reset) return false;
+    return sizeof(dlssg::protocol::RequestHeader) == 16 && sizeof(dlssg::protocol::ResponseHeader) == 20 &&
+        sizeof(dlssg::protocol::ProcessResponse) == 64;
+}
+
+int RunServer(const wchar_t *communityPath, const wchar_t *runtimeDir) {
+    RunLog("WORKER_PROCESS_ENTRY"); RunLog("WORKER_PROTOCOL_VERSION=%u", dlssg::protocol::kVersion);
+    HANDLE input = GetStdHandle(STD_INPUT_HANDLE), output = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (!input || input == INVALID_HANDLE_VALUE || !output || output == INVALID_HANDLE_VALUE) return 70;
+    PersistentWorker worker; if (!worker.Initialize(communityPath, runtimeDir)) return 71;
+    for (;;) {
+        dlssg::protocol::RequestHeader header{}; if (!ReadExact(input, &header, sizeof(header))) return 0;
+        if (header.payloadBytes > dlssg::protocol::kMaximumPayloadBytes) return 72;
+        std::vector<uint8_t> payload(header.payloadBytes);
+        if (header.payloadBytes && !ReadExact(input, payload.data(), header.payloadBytes)) return 73;
+        if (header.magic != dlssg::protocol::kMagic) { if (!SendResponse(output, header, Status::InvalidMessage)) return 74; continue; }
+        if (header.version != dlssg::protocol::kVersion) { if (!SendResponse(output, header, Status::UnsupportedVersion)) return 74; continue; }
+        const Command command = static_cast<Command>(header.command);
+        if (command == Command::Hello) {
+            const dlssg::protocol::HelloResponse hello{dlssg::protocol::kWorkerVersion, dlssg::protocol::kVersion, 1, 0};
+            if (header.payloadBytes || !SendResponse(output, header, header.payloadBytes ? Status::InvalidPayloadSize : Status::Ok, &hello, sizeof(hello))) return 74;
+        } else if (command == Command::Create) {
+            if (payload.size() != sizeof(dlssg::protocol::CreateRequest)) { if (!SendResponse(output, header, Status::InvalidPayloadSize)) return 74; continue; }
+            dlssg::protocol::CreateRequest request{}; std::memcpy(&request, payload.data(), sizeof(request)); dlssg::protocol::CreateResponse response{};
+            const Status status = worker.Create(request, response); if (!SendResponse(output, header, status, &response, sizeof(response))) return 74;
+        } else if (command == Command::Process) {
+            if (payload.size() < sizeof(dlssg::protocol::ProcessRequest)) { if (!SendResponse(output, header, Status::InvalidPayloadSize)) return 74; continue; }
+            dlssg::protocol::ProcessRequest request{}; std::memcpy(&request, payload.data(), sizeof(request));
+            const uint64_t expected = sizeof(request) + static_cast<uint64_t>(request.colorBytes) + request.motionBytes + request.depthBytes;
+            const uint32_t fixedBytes = kWidth * kHeight * 4;
+            if (expected != payload.size() || request.colorBytes != fixedBytes || request.motionBytes != fixedBytes || request.depthBytes != 0) {
+                if (!SendResponse(output, header, Status::InvalidPayloadSize)) return 74; continue;
+            }
+            dlssg::protocol::ProcessResponse response{}; std::vector<uint8_t> generated;
+            const uint8_t *color = payload.data() + sizeof(request); const uint8_t *motion = color + request.colorBytes;
+            const Status status = worker.Process(request, color, motion, response, generated);
+            std::vector<uint8_t> responsePayload(sizeof(response) + generated.size()); std::memcpy(responsePayload.data(), &response, sizeof(response));
+            if (!generated.empty()) std::memcpy(responsePayload.data() + sizeof(response), generated.data(), generated.size());
+            if (!SendResponse(output, header, status, responsePayload.data(), static_cast<uint32_t>(responsePayload.size()))) return 74;
+        } else if (command == Command::ResetHistory) {
+            if (header.payloadBytes) { if (!SendResponse(output, header, Status::InvalidPayloadSize)) return 74; continue; }
+            worker.ResetHistory(); if (!SendResponse(output, header, Status::Ok)) return 74;
+        } else if (command == Command::Close) {
+            if (header.payloadBytes) { if (!SendResponse(output, header, Status::InvalidPayloadSize)) return 74; continue; }
+            if (!SendResponse(output, header, Status::Ok)) return 74;
+            RunLog("WORKER_CLOSE initCount=%u createCount=%u evaluateCount=%u generatedCount=%u",
+                worker.InitCount(), worker.CreateCount(), worker.EvaluateCount(), worker.GeneratedCount());
+            RunLog("WORKER_NGX_SHUTDOWN_SKIPPED_KNOWN_HANG=1"); std::fflush(stderr); ExitProcess(0);
+        } else {
+            if (!SendResponse(output, header, Status::InvalidMessage)) return 74;
+        }
+    }
 }

@@ -23,11 +23,14 @@ static void Log(const char *fmt, ...) {
 }
 template<class T> static void Release(T *&p) { if (p) { p->Release(); p = nullptr; } }
 
+bool WorkerProtocolSelfTest();
+
 static bool SelfTest() {
     Log("PROCESS_ENTRY"); Log("ARGS_PARSED");
     const uint8_t a[] = {1, 2, 3, 4};
     uint32_t sum = 0; for (uint8_t v : a) sum += v;
-    if (sum != 10) return false;
+    if (sum != 10 || !WorkerProtocolSelfTest()) return false;
+    Log("WORKER_PROTOCOL_SELFTEST_COMPLETE");
     Log("SELFTEST_COMPLETE"); return true;
 }
 
@@ -144,6 +147,7 @@ static int ResourcePipelineTest(){Log("PROCESS_ENTRY");Log("ARGS_PARSED");Log("S
 #endif
 int ResourcePipelineTest();
 int Run2x(const wchar_t *communityPath, const wchar_t *runtimeDir);
+int RunServer(const wchar_t *communityPath, const wchar_t *runtimeDir);
 
 int wmain(int argc, wchar_t **argv) {
     if (argc >= 2 && _wcsicmp(argv[1], L"--selftest") == 0) return SelfTest() ? 0 : 1;
@@ -154,5 +158,13 @@ int wmain(int argc, wchar_t **argv) {
     if (argc >= 4 && _wcsicmp(argv[1], L"--community-create-probe") == 0) return CommunityCreateProbe(argv[2], argv[3]);
     if (argc >= 2 && _wcsicmp(argv[1], L"--resource-pipeline-test") == 0) return ResourcePipelineTest();
     if (argc >= 4 && _wcsicmp(argv[1], L"--run-2x") == 0) return Run2x(argv[2], argv[3]);
+    if (argc >= 6 && _wcsicmp(argv[1], L"--serve") == 0) {
+        const wchar_t *community = nullptr, *runtime = nullptr;
+        for (int i = 2; i + 1 < argc; i += 2) {
+            if (_wcsicmp(argv[i], L"--community-runtime") == 0) community = argv[i + 1];
+            else if (_wcsicmp(argv[i], L"--official-runtime-dir") == 0) runtime = argv[i + 1];
+        }
+        if (community && runtime) return RunServer(community, runtime);
+    }
     Log("USAGE: dlssg_sm86_offline.exe --selftest | --shutdown-probe <official-ngxfb-directory> | --param-probe <official-ngxfb-directory>"); return 2;
 }

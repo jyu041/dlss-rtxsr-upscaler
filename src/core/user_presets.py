@@ -17,10 +17,11 @@ _LOCK = threading.RLock()
 RTX_FIELDS = {"mode", "scale", "quality"}
 DLSS_FIELDS = {"scale", "nr_preset", "nr_style", "model_preset", "intensity", "local_tone", "local_structure", "skin_structure", "automatic_mask"}
 DLSS_SR_FIELDS = {"mode", "model_preset"}
+DLSSG_FIELDS = {"community_runtime", "official_runtime_dir", "motion_provider", "depth_mode"}
 
 
 def _empty() -> dict:
-    return {"schema_version": 1, "rtx_vsr": {}, "dlss5": {}, "dlss_sr": {}}
+    return {"schema_version": 1, "rtx_vsr": {}, "dlss5": {}, "dlss_sr": {}, "dlssg": {}}
 
 
 def _read(path: Path, default: dict) -> dict:
@@ -31,6 +32,9 @@ def _read(path: Path, default: dict) -> dict:
         data.setdefault("rtx_vsr", {})
         data.setdefault("dlss5", {})
         data.setdefault("dlss_sr", {})
+        data.setdefault("dlssg", {})
+        if isinstance(data.get("last_used"), dict):
+            data["last_used"].setdefault("dlssg", {})
         return data
     except (OSError, ValueError):
         if path.is_file():
@@ -50,9 +54,9 @@ def _atomic_write(path: Path, data: dict) -> None:
 
 
 def _backend(backend: str) -> str:
-    value = {"rtx": "rtx_vsr", "rtx_vsr": "rtx_vsr", "dlss": "dlss5", "dlss5": "dlss5", "dlss_sr": "dlss_sr"}.get(backend)
+    value = {"rtx": "rtx_vsr", "rtx_vsr": "rtx_vsr", "dlss": "dlss5", "dlss5": "dlss5", "dlss_sr": "dlss_sr", "dlssg": "dlssg"}.get(backend)
     if value is None:
-        raise ValueError("backend must be rtx_vsr, dlss5, or dlss_sr")
+        raise ValueError("backend must be rtx_vsr, dlss5, dlss_sr, or dlssg")
     return value
 
 
@@ -66,7 +70,7 @@ def _validate(backend: str, values: dict) -> dict:
     key = _backend(backend)
     if not isinstance(values, dict):
         raise ValueError("Preset values must be an object")
-    fields = RTX_FIELDS if key == "rtx_vsr" else DLSS_FIELDS if key == "dlss5" else DLSS_SR_FIELDS
+    fields = RTX_FIELDS if key == "rtx_vsr" else DLSS_FIELDS if key == "dlss5" else DLSS_SR_FIELDS if key == "dlss_sr" else DLSSG_FIELDS
     if not set(values).issubset(fields):
         raise ValueError("Preset contains fields for another backend")
     result = dict(values)
@@ -83,11 +87,20 @@ def _validate(backend: str, values: dict) -> dict:
             raise ValueError("Invalid DLSS5 preset selection")
         if not isinstance(result.get("automatic_mask"), bool) or float(result.get("scale", 0)) not in {1.0, 1.5, 1.724, 2.0, 3.0}:
             raise ValueError("Invalid DLSS5 preset value")
-    else:
+    elif key == "dlss_sr":
         if result.get("mode") not in {"DLAA", "Quality", "Balanced", "Performance", "Ultra Performance"}:
             raise ValueError("Invalid DLSS SR mode")
         if result.get("model_preset") not in {"Default", "J", "K", "L", "M"}:
             raise ValueError("Invalid DLSS SR model preset")
+    else:
+        for field in ("community_runtime", "official_runtime_dir"):
+            if not isinstance(result.get(field), str):
+                raise ValueError(f"Invalid DLSS-G {field}")
+            result[field] = result[field].strip()
+        if result.get("motion_provider") != "NVIDIA Optical Flow":
+            raise ValueError("Invalid DLSS-G motion provider")
+        if result.get("depth_mode") != "Constant 0.5":
+            raise ValueError("Invalid DLSS-G depth mode")
     return result
 
 

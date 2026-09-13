@@ -55,3 +55,35 @@ def test_clear_last_successful_render_preserves_last_used(tmp_path, monkeypatch)
     data = json.loads(settings.read_text(encoding="utf-8"))
     assert "last_successful_render" not in data
     assert data["last_used"]["dlss5"]["scale"] == 1.0
+
+
+def test_dlssg_settings_roundtrip_and_validation(tmp_path, monkeypatch):
+    settings = tmp_path / "settings.local.json"
+    monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
+    values = {"community_runtime": "  C:/runtime/version.dll  ", "official_runtime_dir": "", "motion_provider": "NVIDIA Optical Flow", "depth_mode": "Constant 0.5"}
+    user_presets.save_last_used("dlssg", values)
+    assert user_presets.load_last_used()["dlssg"] == {**values, "community_runtime": "C:/runtime/version.dll"}
+    with pytest.raises(ValueError):
+        user_presets.save_last_used("dlssg", {**values, "motion_provider": "CPU"})
+    with pytest.raises(ValueError):
+        user_presets.save_last_used("dlssg", {**values, "depth_mode": "Depth"})
+
+
+def test_schema_v1_without_dlssg_and_existing_backends_are_preserved(tmp_path, monkeypatch):
+    settings = tmp_path / "settings.local.json"
+    monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
+    original = {"schema_version": 1, "last_used": {"rtx_vsr": {"mode": "Super Resolution"}, "dlss5": {"scale": 1.0}, "dlss_sr": {"mode": "Quality"}}}
+    settings.write_text(json.dumps(original), encoding="utf-8")
+    user_presets.save_last_used("dlssg", {"community_runtime": "", "official_runtime_dir": "", "motion_provider": "NVIDIA Optical Flow", "depth_mode": "Constant 0.5"})
+    data = json.loads(settings.read_text(encoding="utf-8"))
+    assert data["last_used"]["rtx_vsr"] == original["last_used"]["rtx_vsr"]
+    assert data["last_used"]["dlss5"] == original["last_used"]["dlss5"]
+    assert data["last_used"]["dlss_sr"] == original["last_used"]["dlss_sr"]
+
+
+def test_corrupt_local_settings_recovery_still_works(tmp_path, monkeypatch):
+    settings = tmp_path / "settings.local.json"
+    settings.write_text("{broken", encoding="utf-8")
+    monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
+    assert user_presets.load_last_used() == {}
+    assert list(tmp_path.glob("settings.local.json.corrupt-*"))

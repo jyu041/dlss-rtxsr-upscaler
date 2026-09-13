@@ -50,3 +50,9 @@ NVIDIA runtime; supply and approve that file separately.
 The application is local-only and binds its UI to localhost. For security
 requirements and provenance rules, see `docs/SECURITY_AUDIT.md` and
 `docs/DLSS5_APPROVAL.md`.
+
+DLSS Frame Generation 2X runtime selections are saved locally after a field
+changes and before Preview Clip or Render Video. They are stored in the
+ignored `config/settings.local.json`; existing `DLSSG_COMMUNITY_RUNTIME` and
+`DLSSG_OFFICIAL_RUNTIME_DIR` environment variables remain valid bootstrap
+fallbacks. Missing files do not clear saved paths.

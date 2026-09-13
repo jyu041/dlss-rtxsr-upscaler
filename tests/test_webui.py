@@ -12,6 +12,7 @@ except ImportError as exc:
     pytest.skip(f"WebUI dependency is unavailable in this Python environment: {exc}", allow_module_level=True)
 
 from src.ui.app import build, mode_visibility
+from src.core import user_presets
 
 def test_gradio_launch_configuration_matches_installed_api():
     blocks_params = inspect.signature(gr.Blocks).parameters
@@ -54,6 +55,31 @@ def test_enhancement_selector_is_the_single_routing_source():
     assert mode_visibility("DLSS 5 only") == (False, True, False, False)
     assert mode_visibility("DLSS SR only") == (False, False, True, False)
     assert mode_visibility("DLSS Frame Generation 2X") == (False, False, False, True)
+
+
+def test_ui_build_uses_saved_dlssg_values(tmp_path, monkeypatch):
+    settings = tmp_path / "settings.local.json"
+    monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
+    user_presets.save_last_used("dlssg", {"community_runtime": "C:/saved/version.dll", "official_runtime_dir": "C:/saved/ngx", "motion_provider": "NVIDIA Optical Flow", "depth_mode": "Constant 0.5"})
+    ui = build()
+    fields = {component.get("props", {}).get("label"): component.get("props", {}).get("value") for component in ui.config["components"]}
+    assert fields["Community runtime (absolute version.dll path)"] == "C:/saved/version.dll"
+    assert fields["Official NGX runtime directory"] == "C:/saved/ngx"
+
+
+def test_dlssg_startup_precedence_saved_then_environment_then_default(tmp_path, monkeypatch):
+    settings = tmp_path / "settings.local.json"
+    monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
+    monkeypatch.setenv("DLSSG_COMMUNITY_RUNTIME", "C:/env/version.dll")
+    monkeypatch.setenv("DLSSG_OFFICIAL_RUNTIME_DIR", "C:/env/ngx")
+    ui = build()
+    fields = {component.get("props", {}).get("label"): component.get("props", {}).get("value") for component in ui.config["components"]}
+    assert fields["Community runtime (absolute version.dll path)"] == "C:/env/version.dll"
+    user_presets.save_last_used("dlssg", {"community_runtime": "C:/saved/version.dll", "official_runtime_dir": "", "motion_provider": "NVIDIA Optical Flow", "depth_mode": "Constant 0.5"})
+    ui = build()
+    fields = {component.get("props", {}).get("label"): component.get("props", {}).get("value") for component in ui.config["components"]}
+    assert fields["Community runtime (absolute version.dll path)"] == "C:/saved/version.dll"
+    assert fields["Official NGX runtime directory"] == ""
 
 
 def test_ui_has_no_redundant_processing_or_sr_workflow():

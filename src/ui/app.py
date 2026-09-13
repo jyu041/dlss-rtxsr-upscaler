@@ -43,6 +43,9 @@ def _save_last(backend, values):
         save_last_used(backend, values)
     except Exception:
         pass
+def save_dlssg_settings(community_runtime, official_runtime_dir, motion_provider, depth_mode):
+    _save_last("dlssg", {"community_runtime": community_runtime or "", "official_runtime_dir": official_runtime_dir or "", "motion_provider": motion_provider, "depth_mode": depth_mode})
+    return "Runtime configuration saved locally."
 def inspect(path):
     if not path: return "<span class=\"muted\">No video selected.</span>", "No video selected."
     try:
@@ -138,6 +141,7 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
     try:
         job = CONTROLLER.start(); MONITOR.set_active(True); destination = output_path(Path(path), processing_mode, container_value, float(dlss_scale))
         if processing_mode == "DLSS Frame Generation 2X":
+            _save_last("dlssg", {"community_runtime": dlssg_runtime, "official_runtime_dir": dlssg_official_runtime, "motion_provider": dlssg_motion, "depth_mode": dlssg_depth})
             if dlssg_motion != "NVIDIA Optical Flow" or dlssg_depth != "Constant 0.5": raise RuntimeError("Only NVIDIA Optical Flow + Constant 0.5 depth is implemented")
             backend = DLSSGBackend(community_runtime=dlssg_runtime, official_runtime_dir=dlssg_official_runtime)
         elif processing_mode.startswith("DLSS SR"):
@@ -176,6 +180,7 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
             clip_source = TEMP / f"preview_input_{os.getpid()}.mp4"
             result = __import__('subprocess').run([ffmpeg_executable(), "-y", "-v", "error", "-ss", str(float(start_timestamp)), "-t", str(float(duration)), "-i", str(path), "-c", "copy", str(clip_source)], capture_output=True, text=True, check=False)
             if result.returncode: raise RuntimeError(result.stderr[-1000:])
+            _save_last("dlssg", {"community_runtime": dlssg_runtime, "official_runtime_dir": dlssg_official_runtime, "motion_provider": dlssg_motion, "depth_mode": dlssg_depth})
             backend = DLSSGBackend(community_runtime=dlssg_runtime, official_runtime_dir=dlssg_official_runtime)
             stats = render_dlssg_2x(clip_source, destination, backend, codec="h264_nvenc", cancel=job.cancel_event, progress=progress)
             stats["frames"] = stats["output_frames"]; stats["fps"] = stats["end_to_end_fps"]; stats["dimensions"] = (stats["width"], stats["height"])
@@ -207,6 +212,9 @@ def build():
     rlast = last.get("rtx_vsr", {})
     dlast = last.get("dlss5", {})
     srlast = last.get("dlss_sr", {})
+    dlssglast = last.get("dlssg", {})
+    dlssg_runtime_default = dlssglast.get("community_runtime", os.environ.get("DLSSG_COMMUNITY_RUNTIME", ""))
+    dlssg_official_default = dlssglast.get("official_runtime_dir", os.environ.get("DLSSG_OFFICIAL_RUNTIME_DIR", ""))
     previous_render = load_last_successful_render()
     with gr.Blocks(title="NVIDIA Video Enhancer", analytics_enabled=False) as ui:
         status = gr.HTML(status_html(), elem_classes="status-header")
@@ -269,10 +277,11 @@ def build():
                 with gr.Group(visible=False, elem_classes="backend-group") as dlssg_group:
                     gr.Markdown("### DLSS Frame Generation 2X")
                     gr.Markdown("Offline frame interpolation. The community runtime is external and is never downloaded or redistributed by this app.")
-                    dlssg_runtime = gr.Textbox(value=os.environ.get("DLSSG_COMMUNITY_RUNTIME", ""), label="Community runtime (absolute version.dll path)")
-                    dlssg_official_runtime = gr.Textbox(value=os.environ.get("DLSSG_OFFICIAL_RUNTIME_DIR", ""), label="Official NGX runtime directory")
-                    dlssg_motion = gr.Dropdown(["NVIDIA Optical Flow"], value="NVIDIA Optical Flow", label="Motion provider")
-                    dlssg_depth = gr.Dropdown(["Constant 0.5"], value="Constant 0.5", label="Depth mode")
+                    dlssg_runtime = gr.Textbox(value=dlssg_runtime_default, label="Community runtime (absolute version.dll path)")
+                    dlssg_official_runtime = gr.Textbox(value=dlssg_official_default, label="Official NGX runtime directory")
+                    dlssg_motion = gr.Dropdown(["NVIDIA Optical Flow"], value=dlssglast.get("motion_provider", "NVIDIA Optical Flow"), label="Motion provider")
+                    dlssg_depth = gr.Dropdown(["Constant 0.5"], value=dlssglast.get("depth_mode", "Constant 0.5"), label="Depth mode")
+                    dlssg_saved = gr.Markdown()
                     gr.Markdown("Constant depth is a first-generation quality limitation; it is not renderer-quality depth.")
                 with gr.Accordion("Saved settings", open=False):
                     rtx_saved = gr.Dropdown(preset_choices("rtx_vsr"), label="RTX VSR saved preset")
@@ -318,6 +327,8 @@ def build():
         mode.change(visibility, mode, [rtx_group, dlss_group, sr_group, dlssg_group])
         preset.change(apply_preset, preset, [nrpreset, style, intensity, tone, structure, skin, mask])
         dlssg_inputs = [dlssg_runtime, dlssg_official_runtime, dlssg_motion, dlssg_depth]
+        for control in dlssg_inputs:
+            control.change(save_dlssg_settings, dlssg_inputs, dlssg_saved, show_progress="hidden")
         frame.click(do_frame, [inp, timestamp, state, vsr_mode, scale, quality, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [before, after, job])
         clip.click(preview_clip, [inp, state, vsr_mode, scale, quality, container, timestamp, preview_duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [result_video, job])
         render.click(render_video, [inp, state, vsr_mode, scale, quality, container, codec, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [result_video, job])

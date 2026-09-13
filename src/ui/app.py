@@ -6,6 +6,7 @@ from src.core.diagnostics import collect
 from src.backends.rtx_vsr import RTXVSRBackend
 from src.backends.dlss5 import DLSS5Backend
 from src.backends.dlss_sr import DLSSSRBackend
+from src.backends.dlssg import DLSSGBackend
 from src.video.ffmpeg import preview_frame
 from src.core.paths import TEMP
 from src.core.paths import output_path
@@ -21,6 +22,7 @@ from src.ui.preset_controls import delete_dlss, delete_rtx, delete_dlss_sr, load
 from src.video.stream import render_vsr
 from src.video.dlss5 import render_dlss5
 from src.video.dlss_sr import process_dlss_sr_frame, render_dlss_sr
+from src.video.dlssg import ffmpeg_executable, render_dlssg_2x
 
 os.environ.setdefault("GRADIO_ANALYTICS_ENABLED","False")
 CONTROLLER = JobController()
@@ -29,8 +31,9 @@ def status_html():
     rtx = "Ready" if d["rtx_vsr"]["available"] else "Unavailable"
     dlss = "Experimental Ready" if d["dlss5"]["available"] else "Unavailable"
     sr = "Experimental Ready" if d["dlss_sr"]["state"] == "EXPERIMENTAL READY" else "Unavailable"
+    fg = "Experimental Ready" if d["dlssg"]["available"] else "Not configured"
     ffmpeg = "Ready" if d["ffmpeg"] == "AVAILABLE" else "Unavailable"
-    return f"<div class=\"app-header\"><h1>NVIDIA Video Enhancer</h1><p>RTX VSR + standalone DLSS SR + DLSS 5 Neural Rendering</p></div><div class=\"backend-status\"><span class=\"status-badge\">RTX VSR <b>● {rtx}</b></span><span class=\"status-badge\">DLSS SR <b>● {sr}</b></span><span class=\"status-badge\">DLSS 5 <b>● {dlss}</b></span><span class=\"status-badge\">FFmpeg <b>● {ffmpeg}</b></span></div>"
+    return f"<div class=\"app-header\"><h1>NVIDIA Video Enhancer</h1><p>RTX VSR + DLSS SR/NR + offline DLSS Frame Generation</p></div><div class=\"backend-status\"><span class=\"status-badge\">RTX VSR <b>● {rtx}</b></span><span class=\"status-badge\">DLSS SR <b>● {sr}</b></span><span class=\"status-badge\">DLSS 5 <b>● {dlss}</b></span><span class=\"status-badge\">DLSS-G 2X <b>● {fg}</b></span><span class=\"status-badge\">FFmpeg <b>● {ffmpeg}</b></span></div>"
 
 def _tip(mapping, key, label):
     return gr.HTML(setting_label(label, mapping[key]), show_label=False, elem_classes="setting-label")
@@ -48,9 +51,11 @@ def inspect(path):
         detail = format_info(i) + ("\n\nWARNING: HDR/high-bit-depth detected; DLSS5 path is SDR RGBA8 only." if i['hdr'] else "")
         return summary, detail
     except Exception as e: return f"<span class=\"error\">Inspection failed: {e}</span>", f"Inspection failed: {e}"
-def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto"):
+def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", *dlssg_settings):
     if not path: return None, None, "Choose an input video."
     try:
+        if mode == "DLSS Frame Generation 2X":
+            return None, None, "DLSS-G is temporal interpolation; use Preview Clip or Render Video."
         if mode.startswith("DLSS SR"):
             backend = DLSSSRBackend(); status = backend.status()
             if status.state not in {"EXPERIMENTAL READY"}:
@@ -106,13 +111,14 @@ def _dlss_options(backend, dlss_scale, nrpreset, style, intensity, tone, structu
 
 def mode_visibility(selected):
     """Return visibility for the selected backend and its settings group."""
-    return selected == "RTX VSR only", selected == "DLSS 5 only", selected == "DLSS SR only"
+    return selected == "RTX VSR only", selected == "DLSS 5 only", selected == "DLSS SR only", selected == "DLSS Frame Generation 2X"
 
 
 def available_mode_choices():
     choices = [("RTX VSR", "RTX VSR only"), ("DLSS 5", "DLSS 5 only")]
     if DLSSSRBackend().status().state == "EXPERIMENTAL READY":
         choices.append(("DLSS SR", "DLSS SR only"))
+    choices.append(("DLSS Frame Generation (2X)", "DLSS Frame Generation 2X"))
     return choices
 
 
@@ -126,19 +132,25 @@ def load_last_render():
         return None, '<span class="error">Previous render is not a readable video.</span>', detail, None, None, None, "Previous render is not a readable video.", gr.update(interactive=False)
     return path, summary, detail, None, None, None, f"Loaded last successful render: {Path(path).name}", gr.update(interactive=True)
 
-def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, codec_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto"):
+def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, codec_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", dlssg_runtime="", dlssg_official_runtime="", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5"):
     if not path: return None, "Choose an input video."
     job = None
     try:
         job = CONTROLLER.start(); MONITOR.set_active(True); destination = output_path(Path(path), processing_mode, container_value, float(dlss_scale))
-        if processing_mode.startswith("DLSS SR"):
+        if processing_mode == "DLSS Frame Generation 2X":
+            if dlssg_motion != "NVIDIA Optical Flow" or dlssg_depth != "Constant 0.5": raise RuntimeError("Only NVIDIA Optical Flow + Constant 0.5 depth is implemented")
+            backend = DLSSGBackend(community_runtime=dlssg_runtime, official_runtime_dir=dlssg_official_runtime)
+        elif processing_mode.startswith("DLSS SR"):
             backend = DLSSSRBackend(); status = backend.status()
             if status.state != "EXPERIMENTAL READY": raise RuntimeError(f"DLSS SR {status.state}: {status.reason}")
             save_last_used("dlss_sr", {"mode": sr_mode, "model_preset": sr_model})
         else:
             _save_last("dlss5" if processing_mode == "DLSS 5 only" else "rtx_vsr", {"mode": vsr_mode, "scale": float(scale_value), "quality": quality_value} if processing_mode != "DLSS 5 only" else {"scale": float(dlss_scale), "nr_preset": nrpreset, "nr_style": style, "model_preset": model, "intensity": float(intensity), "local_tone": float(tone), "local_structure": float(structure), "skin_structure": float(skin), "automatic_mask": mask == "On"})
         progress = tracker_callback(job.progress)
-        if processing_mode.startswith("DLSS SR"):
+        if processing_mode == "DLSS Frame Generation 2X":
+            stats = render_dlssg_2x(path, destination, backend, codec={"H.264":"h264_nvenc", "HEVC":"hevc_nvenc"}[codec_value], cancel=job.cancel_event, progress=progress)
+            stats["frames"] = stats["output_frames"]; stats["fps"] = stats["end_to_end_fps"]; stats["dimensions"] = (stats["width"], stats["height"])
+        elif processing_mode.startswith("DLSS SR"):
             stats = render_dlss_sr(path, destination, backend, sr_mode, sr_model, codec=codec_value, cancel=job.cancel_event, progress=progress)
         elif processing_mode == "DLSS 5 only":
             backend = DLSS5Backend(); stats = render_dlss5(path, destination, backend, _dlss_options(backend, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model), codec=codec_value, cancel=job.cancel_event, progress=progress, nr_working_scale=nr_working_scale, recompose_backend=recompose_backend)
@@ -154,12 +166,20 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
         if job: MONITOR.set_active(False); CONTROLLER.finish("FAILED", str(exc))
         return None, f"Render failed: {exc}"
 
-def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, start_timestamp, duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto"):
+def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, start_timestamp, duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", dlssg_runtime="", dlssg_official_runtime="", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5"):
     if not path: return None, "Choose an input video."
     job = None
     try:
         job = CONTROLLER.start(); MONITOR.set_active(True); progress = tracker_callback(job.progress); destination = TEMP / f"preview_clip_{os.getpid()}.{container_value.lower()}"
-        if processing_mode.startswith("DLSS SR"):
+        if processing_mode == "DLSS Frame Generation 2X":
+            clip_source = TEMP / f"preview_input_{os.getpid()}.mp4"
+            result = __import__('subprocess').run([ffmpeg_executable(), "-y", "-v", "error", "-ss", str(float(start_timestamp)), "-t", str(float(duration)), "-i", str(path), "-c", "copy", str(clip_source)], capture_output=True, text=True, check=False)
+            if result.returncode: raise RuntimeError(result.stderr[-1000:])
+            backend = DLSSGBackend(community_runtime=dlssg_runtime, official_runtime_dir=dlssg_official_runtime)
+            stats = render_dlssg_2x(clip_source, destination, backend, codec="h264_nvenc", cancel=job.cancel_event, progress=progress)
+            stats["frames"] = stats["output_frames"]; stats["fps"] = stats["end_to_end_fps"]; stats["dimensions"] = (stats["width"], stats["height"])
+            clip_source.unlink(missing_ok=True)
+        elif processing_mode.startswith("DLSS SR"):
             backend = DLSSSRBackend(); status = backend.status()
             if status.state != "EXPERIMENTAL READY": raise RuntimeError(f"DLSS SR {status.state}: {status.reason}")
             save_last_used("dlss_sr", {"mode": sr_mode, "model_preset": sr_model})
@@ -244,6 +264,14 @@ def build():
                     sr_mode = gr.Dropdown(["DLAA", "Quality", "Balanced", "Performance", "Ultra Performance"], value=srlast.get("mode", "Quality"), show_label=False)
                     _tip(DLSS_SR_TOOLTIPS, "model_preset", "Model preset")
                     sr_model = gr.Dropdown(["Default", "J", "K", "L", "M"], value=srlast.get("model_preset", "Default"), show_label=False)
+                with gr.Group(visible=False, elem_classes="backend-group") as dlssg_group:
+                    gr.Markdown("### DLSS Frame Generation 2X")
+                    gr.Markdown("Offline frame interpolation. The community runtime is external and is never downloaded or redistributed by this app.")
+                    dlssg_runtime = gr.Textbox(value=os.environ.get("DLSSG_COMMUNITY_RUNTIME", ""), label="Community runtime (absolute version.dll path)")
+                    dlssg_official_runtime = gr.Textbox(value=os.environ.get("DLSSG_OFFICIAL_RUNTIME_DIR", ""), label="Official NGX runtime directory")
+                    dlssg_motion = gr.Dropdown(["NVIDIA Optical Flow"], value="NVIDIA Optical Flow", label="Motion provider")
+                    dlssg_depth = gr.Dropdown(["Constant 0.5"], value="Constant 0.5", label="Depth mode")
+                    gr.Markdown("Constant depth is a first-generation quality limitation; it is not renderer-quality depth.")
                 with gr.Accordion("Saved settings", open=False):
                     rtx_saved = gr.Dropdown(preset_choices("rtx_vsr"), label="RTX VSR saved preset")
                     rtx_name = gr.Textbox(label="Preset name", max_length=80)
@@ -280,16 +308,17 @@ def build():
                 stop = gr.Button("Cancel", interactive=False, elem_classes="cancel-button")
                 job = gr.Markdown("Ready. One GPU job at a time.")
         def visibility(selected):
-            rtx_visible, dlss_visible, sr_visible = mode_visibility(selected)
-            return gr.update(visible=rtx_visible), gr.update(visible=dlss_visible), gr.update(visible=sr_visible)
+            rtx_visible, dlss_visible, sr_visible, dlssg_visible = mode_visibility(selected)
+            return gr.update(visible=rtx_visible), gr.update(visible=dlss_visible), gr.update(visible=sr_visible), gr.update(visible=dlssg_visible)
         inp.change(inspect, inp, [summary, info])
         load_render.click(load_last_render, outputs=[inp, summary, info, before, after, result_video, job, load_render])
         mode.change(lambda value: value, mode, state)
-        mode.change(visibility, mode, [rtx_group, dlss_group, sr_group])
+        mode.change(visibility, mode, [rtx_group, dlss_group, sr_group, dlssg_group])
         preset.change(apply_preset, preset, [nrpreset, style, intensity, tone, structure, skin, mask])
-        frame.click(do_frame, [inp, timestamp, state, vsr_mode, scale, quality, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend], [before, after, job])
-        clip.click(preview_clip, [inp, state, vsr_mode, scale, quality, container, timestamp, preview_duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend], [result_video, job])
-        render.click(render_video, [inp, state, vsr_mode, scale, quality, container, codec, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend], [result_video, job])
+        dlssg_inputs = [dlssg_runtime, dlssg_official_runtime, dlssg_motion, dlssg_depth]
+        frame.click(do_frame, [inp, timestamp, state, vsr_mode, scale, quality, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [before, after, job])
+        clip.click(preview_clip, [inp, state, vsr_mode, scale, quality, container, timestamp, preview_duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [result_video, job])
+        render.click(render_video, [inp, state, vsr_mode, scale, quality, container, codec, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [result_video, job])
         stop.click(lambda: (CONTROLLER.cancel() or "Cancellation requested."), None, job)
         refresh_timer.tick(lambda: (metrics_html(), progress_html(CONTROLLER.snapshot())), outputs=[metrics, progress_panel], show_progress="hidden", queue=False)
         rtx_save.click(save_rtx, [rtx_name, vsr_mode, scale, quality], [rtx_saved, rtx_message])

@@ -3,8 +3,9 @@ from .process_utils import tool
 from src.backends.rtx_vsr import RTXVSRBackend
 from src.backends.dlss5 import DLSS5Backend
 from src.backends.dlss_sr import DLSSSRBackend
+from src.backends.dlssg import DLSSGBackend
 def collect():
-    r=RTXVSRBackend().status(); d=DLSS5Backend().status(); sr_backend=DLSSSRBackend(); s=sr_backend.status()
+    r=RTXVSRBackend().status(); d=DLSS5Backend().status(); sr_backend=DLSSSRBackend(); s=sr_backend.status(); fg=DLSSGBackend().status()
     gpu="UNAVAILABLE"
     try:
         q=subprocess.run(["nvidia-smi","--query-gpu=name,driver_version,memory.total,compute_cap","--format=csv,noheader,nounits"],capture_output=True,text=True,timeout=10,check=False)
@@ -22,6 +23,11 @@ def collect():
     dlss.update({"runtime": "Community DLSS5 v3.0" if d.available else "unavailable", "network": "Worker outbound blocked by Windows Firewall" if d.available else "not applicable", "security": "User-approved exact runtime hashes" if d.available else "not approved"})
     sr = s.__dict__.copy()
     sr.update({"runtime": str(sr_backend.runtime) if s.available else "unavailable", "security": "Exact approved NVIDIA 310.8 runtime hash required; no fallback permitted"})
-    return {"windows":platform.platform(),"python":sys.version.split()[0],"conda_env":__import__('os').environ.get('CONDA_DEFAULT_ENV','unknown'),"gpu":gpu,"cuda":cuda,"nvvfx_version":vfx_version,"ffmpeg":"AVAILABLE" if tool('ffmpeg') else 'UNAVAILABLE',"ffprobe":"AVAILABLE" if tool('ffprobe') else 'UNAVAILABLE',"rtx_vsr":r.__dict__,"dlss5":dlss,"dlss_sr":sr}
+    try:
+        from src.video.dlssg import ffmpeg_executable
+        ffmpeg = "AVAILABLE" if ffmpeg_executable() else "UNAVAILABLE"
+    except RuntimeError:
+        ffmpeg = "UNAVAILABLE"
+    return {"windows":platform.platform(),"python":sys.version.split()[0],"conda_env":__import__('os').environ.get('CONDA_DEFAULT_ENV','unknown'),"gpu":gpu,"cuda":cuda,"nvvfx_version":vfx_version,"ffmpeg":ffmpeg,"ffprobe":"AVAILABLE" if tool('ffprobe') else 'UNAVAILABLE',"rtx_vsr":r.__dict__,"dlss5":dlss,"dlss_sr":sr,"dlssg":fg.__dict__}
 def main(): print(json.dumps(collect(), indent=2))
 if __name__ == "__main__": main()

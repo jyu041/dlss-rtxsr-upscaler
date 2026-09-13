@@ -50,9 +50,10 @@ def test_actual_local_webui_launch():
 
 
 def test_enhancement_selector_is_the_single_routing_source():
-    assert mode_visibility("RTX VSR only") == (True, False, False)
-    assert mode_visibility("DLSS 5 only") == (False, True, False)
-    assert mode_visibility("DLSS SR only") == (False, False, True)
+    assert mode_visibility("RTX VSR only") == (True, False, False, False)
+    assert mode_visibility("DLSS 5 only") == (False, True, False, False)
+    assert mode_visibility("DLSS SR only") == (False, False, True, False)
+    assert mode_visibility("DLSS Frame Generation 2X") == (False, False, False, True)
 
 
 def test_ui_has_no_redundant_processing_or_sr_workflow():

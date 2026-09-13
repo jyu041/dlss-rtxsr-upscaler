@@ -37,6 +37,8 @@ ReShade.log
 *.o
 *.lib
 *.pdb
+*.ilk
+*.nativecodeanalysis.xml
 *.user
 *.suo
 **/approval.json
@@ -51,6 +53,8 @@ config/user_presets.json
 config/user_presets.json.corrupt-*
 runtime/dlss5-v3/dlss_sr_selftest.json
 native/**/build/
+native/**/runtime/
+native/dlssg_ampere_reference/runtime/
 .pytest_cache/
 tools/downloads/*
 !tools/downloads/.gitkeep

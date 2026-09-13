@@ -61,23 +61,27 @@ guidance is in the private repository’s `external/README.md`.
 Private repository: sibling path `C:\Users\mark\Desktop\dlss-rtxsr-upscaler-resources`;
 remote `https://github.com/jyu041/dlss-rtxsr-upscaler-resources.git`, branch
 `main`. It contains LFS rules, the project-owned worker, lock manifest, and
-idempotent `bootstrap.ps1`, `verify.ps1`, and `sync-to-public.ps1`. The initial
-commit/push and fresh remote clone remain pending final verification.
+idempotent `bootstrap.ps1`, `verify.ps1`, and `sync-to-public.ps1`. Latest
+private commit is `b4e184b`; push succeeded and LFS reports no pending objects.
+PowerShell syntax checks passed.
 
 ## J. Application
 
 Project diagnostics pass for Windows, GPU, FFmpeg, FFprobe, CUDA, and Python
-packages. DLSS-G is currently reported `NOT CONFIGURED` until the user supplies
+packages. The Gradio UI builds as `Blocks` in the pinned environment. DLSS-G is
+currently reported `NOT CONFIGURED` until the user supplies
 the community runtime and official runtime directory through
 `DLSSG_COMMUNITY_RUNTIME` and `DLSSG_OFFICIAL_RUNTIME_DIR`. The NVIDIA driver
 Optical Flow runtime is present at `C:\Windows\System32\nvofapi64.dll`.
 
 ## K–M. Tests and Git
 
-Worker self-test passed; package imports and `pip check` passed. Full native
-rebuild, NVOF direction test, focused DLSS-G tests, Gradio launch smoke test,
-public commit/push, and private commit/push require the external SDK/runtime
-inputs or final repository write verification.
+Worker self-test passed; package imports and `pip check` passed; Python tests
+passed (`69 passed, 2 skipped`); public commits `291f520` and `baf3fd7` were
+pushed; private commits `9e94561`, `1ca9f63`, and `b4e184b` were pushed. A fresh
+clone simulation passed for clone, LFS retrieval, synchronization, worker
+self-test, and `git diff --check`. Full native rebuild, NVOF direction test,
+and true DLSS-G UI readiness still require the external SDK/runtime inputs.
 
 ## N–O. Remaining manual actions and primary result
 

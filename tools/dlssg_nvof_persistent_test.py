@@ -19,16 +19,16 @@ from src.backends.dlssg_worker import (  # noqa: E402
 )
 
 
-def frame(width: int, height: int, square_x: int, square_y: int = 96) -> bytes:
+def frame(width: int, height: int, square_x: int, square_y: int = 96, variant: int = 0) -> bytes:
     output = bytearray(width * height * 4)
     for y in range(height):
         for x in range(width):
             square = square_x <= x < square_x + 64 and square_y <= y < square_y + 64
             offset = (y * width + x) * 4
             local_x = x - square_x
-            output[offset + 0] = 160 + ((local_x + y) & 63) if square else 16 + (x & 31)
-            output[offset + 1] = 176 + ((local_x * 3 + y) & 63) if square else 24 + (y & 31)
-            output[offset + 2] = 64 + ((local_x ^ y) & 63) if square else 32 + ((x ^ y) & 31)
+            output[offset + 0] = 160 + ((local_x + y + variant) & 63) if square else 16 + ((x + variant) & 31)
+            output[offset + 1] = 176 + ((local_x * 3 + y + variant) & 63) if square else 24 + ((y + variant) & 31)
+            output[offset + 2] = 64 + ((local_x ^ y ^ variant) & 63) if square else 32 + ((x ^ y ^ variant) & 31)
             output[offset + 3] = 255
     return bytes(output)
 
@@ -60,16 +60,20 @@ def main() -> int:
     parser.add_argument("--quiet-worker-log", action="store_true")
     parser.add_argument("--multiplier", type=int, choices=(2, 3, 4), default=2)
     parser.add_argument("--motion-mode", choices=("nvof", "external"), default="nvof")
+    parser.add_argument("--cycles", type=int, default=1, help="number of reset/normal sequences on one worker instance")
+    parser.add_argument("--production", action="store_true", help="run forward-only production GPU-flow mode")
     args = parser.parse_args()
     width, height = args.width, args.height
     if width < 64 or height < 64:
         raise ValueError("width and height must each be at least 64")
+    if args.cycles < 1:
+        raise ValueError("cycles must be positive")
     client = DlssgWorker(
         args.worker.resolve(),
         args.community_runtime.resolve(),
         args.official_runtime_dir.resolve(),
         diagnostic_callback=None if args.quiet_worker_log else lambda line: print(line, file=sys.stderr, flush=True),
-        diagnostic_mode=True,
+        diagnostic_mode=not args.production,
     )
     records: list[dict[str, object]] = []
     hashes: set[str] = set()
@@ -78,11 +82,16 @@ def main() -> int:
         motion_mode = MOTION_MODE_NVIDIA_OPTICAL_FLOW if args.motion_mode == "nvof" else MOTION_MODE_EXTERNAL_R16G16_FLOAT
         client.create(width, height, multiplier=args.multiplier, motion_mode=motion_mode)
         frame_id = 0
-        for sequence, count, origin, delta in ((1, 12, 32, 4), (2, 4, 176, -4)):
+        sequences = ((1, 12, 32, 4), (2, 4, 176, -4)) if args.cycles == 1 else tuple(
+            (sequence, 4, 32 + ((sequence * 37) % 120) if sequence % 2 else 160 - ((sequence * 29) % 96),
+             4 if sequence % 2 else -4)
+            for sequence in range(1, args.cycles + 1)
+        )
+        for sequence, count, origin, delta in sequences:
             if sequence == 2:
                 client.reset_history()
             for index in range(count):
-                color = frame(width, height, origin + index * delta)
+                color = frame(width, height, origin + index * delta, variant=sequence if args.cycles > 1 else 0)
                 motion = None if args.motion_mode == "nvof" else (
                     bytes(width * height * 4) if index == 0 else struct.pack("<ee", -4.0, 0.0) * (width * height)
                 )
@@ -130,15 +139,18 @@ def main() -> int:
     finally:
         client.close()
     generated = sum(len(record.get("sha256", [])) for record in records)
-    assert len(records) == 16 and generated == 14 * (args.multiplier - 1) and len(hashes) == generated
+    expected_records = 16 if args.cycles == 1 else args.cycles * 4
+    expected_generated = (14 if args.cycles == 1 else args.cycles * 3) * (args.multiplier - 1)
+    assert len(records) == expected_records and generated == expected_generated and len(hashes) == generated
     manifest = {
         "status": "PASS",
         "motion_mode": "NVIDIA_OPTICAL_FLOW_INTERNAL" if args.motion_mode == "nvof" else "EXTERNAL_R16G16_FLOAT",
+        "worker_mode": "production_forward_gpu_flow" if args.production else "diagnostic_both_cpu_fallback",
         "multiplier": args.multiplier,
         "input_frames": len(records),
         "generated_outputs": generated,
         "unique_generated_hashes": len(hashes),
-        "resets": 2,
+        "resets": 2 if args.cycles == 1 else args.cycles,
         "frames": records,
     }
     args.manifest.parent.mkdir(parents=True, exist_ok=True)

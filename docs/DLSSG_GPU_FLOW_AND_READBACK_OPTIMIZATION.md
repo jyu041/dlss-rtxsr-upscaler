@@ -193,5 +193,66 @@ and any future multi-group-in-flight design. Duplicate color transfer remains
 present by design, but its independent submission and CPU wait are removed.
 One real-frame group remains in flight.
 
-Full pytest remains blocked by ACLs on `runtime\\pytest-direct2` and
-`runtime\\pytest-temp-run`, and the environment lacks `cv2` and `psutil`.
+The focused final-build pytest suite passed 47 tests using the disposable
+bundled package cache. Full pytest remains outside this bounded closure because
+the environment lacks optional `cv2` and `psutil` dependencies.
+
+## Correctness closure: NVOF reset and upload lifetime
+
+The intermittent worker status `-8` was `Status::NativeFailure`, not an
+NVOF status. The shortest reproducer was Create, reset frame 0, then normal
+frame 1 in diagnostic BOTH-direction mode. The worker rejected frame 1 before
+calling `ComputeBackward()` because `previousColor_` was empty (`0` bytes,
+expected `width * height * 4 = 262144`). No NVOF call, HRESULT, fence failure,
+or device removal was involved. The fix stores the reset source color in
+`previousColor_` only after the reset group completes successfully.
+
+NVOF upload heaps now use one persistent mapping per resource at initialization,
+retain the mapped pointers for every `MapUpload()` call, and unmap each resource
+exactly once during shutdown. No per-frame unmap remains. Stage diagnostics,
+raw NVOF statuses, `nvOFGetLastError`, HRESULTs, and device-removed reasons are
+enabled only for diagnostic workers.
+
+The strengthened `--cycles N` test defines one cycle as reset plus three normal
+frames. Therefore each 4X cycle produces three normal groups × three generated
+outputs = nine outputs. Final same-worker results were:
+
+| Mode | Cycles | Generated outputs | Result |
+|---|---:|---:|---|
+| BOTH CPU fallback 2X | 20 | 60 | PASS |
+| BOTH CPU fallback 3X | 20 | 120 | PASS |
+| BOTH CPU fallback 4X | 100 | 900 | PASS |
+| Forward GPU flow 2X | 20 | 60 | PASS |
+| Forward GPU flow 3X | 20 | 120 | PASS |
+| Forward GPU flow 4X | 100 | 900 | PASS |
+
+Every normal GPU-flow group reported one grouped wait, zero input-upload
+waits, zero NVOF CPU waits, zero CPU flow readbacks/conversions, and zero normal
+CPU motion uploads. A final 16-frame production capture reported
+`flow_cpu_readback=0`, `flow_cpu_conversion=0`, `motion_cpu_upload=2` for the
+two reset frames, `gpu_flow_conversion=14`, `group_waits=16`, and
+`total_cpu_waits=18`.
+
+The final worker SHA-256 is
+`D41C1C34F21F510213261582DE57A1955C7A7B5F38FC992615E947C98764FE96`.
+Final 1080p production GPU-flow medians using three warmups and twenty measured
+groups were:
+
+| Mode | Total | GPU wait | Readback | Upload staging |
+|---|---:|---:|---:|---:|
+| 2X | 86.25 ms | 77.58 ms | 1.93 ms | 5.23 ms |
+| 3X | 104.98 ms | 91.68 ms | 3.92 ms | 5.21 ms |
+| 4X | 125.56 ms | 105.78 ms | 5.97 ms | 5.21 ms |
+
+Three equivalent short natural 1080p 4X runs produced 240 output frames each,
+177 unique interpolated frames, three terminal holds, exact 119.8801 FPS
+metadata, preserved audio and BT.709/SDR metadata, and no device removal.
+Wall/input throughput was 17.26 s / 3.48 FPS, 16.96 s / 3.54 FPS, and
+17.11 s / 3.51 FPS; median throughput was 3.51 input FPS and 14.04 output FPS.
+These natural runs used the CPU BOTH-direction path through the video CLI and
+are characterization only, not evidence of GPU-flow end-to-end throughput.
+
+The evidence supports the existing GPU-resident-flow, numeric-equivalence, and
+grouped-synchronization classifications, plus the narrow
+`DLSSG_NVOF_RESET_LIFECYCLE_REGRESSION_RESOLVED` classification. It does not
+establish a broad end-to-end performance improvement claim.

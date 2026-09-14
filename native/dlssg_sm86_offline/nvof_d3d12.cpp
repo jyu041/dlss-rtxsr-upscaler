@@ -25,7 +25,29 @@ using GetMaxVersionFn = NV_OF_STATUS(NVOFAPI *)(uint32_t *);
 using CreateInstanceFn = NV_OF_STATUS(NVOFAPI *)(uint32_t, NV_OF_D3D12_API_FUNCTION_LIST *);
 using Clock = std::chrono::steady_clock;
 
+bool DiagnosticLoggingEnabled() {
+    static const bool enabled = [] {
+        char value[8]{};
+        return GetEnvironmentVariableA("DLSSG_WORKER_DIAGNOSTIC", value, sizeof(value)) != 0;
+    }();
+    return enabled;
+}
+
+bool IsVerboseDiagnosticMarker(const char *format) {
+    return std::strncmp(format, "NVOF_STAGE_", 11) == 0 ||
+        std::strncmp(format, "NVOF_SEED_", 10) == 0 ||
+        std::strncmp(format, "NVOF_GPU_BEGIN", 14) == 0 ||
+        std::strncmp(format, "NVOF_GPU_PRECONDITION", 21) == 0 ||
+        std::strncmp(format, "NVOF_GPU_STAGE_", 15) == 0 ||
+        std::strncmp(format, "NVOF_GPU_EXECUTE", 16) == 0 ||
+        std::strncmp(format, "NVOF_GPU_LAST_ERROR", 19) == 0 ||
+        std::strncmp(format, "NVOF_GPU_OUTPUT_QUEUE_WAIT", 25) == 0 ||
+        std::strncmp(format, "NVOF_CPU_", 10) == 0 ||
+        std::strncmp(format, "NVOF_BACKWARD_", 14) == 0;
+}
+
 void Log(const char *format, ...) {
+    if (IsVerboseDiagnosticMarker(format) && !DiagnosticLoggingEnabled()) return;
     va_list args;
     va_start(args, format);
     std::vfprintf(stderr, format, args);
@@ -68,6 +90,12 @@ void LogFormats(const char *name, const std::vector<DXGI_FORMAT> &formats) {
 
 double Milliseconds(Clock::time_point begin, Clock::time_point end) {
     return std::chrono::duration<double, std::milli>(end - begin).count();
+}
+
+void LogDeviceFailure(ID3D12Device *device, const char *stage, HRESULT hr) {
+    const HRESULT removed = device ? device->GetDeviceRemovedReason() : E_POINTER;
+    Log("NVOF_STAGE_FAILURE stage=%s hr=0x%08X deviceRemoved=0x%08X", stage,
+        static_cast<unsigned>(hr), static_cast<unsigned>(removed));
 }
 
 ID3D12Resource *CreateTexture(ID3D12Device *device, uint32_t width, uint32_t height,
@@ -188,15 +216,31 @@ struct NvofD3D12::Impl {
     NvOFGPUBufferHandle backwardHandle = nullptr;
 
     bool ResetList() {
-        return SUCCEEDED(allocator->Reset()) && SUCCEEDED(list->Reset(allocator, nullptr));
+        const HRESULT allocatorHr = allocator->Reset();
+        if (FAILED(allocatorHr)) { LogDeviceFailure(device, "RESET_LIST_ALLOCATOR", allocatorHr); return false; }
+        Log("NVOF_STAGE_RESET_LIST_ALLOCATOR_OK");
+        const HRESULT listHr = list->Reset(allocator, nullptr);
+        if (FAILED(listHr)) { LogDeviceFailure(device, "RESET_LIST", listHr); return false; }
+        Log("NVOF_STAGE_RESET_LIST_OK");
+        return true;
     }
 
     bool SubmitAndWait() {
-        if (FAILED(list->Close())) return false;
+        const HRESULT closeHr = list->Close();
+        if (FAILED(closeHr)) { LogDeviceFailure(device, "UPLOAD_LIST_CLOSE", closeHr); return false; }
+        Log("NVOF_STAGE_UPLOAD_CLOSE_OK");
         ID3D12CommandList *commands[] = {list};
         queue->ExecuteCommandLists(1, commands);
+        Log("NVOF_STAGE_UPLOAD_SUBMIT_OK");
         const uint64_t value = ++queueFenceValue;
-        return SUCCEEDED(queue->Signal(queueFence, value)) && WaitFence(queueFence, value, eventHandle);
+        const HRESULT signalHr = queue->Signal(queueFence, value);
+        if (FAILED(signalHr)) { LogDeviceFailure(device, "UPLOAD_QUEUE_SIGNAL", signalHr); return false; }
+        Log("NVOF_STAGE_UPLOAD_SIGNAL value=%llu", value);
+        if (!WaitFence(queueFence, value, eventHandle)) {
+            LogDeviceFailure(device, "UPLOAD_QUEUE_WAIT", E_FAIL); return false;
+        }
+        Log("NVOF_STAGE_UPLOAD_WAIT_OK value=%llu", value);
+        return true;
     }
 
     bool Register(ID3D12Resource *resource, NvOFGPUBufferHandle &gpuHandle) {
@@ -210,6 +254,7 @@ struct NvofD3D12::Impl {
     }
 
     bool MapUpload(ID3D12Resource *upload, const uint8_t *rgba) {
+        // These upload heaps stay persistently mapped for the NVOF instance lifetime.
         uint8_t *mapped = upload == previousUpload ? previousUploadMapped : currentUploadMapped;
         if (!mapped) return false;
         for (uint32_t y = 0; y < height; ++y) {
@@ -222,15 +267,19 @@ struct NvofD3D12::Impl {
                 dst[x * 4 + 3] = src[x * 4 + 3];
             }
         }
-        upload->Unmap(0, nullptr);
         return true;
     }
 
     bool SeedForward(const uint8_t *rgba) {
-        if (!rgba || !MapUpload(currentUpload, rgba) || !ResetList()) return false;
+        Log("NVOF_SEED_BEGIN historyValid=%d", historyValid ? 1 : 0);
+        if (!rgba) { Log("NVOF_SEED_MAP_UPLOAD_FAILED reason=null_input"); return false; }
+        if (!MapUpload(currentUpload, rgba)) { Log("NVOF_SEED_MAP_UPLOAD_FAILED"); return false; }
+        Log("NVOF_SEED_MAP_UPLOAD_OK");
+        if (!ResetList()) { Log("NVOF_SEED_RESET_LIST_FAILED"); return false; }
         RecordUpload(currentUpload, previous);
-        if (!SubmitAndWait()) return false;
+        if (!SubmitAndWait()) { Log("NVOF_SEED_SUBMIT_WAIT_FAILED"); return false; }
         historyValid = true;
+        Log("NVOF_SEED_COMPLETE historyValid=1");
         return true;
     }
 
@@ -424,15 +473,25 @@ bool NvofD3D12::ConfigureGpuConversion(ID3D12Resource *motionResource) {
 bool NvofD3D12::ComputeForwardGpu(const uint8_t *currentRgba, ID3D12Resource *motionResource,
     NvofTimings *timings) {
     auto &state = *impl_;
+    Log("NVOF_GPU_BEGIN historyValid=%d workerMotion=%p conversionMotion=%p pso=%p", state.historyValid ? 1 : 0,
+        static_cast<void *>(motionResource), static_cast<void *>(state.conversionMotion), static_cast<void *>(state.conversionPso));
     if (!state.forwardOnly || !state.historyValid || !currentRgba ||
-        motionResource != state.conversionMotion || !state.conversionPso) return false;
+        motionResource != state.conversionMotion || !state.conversionPso) { Log("NVOF_GPU_PRECONDITION_FAILED"); return false; }
     const auto uploadStart = Clock::now();
-    if (!state.MapUpload(state.currentUpload, currentRgba) || !state.ResetList()) return false;
+    if (!state.MapUpload(state.currentUpload, currentRgba)) { Log("NVOF_GPU_STAGE_MAP_UPLOAD_FAILED"); return false; }
+    Log("NVOF_GPU_STAGE_MAP_UPLOAD_OK");
+    if (!state.ResetList()) { Log("NVOF_GPU_STAGE_UPLOAD_LIST_RESET_FAILED"); return false; }
+    Log("NVOF_GPU_STAGE_UPLOAD_LIST_RESET_OK");
     state.RecordUpload(state.currentUpload, state.current);
-    if (FAILED(state.list->Close())) return false;
+    const HRESULT uploadCloseHr = state.list->Close();
+    if (FAILED(uploadCloseHr)) { LogDeviceFailure(state.device, "GPU_UPLOAD_LIST_CLOSE", uploadCloseHr); return false; }
+    Log("NVOF_GPU_STAGE_UPLOAD_CLOSE_OK");
     ID3D12CommandList *uploadCommands[] = {state.list}; state.queue->ExecuteCommandLists(1, uploadCommands);
+    Log("NVOF_GPU_STAGE_UPLOAD_SUBMIT_OK");
     const uint64_t uploadFence = ++state.queueFenceValue;
-    if (FAILED(state.queue->Signal(state.queueFence, uploadFence))) return false;
+    const HRESULT uploadSignalHr = state.queue->Signal(state.queueFence, uploadFence);
+    if (FAILED(uploadSignalHr)) { LogDeviceFailure(state.device, "GPU_UPLOAD_QUEUE_SIGNAL", uploadSignalHr); return false; }
+    Log("NVOF_GPU_STAGE_UPLOAD_SIGNAL value=%llu completed=%llu", uploadFence, state.queueFence->GetCompletedValue());
     const auto uploadEnd = Clock::now();
     NV_OF_FENCE_POINT inputFence{state.queueFence, uploadFence};
     NV_OF_FENCE_POINT outputFence{state.ofFence, ++state.ofFenceValue};
@@ -440,10 +499,28 @@ bool NvofD3D12::ComputeForwardGpu(const uint8_t *currentRgba, ID3D12Resource *mo
     input.referenceFrame = state.previousHandle; input.numFencePoints = 1; input.fencePoint = &inputFence;
     NV_OF_EXECUTE_OUTPUT_PARAMS_D3D12 output{}; output.outputBuffer = state.forwardHandle; output.fencePoint = &outputFence;
     const auto executeStart = Clock::now();
-    if (state.api.nvOFExecuteD3D12(state.handle, &input, &output) != NV_OF_SUCCESS ||
-        FAILED(state.queue->Wait(state.ofFence, state.ofFenceValue))) return false;
+    const NV_OF_STATUS executeStatus = state.api.nvOFExecuteD3D12(state.handle, &input, &output);
+    Log("NVOF_GPU_EXECUTE status=%d inputHandle=%p referenceHandle=%p outputHandle=%p inputFence=%llu outputFence=%llu disableTemporalHints=0 historyValid=%d",
+        static_cast<int>(executeStatus), static_cast<void *>(input.inputFrame), static_cast<void *>(input.referenceFrame),
+        static_cast<void *>(output.outputBuffer), inputFence.value, outputFence.value, state.historyValid ? 1 : 0);
+    if (executeStatus != NV_OF_SUCCESS) {
+        char error[256]{}; uint32_t errorSize = sizeof(error);
+        const NV_OF_STATUS errorStatus = state.api.nvOFGetLastError(state.handle, error, &errorSize);
+        Log("NVOF_GPU_LAST_ERROR status=%d queryStatus=%d size=%u text=%s", static_cast<int>(executeStatus),
+            static_cast<int>(errorStatus), errorSize, error);
+        return false;
+    }
+    const HRESULT outputWaitHr = state.queue->Wait(state.ofFence, state.ofFenceValue);
+    if (FAILED(outputWaitHr)) { LogDeviceFailure(state.device, "GPU_OUTPUT_QUEUE_WAIT", outputWaitHr); return false; }
+    Log("NVOF_GPU_OUTPUT_QUEUE_WAIT hr=0x%08X value=%llu completed=%llu", static_cast<unsigned>(outputWaitHr),
+        state.ofFenceValue, state.ofFence->GetCompletedValue());
     const auto executeEnd = Clock::now();
-    if (FAILED(state.conversionAllocator->Reset()) || FAILED(state.conversionList->Reset(state.conversionAllocator, state.conversionPso))) return false;
+    const HRESULT conversionAllocatorHr = state.conversionAllocator->Reset();
+    if (FAILED(conversionAllocatorHr)) { LogDeviceFailure(state.device, "GPU_CONVERSION_ALLOCATOR_RESET", conversionAllocatorHr); return false; }
+    Log("NVOF_GPU_CONVERSION_ALLOCATOR_RESET_OK");
+    const HRESULT conversionListHr = state.conversionList->Reset(state.conversionAllocator, state.conversionPso);
+    if (FAILED(conversionListHr)) { LogDeviceFailure(state.device, "GPU_CONVERSION_LIST_RESET", conversionListHr); return false; }
+    Log("NVOF_GPU_CONVERSION_LIST_RESET_OK");
     ID3D12DescriptorHeap *heaps[] = {state.conversionHeap}; state.conversionList->SetDescriptorHeaps(1, heaps);
     state.conversionList->SetComputeRootSignature(state.conversionRoot);
     state.conversionList->SetComputeRootDescriptorTable(0, state.conversionGpu);
@@ -465,8 +542,11 @@ bool NvofD3D12::ComputeForwardGpu(const uint8_t *currentRgba, ID3D12Resource *mo
     D3D12_RESOURCE_BARRIER uavBarrier{}; uavBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
     state.conversionList->ResourceBarrier(1, &uavBarrier);
     Transition(state.conversionList, state.conversionMotion, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    if (FAILED(state.conversionList->Close())) return false;
+    const HRESULT conversionCloseHr = state.conversionList->Close();
+    if (FAILED(conversionCloseHr)) { LogDeviceFailure(state.device, "GPU_CONVERSION_LIST_CLOSE", conversionCloseHr); return false; }
+    Log("NVOF_GPU_CONVERSION_LIST_CLOSE_OK");
     ID3D12CommandList *conversionCommands[] = {state.conversionList}; state.queue->ExecuteCommandLists(1, conversionCommands);
+    Log("NVOF_GPU_CONVERSION_SUBMIT_OK");
     const auto conversionEnd = Clock::now();
     std::swap(state.previous, state.current); std::swap(state.previousHandle, state.currentHandle);
     if (timings) { timings->uploadMs = Milliseconds(uploadStart, uploadEnd); timings->executeMs = Milliseconds(executeStart, executeEnd); timings->conversionMs = Milliseconds(executeEnd, conversionEnd); }
@@ -476,19 +556,27 @@ bool NvofD3D12::ComputeForwardGpu(const uint8_t *currentRgba, ID3D12Resource *mo
 bool NvofD3D12::ComputeForward(const uint8_t *currentRgba, bool resetTemporalHints,
     std::vector<uint8_t> &motionR16G16Float, std::vector<NvofFlowVector> *flowPixels,
     NvofFlowStatistics *statistics, NvofTimings *timings) {
-    if (!impl_->forwardOnly || !currentRgba || !impl_->historyValid) return false;
+    Log("NVOF_CPU_BEGIN historyValid=%d resetTemporalHints=%d", impl_->historyValid ? 1 : 0, resetTemporalHints ? 1 : 0);
+    if (!impl_->forwardOnly || !currentRgba || !impl_->historyValid) { Log("NVOF_CPU_PRECONDITION_FAILED"); return false; }
     auto &state = *impl_;
     NvofTimings measured{};
     const auto uploadStart = Clock::now();
-    if (!state.MapUpload(state.currentUpload, currentRgba) || !state.ResetList()) return false;
+    if (!state.MapUpload(state.currentUpload, currentRgba)) { Log("NVOF_CPU_STAGE_MAP_UPLOAD_FAILED"); return false; }
+    Log("NVOF_CPU_STAGE_MAP_UPLOAD_OK");
+    if (!state.ResetList()) { Log("NVOF_CPU_STAGE_UPLOAD_LIST_RESET_FAILED"); return false; }
+    Log("NVOF_CPU_STAGE_UPLOAD_LIST_RESET_OK");
     state.RecordUpload(state.currentUpload, state.current);
-    if (FAILED(state.list->Close())) return false;
+    const HRESULT uploadCloseHr = state.list->Close();
+    if (FAILED(uploadCloseHr)) { LogDeviceFailure(state.device, "CPU_UPLOAD_LIST_CLOSE", uploadCloseHr); return false; }
+    Log("NVOF_CPU_STAGE_UPLOAD_CLOSE_OK");
     ID3D12CommandList *commands[] = {state.list};
-    state.queue->ExecuteCommandLists(1, commands);
+    state.queue->ExecuteCommandLists(1, commands); Log("NVOF_CPU_STAGE_UPLOAD_SUBMIT_OK");
     const uint64_t uploadFence = ++state.queueFenceValue;
     // The NVOF input fence is the producer/consumer contract.  The CPU must
     // not wait here; NVOF waits on this point before reading currentFrame.
-    if (FAILED(state.queue->Signal(state.queueFence, uploadFence))) return false;
+    const HRESULT uploadSignalHr = state.queue->Signal(state.queueFence, uploadFence);
+    if (FAILED(uploadSignalHr)) { LogDeviceFailure(state.device, "CPU_UPLOAD_QUEUE_SIGNAL", uploadSignalHr); return false; }
+    Log("NVOF_CPU_STAGE_UPLOAD_SIGNAL value=%llu completed=%llu", uploadFence, state.queueFence->GetCompletedValue());
     const auto uploadEnd = Clock::now();
     NV_OF_FENCE_POINT inputFence{state.queueFence, uploadFence};
     NV_OF_FENCE_POINT outputFence{state.ofFence, ++state.ofFenceValue};
@@ -500,8 +588,21 @@ bool NvofD3D12::ComputeForward(const uint8_t *currentRgba, bool resetTemporalHin
     NV_OF_EXECUTE_OUTPUT_PARAMS_D3D12 output{};
     output.outputBuffer = state.forwardHandle; output.fencePoint = &outputFence;
     const auto executeStart = Clock::now();
-    if (state.api.nvOFExecuteD3D12(state.handle, &input, &output) != NV_OF_SUCCESS ||
-        !WaitFence(state.ofFence, state.ofFenceValue, state.eventHandle)) return false;
+    const NV_OF_STATUS executeStatus = state.api.nvOFExecuteD3D12(state.handle, &input, &output);
+    Log("NVOF_CPU_EXECUTE status=%d inputHandle=%p referenceHandle=%p outputHandle=%p inputFence=%llu outputFence=%llu disableTemporalHints=%d historyValid=%d",
+        static_cast<int>(executeStatus), static_cast<void *>(input.inputFrame), static_cast<void *>(input.referenceFrame),
+        static_cast<void *>(output.outputBuffer), inputFence.value, outputFence.value, resetTemporalHints ? 1 : 0, state.historyValid ? 1 : 0);
+    if (executeStatus != NV_OF_SUCCESS) {
+        char error[256]{}; uint32_t errorSize = sizeof(error);
+        const NV_OF_STATUS errorStatus = state.api.nvOFGetLastError(state.handle, error, &errorSize);
+        Log("NVOF_CPU_LAST_ERROR status=%d queryStatus=%d size=%u text=%s", static_cast<int>(executeStatus),
+            static_cast<int>(errorStatus), errorSize, error);
+        return false;
+    }
+    if (!WaitFence(state.ofFence, state.ofFenceValue, state.eventHandle)) {
+        LogDeviceFailure(state.device, "CPU_OUTPUT_FENCE_WAIT", E_FAIL); return false;
+    }
+    Log("NVOF_CPU_OUTPUT_FENCE_WAIT_OK value=%llu completed=%llu", state.ofFenceValue, state.ofFence->GetCompletedValue());
     const auto executeEnd = Clock::now();
     std::vector<NV_OF_FLOW_VECTOR> raw;
     const auto readbackStart = Clock::now();
@@ -532,15 +633,20 @@ bool NvofD3D12::ComputeForward(const uint8_t *currentRgba, bool resetTemporalHin
 bool NvofD3D12::ComputeBackward(const uint8_t *previousRgba, const uint8_t *currentRgba,
     bool resetTemporalHints, std::vector<uint8_t> &motionR16G16Float,
     std::vector<NvofFlowVector> *flowPixels, NvofFlowStatistics *statistics, NvofTimings *timings) {
-    if (!impl_->handle || !previousRgba || !currentRgba) return false;
+    Log("NVOF_BACKWARD_BEGIN resetTemporalHints=%d", resetTemporalHints ? 1 : 0);
+    if (!impl_->handle || !previousRgba || !currentRgba) { Log("NVOF_BACKWARD_PRECONDITION_FAILED"); return false; }
     auto &state = *impl_;
     NvofTimings measured{};
     const auto uploadStart = Clock::now();
-    if (!state.MapUpload(state.previousUpload, previousRgba) ||
-        !state.MapUpload(state.currentUpload, currentRgba) || !state.ResetList()) return false;
+    if (!state.MapUpload(state.previousUpload, previousRgba)) { Log("NVOF_BACKWARD_MAP_PREVIOUS_FAILED"); return false; }
+    Log("NVOF_BACKWARD_MAP_PREVIOUS_OK");
+    if (!state.MapUpload(state.currentUpload, currentRgba)) { Log("NVOF_BACKWARD_MAP_CURRENT_FAILED"); return false; }
+    Log("NVOF_BACKWARD_MAP_CURRENT_OK");
+    if (!state.ResetList()) { Log("NVOF_BACKWARD_RESET_LIST_FAILED"); return false; }
+    Log("NVOF_BACKWARD_RESET_LIST_OK");
     state.RecordUpload(state.previousUpload, state.previous);
     state.RecordUpload(state.currentUpload, state.current);
-    if (!state.SubmitAndWait()) return false;
+    if (!state.SubmitAndWait()) { Log("NVOF_BACKWARD_UPLOAD_SUBMIT_WAIT_FAILED"); return false; }
     const auto uploadEnd = Clock::now();
     NV_OF_FENCE_POINT inputFence{state.queueFence, state.queueFenceValue};
     NV_OF_FENCE_POINT outputFence{state.ofFence, ++state.ofFenceValue};
@@ -556,10 +662,20 @@ bool NvofD3D12::ComputeBackward(const uint8_t *previousRgba, const uint8_t *curr
     output.fencePoint = &outputFence;
     const auto executeStart = Clock::now();
     const NV_OF_STATUS executeStatus = state.api.nvOFExecuteD3D12(state.handle, &input, &output);
-    if (executeStatus != NV_OF_SUCCESS || !WaitFence(state.ofFence, state.ofFenceValue, state.eventHandle)) {
-        Log("NVOF_EXECUTE_FAILED status=%d", static_cast<int>(executeStatus));
+    Log("NVOF_BACKWARD_EXECUTE status=%d inputHandle=%p referenceHandle=%p outputHandle=%p inputFence=%llu outputFence=%llu",
+        static_cast<int>(executeStatus), static_cast<void *>(input.inputFrame), static_cast<void *>(input.referenceFrame),
+        static_cast<void *>(output.outputBuffer), inputFence.value, outputFence.value);
+    if (executeStatus != NV_OF_SUCCESS) {
+        char error[256]{}; uint32_t errorSize = sizeof(error);
+        const NV_OF_STATUS errorStatus = state.api.nvOFGetLastError(state.handle, error, &errorSize);
+        Log("NVOF_BACKWARD_LAST_ERROR status=%d queryStatus=%d size=%u text=%s", static_cast<int>(executeStatus),
+            static_cast<int>(errorStatus), errorSize, error);
         return false;
     }
+    if (!WaitFence(state.ofFence, state.ofFenceValue, state.eventHandle)) {
+        LogDeviceFailure(state.device, "BACKWARD_OUTPUT_FENCE_WAIT", E_FAIL); return false;
+    }
+    Log("NVOF_BACKWARD_OUTPUT_FENCE_WAIT_OK value=%llu completed=%llu", state.ofFenceValue, state.ofFence->GetCompletedValue());
     const auto executeEnd = Clock::now();
     std::vector<NV_OF_FLOW_VECTOR> raw;
     const auto readbackStart = Clock::now();

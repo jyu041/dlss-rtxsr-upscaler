@@ -811,13 +811,16 @@ public:
                     RunLog("WORKER_NVOF_GPU_CONVERSION_FAILED frame=%llu", request.frameId); return Status::NativeFailure;
                 }
                 nvofHistoryValid_ = true;
-            } else if (nvof_.ForwardOnly()
-                ? !nvof_.ComputeForward(color, !nvofHistoryValid_, internalMotion, nullptr, nullptr, &nvofTimings)
-                : previousColor_.size() != color_.packed.size() ||
-                    !nvof_.ComputeBackward(previousColor_.data(), color, !nvofHistoryValid_, internalMotion,
-                        nullptr, nullptr, &nvofTimings)) {
-                RunLog("WORKER_NVOF_FAILED frame=%llu", request.frameId); return Status::NativeFailure;
             } else {
+                const bool missingPreviousColor = !nvof_.ForwardOnly() && previousColor_.size() != color_.packed.size();
+                RunLog("WORKER_NVOF_PRECONDITION frame=%llu forwardOnly=%d previousColorBytes=%llu expected=%llu missingPrevious=%d",
+                    request.frameId, nvof_.ForwardOnly() ? 1 : 0, static_cast<unsigned long long>(previousColor_.size()),
+                    static_cast<unsigned long long>(color_.packed.size()), missingPreviousColor ? 1 : 0);
+                const bool nvofFailed = nvof_.ForwardOnly()
+                    ? !nvof_.ComputeForward(color, !nvofHistoryValid_, internalMotion, nullptr, nullptr, &nvofTimings)
+                    : missingPreviousColor || !nvof_.ComputeBackward(previousColor_.data(), color, !nvofHistoryValid_, internalMotion,
+                        nullptr, nullptr, &nvofTimings);
+                if (nvofFailed) { RunLog("WORKER_NVOF_FAILED frame=%llu", request.frameId); return Status::NativeFailure; }
                 nvofHistoryValid_ = true;
             }
             if (effectiveReset && nvof_.ForwardOnly()) { ++nvofCpuWaitCount_; ++totalCpuWaitCount_; }
@@ -836,7 +839,13 @@ public:
         if (!gpuFlow || effectiveReset) ++motionCpuUploadCount_;
         RunLog("WORKER_PROCESS_UPLOAD_COMPLETE gpuFlow=%d reset=%d", gpuFlow ? 1 : 0, effectiveReset ? 1 : 0);
         const auto uploadEnd = Clock::now();
-        return ProcessGrouped(request, response, generated, totalStart, uploadStart, uploadEnd, nvofTimings, gpuFlow, effectiveReset);
+        const Status groupedStatus = ProcessGrouped(request, response, generated, totalStart, uploadStart, uploadEnd, nvofTimings, gpuFlow, effectiveReset);
+        if (groupedStatus == Status::OkResetNoOutput && motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow) && !nvof_.ForwardOnly()) {
+            previousColor_ = color_.packed;
+            RunLog("WORKER_NVOF_RESET_REFERENCE_STORED frame=%llu bytes=%llu", request.frameId,
+                static_cast<unsigned long long>(previousColor_.size()));
+        }
+        return groupedStatus;
     }
 
     Status ProcessGrouped(const dlssg::protocol::ProcessRequest &request, dlssg::protocol::ProcessResponse &response,

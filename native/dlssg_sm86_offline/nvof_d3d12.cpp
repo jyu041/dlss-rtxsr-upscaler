@@ -222,6 +222,7 @@ struct NvofD3D12::Impl {
                 dst[x * 4 + 3] = src[x * 4 + 3];
             }
         }
+        upload->Unmap(0, nullptr);
         return true;
     }
 

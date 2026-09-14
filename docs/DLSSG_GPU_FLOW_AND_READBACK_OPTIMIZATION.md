@@ -1,12 +1,12 @@
 # DLSS-G GPU Flow and Readback Optimization
 
-Status: investigation stopped at the safety gate, 2026-09-14.
+Status: bounded GPU-flow and deferred-readback validation complete, 2026-09-14.
 
 ## Starting state
 
-Public started at `848e46e5f38524c1301a8ed717b5e4657c533d9d`; private started at
-`70ffd72dd2ebfb3ecc7425ad20c5ebc4cc6eb15c`. The starting worker was
-`8A9C6EFC308D1D6A4F6B6AA192B809CAE32F8D34B53A80BCB9B4E269CF1BA631`.
+Public started at `81f76f0e0868a8ef6078f54cb0158c4986b0ac85`; private started at
+`8d27f9117f5508d10ef0baf6107a1df0a3358dd8`. The starting worker was
+`522F77E...` (the exact SHA-256 is recorded with the final validation).
 
 ## Regression diagnosis
 
@@ -70,14 +70,41 @@ remaining dominant cost is per-index generated-output synchronization/readback.
 Natural-video throughput was not reprofiled. The previous reference remains
 3.38 input FPS and 13.52 output FPS.
 
+## Deferred readback
+
+The worker now submits Evaluate on the primary allocator/list, immediately
+submits output/disable copies on a dedicated readback allocator/list, and waits
+only for the readback fence. This removes the redundant Evaluate→CPU wait while
+keeping one real-frame group in flight and preserving per-index MFG semantics.
+The normal opt-in GPU-flow path therefore has no flow readback, CPU S10.5
+conversion, or motion upload; its output readback remains synchronous.
+
+The bounded 1080p medians after this change are:
+
+| Mode | Before deferred readback | After deferred readback |
+|---|---:|---:|
+| 2X | 111.04 ms | 107.26 ms |
+| 3X | 136.88 ms | 134.12 ms |
+| 4X | 165.65 ms | 159.14 ms |
+
+All six GPU-flow gates (256x256 and 1080p at 2X/3X/4X) passed. The worker now
+logs `ARCH_COUNTERS` for CPU flow readbacks/conversions, motion uploads, GPU
+conversions, Evaluate submissions, readback submissions, and readback waits.
+
+## Evidence boundaries
+
+The corrected UAV resource contract is confirmed by the original device-removed
+failure and the passing corrected path. A standalone compute-only test was not
+run, and a diagnostic numeric CPU/GPU flow comparison was not run; therefore
+numeric equivalence is not claimed. Direct SRV use of the registered NVOF output
+was not attempted. DRED/debug-layer diagnostics were not enabled.
+
 ## Remaining work
 
-The compute-resource/device-removal interaction must be isolated with a D3D12
-debug layer or minimal standalone harness before retrying. The next attempt
-must prove whether the registered NVOF resource can be transitioned for SRV
-use, or use a separate GPU copy target. Only after that gate passes should
-production counters, CPU-path removal, color sharing, or MFG readback batching
-be evaluated.
+The next safe experiments are a diagnostic numeric comparison harness and then
+MFG output-readback batching or a broader output ring. Duplicate color upload is
+still present, one group remains in flight, and natural-video throughput was not
+reprofiled.
 
 Full pytest remains blocked by ACLs on `runtime\\pytest-direct2` and
 `runtime\\pytest-temp-run`, and the environment lacks `cv2` and `psutil`.

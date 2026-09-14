@@ -260,8 +260,9 @@ struct NvofD3D12::Impl {
         rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
         ID3DBlob *serialized = nullptr, *error = nullptr;
         hr = D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &serialized, &error);
-        if (FAILED(hr)) { Log("NVOF_GPU_CONVERSION_ROOT_SERIALIZE_FAILED hr=0x%08X", static_cast<unsigned>(hr)); return false; }
+        if (FAILED(hr)) { Log("NVOF_GPU_CONVERSION_ROOT_SERIALIZE_FAILED hr=0x%08X", static_cast<unsigned>(hr)); Release(serialized); Release(error); return false; }
         hr = device->CreateRootSignature(0, serialized->GetBufferPointer(), serialized->GetBufferSize(), IID_PPV_ARGS(&conversionRoot));
+        Release(error); Release(serialized);
         if (FAILED(hr)) { Log("NVOF_GPU_CONVERSION_ROOT_FAILED hr=0x%08X", static_cast<unsigned>(hr)); return false; }
         D3D12_COMPUTE_PIPELINE_STATE_DESC pso{}; pso.pRootSignature = conversionRoot;
         pso.CS = {kFlowConvertBytecode, kFlowConvertBytecodeSize};

@@ -39,6 +39,9 @@ public:
 
     bool Initialize(ID3D12Device *device, ID3D12CommandQueue *queue, uint32_t width, uint32_t height);
     bool SeedForward(const uint8_t *currentRgba);
+    bool ConfigureGpuConversion(ID3D12Resource *motionResource);
+    bool ComputeForwardGpu(const uint8_t *currentRgba, ID3D12Resource *motionResource,
+        NvofTimings *timings = nullptr);
     bool ComputeForward(const uint8_t *currentRgba, bool resetTemporalHints,
         std::vector<uint8_t> &motionR16G16Float,
         std::vector<NvofFlowVector> *flowPixels = nullptr,

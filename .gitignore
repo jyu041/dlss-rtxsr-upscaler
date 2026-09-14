@@ -38,6 +38,8 @@ ReShade.log
 *.o
 *.lib
 *.pdb
+native/dlssg_sm86_offline/flow_convert_bytecode.h
+native/dlssg_sm86_offline/bin/flow_convert.cso
 *.ilk
 *.nativecodeanalysis.xml
 *.user

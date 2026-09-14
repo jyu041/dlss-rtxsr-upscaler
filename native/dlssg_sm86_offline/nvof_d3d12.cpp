@@ -6,6 +6,7 @@
 #include <nvOpticalFlowD3D12.h>
 
 #include "nvof_d3d12.h"
+#include "flow_convert_bytecode.h"
 
 #include <algorithm>
 #include <array>
@@ -171,6 +172,14 @@ struct NvofD3D12::Impl {
     bool historyValid = false;
     uint8_t *previousUploadMapped = nullptr;
     uint8_t *currentUploadMapped = nullptr;
+    ID3D12Resource *conversionMotion = nullptr;
+    ID3D12DescriptorHeap *conversionHeap = nullptr;
+    ID3D12RootSignature *conversionRoot = nullptr;
+    ID3D12PipelineState *conversionPso = nullptr;
+    ID3D12CommandAllocator *conversionAllocator = nullptr;
+    ID3D12GraphicsCommandList *conversionList = nullptr;
+    D3D12_CPU_DESCRIPTOR_HANDLE conversionCpu{};
+    D3D12_GPU_DESCRIPTOR_HANDLE conversionGpu{};
     NvOFGPUBufferHandle previousHandle = nullptr;
     NvOFGPUBufferHandle currentHandle = nullptr;
     NvOFGPUBufferHandle forwardHandle = nullptr;
@@ -220,6 +229,48 @@ struct NvofD3D12::Impl {
         RecordUpload(currentUpload, previous);
         if (!SubmitAndWait()) return false;
         historyValid = true;
+        return true;
+    }
+
+    bool ConfigureConversion(ID3D12Resource *motion) {
+        if (!motion || !device) return false;
+        D3D12_DESCRIPTOR_HEAP_DESC heapDesc{}; heapDesc.NumDescriptors = 2;
+        heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        HRESULT hr = device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&conversionHeap));
+        if (FAILED(hr)) { Log("NVOF_GPU_CONVERSION_DESCRIPTOR_HEAP_FAILED hr=0x%08X", static_cast<unsigned>(hr)); return false; }
+        D3D12_ROOT_PARAMETER params[3]{};
+        params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        D3D12_DESCRIPTOR_RANGE srvRange{D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND};
+        params[0].DescriptorTable = {1, &srvRange};
+        params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        D3D12_DESCRIPTOR_RANGE uavRange{D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND};
+        params[1].DescriptorTable = {1, &uavRange};
+        params[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        params[2].Constants = {0, 0, 2};
+        D3D12_ROOT_SIGNATURE_DESC rootDesc{}; rootDesc.NumParameters = 3; rootDesc.pParameters = params;
+        rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
+        ID3DBlob *serialized = nullptr, *error = nullptr;
+        hr = D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &serialized, &error);
+        if (FAILED(hr)) { Log("NVOF_GPU_CONVERSION_ROOT_SERIALIZE_FAILED hr=0x%08X", static_cast<unsigned>(hr)); return false; }
+        hr = device->CreateRootSignature(0, serialized->GetBufferPointer(), serialized->GetBufferSize(), IID_PPV_ARGS(&conversionRoot));
+        if (FAILED(hr)) { Log("NVOF_GPU_CONVERSION_ROOT_FAILED hr=0x%08X", static_cast<unsigned>(hr)); return false; }
+        D3D12_COMPUTE_PIPELINE_STATE_DESC pso{}; pso.pRootSignature = conversionRoot;
+        pso.CS = {kFlowConvertBytecode, kFlowConvertBytecodeSize};
+        hr = device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&conversionPso));
+        if (FAILED(hr)) { Log("NVOF_GPU_CONVERSION_PSO_FAILED hr=0x%08X", static_cast<unsigned>(hr)); return false; }
+        hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&conversionAllocator));
+        if (FAILED(hr)) { Log("NVOF_GPU_CONVERSION_ALLOCATOR_FAILED hr=0x%08X", static_cast<unsigned>(hr)); return false; }
+        hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, conversionAllocator, conversionPso, IID_PPV_ARGS(&conversionList));
+        if (FAILED(hr)) { Log("NVOF_GPU_CONVERSION_LIST_FAILED hr=0x%08X", static_cast<unsigned>(hr)); return false; }
+        conversionList->Close(); conversionMotion = motion; conversionMotion->AddRef();
+        const UINT stride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        conversionCpu = conversionHeap->GetCPUDescriptorHandleForHeapStart();
+        conversionGpu = conversionHeap->GetGPUDescriptorHandleForHeapStart();
+        D3D12_SHADER_RESOURCE_VIEW_DESC srv{}; srv.Format = DXGI_FORMAT_R16G16_SINT; srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D; srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING; srv.Texture2D.MipLevels = 1;
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uav{}; uav.Format = DXGI_FORMAT_R16G16_FLOAT; uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        device->CreateShaderResourceView(forward, &srv, conversionCpu);
+        auto uavCpu = conversionCpu; uavCpu.ptr += stride; device->CreateUnorderedAccessView(motion, nullptr, &uav, uavCpu);
         return true;
     }
 
@@ -355,6 +406,55 @@ bool NvofD3D12::Initialize(ID3D12Device *device, ID3D12CommandQueue *queue, uint
 bool NvofD3D12::SeedForward(const uint8_t *currentRgba) {
     if (!impl_->forwardOnly || !currentRgba) return false;
     return impl_->SeedForward(currentRgba);
+}
+
+bool NvofD3D12::ConfigureGpuConversion(ID3D12Resource *motionResource) {
+    return impl_->forwardOnly && impl_->ConfigureConversion(motionResource);
+}
+
+bool NvofD3D12::ComputeForwardGpu(const uint8_t *currentRgba, ID3D12Resource *motionResource,
+    NvofTimings *timings) {
+    auto &state = *impl_;
+    if (!state.forwardOnly || !state.historyValid || !currentRgba ||
+        motionResource != state.conversionMotion || !state.conversionPso) return false;
+    const auto uploadStart = Clock::now();
+    if (!state.MapUpload(state.currentUpload, currentRgba) || !state.ResetList()) return false;
+    state.RecordUpload(state.currentUpload, state.current);
+    if (FAILED(state.list->Close())) return false;
+    ID3D12CommandList *uploadCommands[] = {state.list}; state.queue->ExecuteCommandLists(1, uploadCommands);
+    const uint64_t uploadFence = ++state.queueFenceValue;
+    if (FAILED(state.queue->Signal(state.queueFence, uploadFence))) return false;
+    const auto uploadEnd = Clock::now();
+    NV_OF_FENCE_POINT inputFence{state.queueFence, uploadFence};
+    NV_OF_FENCE_POINT outputFence{state.ofFence, ++state.ofFenceValue};
+    NV_OF_EXECUTE_INPUT_PARAMS_D3D12 input{}; input.inputFrame = state.currentHandle;
+    input.referenceFrame = state.previousHandle; input.numFencePoints = 1; input.fencePoint = &inputFence;
+    NV_OF_EXECUTE_OUTPUT_PARAMS_D3D12 output{}; output.outputBuffer = state.forwardHandle; output.fencePoint = &outputFence;
+    const auto executeStart = Clock::now();
+    if (state.api.nvOFExecuteD3D12(state.handle, &input, &output) != NV_OF_SUCCESS ||
+        FAILED(state.queue->Wait(state.ofFence, state.ofFenceValue))) return false;
+    const auto executeEnd = Clock::now();
+    if (FAILED(state.conversionAllocator->Reset()) || FAILED(state.conversionList->Reset(state.conversionAllocator, state.conversionPso))) return false;
+    ID3D12DescriptorHeap *heaps[] = {state.conversionHeap}; state.conversionList->SetDescriptorHeaps(1, heaps);
+    state.conversionList->SetComputeRootSignature(state.conversionRoot);
+    state.conversionList->SetComputeRootDescriptorTable(0, state.conversionGpu);
+    auto uavGpu = state.conversionGpu; uavGpu.ptr += state.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    state.conversionList->SetComputeRootDescriptorTable(1, uavGpu);
+    const uint32_t dimensions[] = {state.width, state.height};
+    state.conversionList->SetComputeRoot32BitConstants(2, 2, dimensions, 0);
+    Transition(state.conversionList, state.forward, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(state.conversionList, state.conversionMotion, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    state.conversionList->Dispatch((state.width + 15) / 16, (state.height + 15) / 16, 1);
+    D3D12_RESOURCE_BARRIER uavBarrier{}; uavBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+    state.conversionList->ResourceBarrier(1, &uavBarrier);
+    Transition(state.conversionList, state.conversionMotion, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(state.conversionList, state.forward, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COMMON);
+    if (FAILED(state.conversionList->Close())) return false;
+    ID3D12CommandList *conversionCommands[] = {state.conversionList}; state.queue->ExecuteCommandLists(1, conversionCommands);
+    const auto conversionEnd = Clock::now();
+    std::swap(state.previous, state.current); std::swap(state.previousHandle, state.currentHandle);
+    if (timings) { timings->uploadMs = Milliseconds(uploadStart, uploadEnd); timings->executeMs = Milliseconds(executeStart, executeEnd); timings->conversionMs = Milliseconds(executeEnd, conversionEnd); }
+    return true;
 }
 
 bool NvofD3D12::ComputeForward(const uint8_t *currentRgba, bool resetTemporalHints,
@@ -566,6 +666,12 @@ void NvofD3D12::Shutdown() {
     Release(state.previousUpload);
     Release(state.currentUpload);
     Release(state.backwardReadback);
+    Release(state.conversionMotion);
+    Release(state.conversionList);
+    Release(state.conversionAllocator);
+    Release(state.conversionPso);
+    Release(state.conversionRoot);
+    Release(state.conversionHeap);
     if (state.handle && state.api.nvOFDestroy) {
         Log("NVOF_DESTROY_STARTED handle=%p", static_cast<void *>(state.handle));
         const NV_OF_STATUS status = state.api.nvOFDestroy(state.handle);

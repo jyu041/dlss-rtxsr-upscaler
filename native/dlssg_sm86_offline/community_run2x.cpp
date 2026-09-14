@@ -205,10 +205,12 @@ static void RecordTextureUpload(Texture &texture, ID3D12GraphicsCommandList *lis
 static bool UploadPair(Texture &first, Texture &second, ID3D12Device *device, ID3D12CommandAllocator *allocator,
     ID3D12GraphicsCommandList *list, ID3D12CommandQueue *queue, ID3D12Fence *fence,
     HANDLE eventHandle, UINT64 &fenceValue) {
-    if (!MapTextureUpload(first) || !MapTextureUpload(second) || !ResetList(allocator, list, "UPLOAD_PAIR")) return false;
+    if (!MapTextureUpload(first)) { RunLog("UPLOAD_PAIR_MAP_FAILED first=%s", first.name); return false; }
+    if (!MapTextureUpload(second)) { RunLog("UPLOAD_PAIR_MAP_FAILED second=%s", second.name); return false; }
+    if (!ResetList(allocator, list, "UPLOAD_PAIR")) return false;
     RecordTextureUpload(first, list, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     RecordTextureUpload(second, list, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    if (FAILED(list->Close())) return false;
+    if (FAILED(list->Close())) { RunLog("UPLOAD_PAIR_CLOSE_FAILED"); return false; }
     ID3D12CommandList *commands[] = {list}; queue->ExecuteCommandLists(1, commands);
     if (!WaitFence(queue, fence, ++fenceValue, eventHandle, device, "UPLOAD_PAIR")) return false;
     RunLog("UPLOAD_PAIR_COMPLETE first=%s second=%s fence=%llu", first.name, second.name, fenceValue);
@@ -626,6 +628,9 @@ public:
     bool Initialize(const wchar_t *communityPath, const wchar_t *runtimeDir) {
         wchar_t diagnostic[8]{};
         diagnosticMode_ = GetEnvironmentVariableW(L"DLSSG_WORKER_DIAGNOSTIC", diagnostic, static_cast<DWORD>(std::size(diagnostic))) != 0;
+        wchar_t experimental[8]{};
+        gpuFlowEnabled_ = GetEnvironmentVariableW(L"DLSSG_NVOF_GPU_FLOW", experimental, static_cast<DWORD>(std::size(experimental))) != 0 &&
+            _wcsicmp(experimental, L"1") == 0;
         RunLog("WORKER_MODE=%s", diagnosticMode_ ? "DIAGNOSTIC" : "PRODUCTION");
         runtimeDir_ = runtimeDir;
         IDXGIAdapter1 *candidate = nullptr;
@@ -736,12 +741,18 @@ public:
         if (!Upload(depth_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_)) return Status::NativeFailure;
         if (motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow) &&
             !nvof_.Initialize(device_, queue_, width_, height_)) return Status::NativeFailure;
-        SetCreateParameters(); if (!ResetList(allocator_, list_, "WORKER_CREATE")) return Status::NativeFailure;
+        SetCreateParameters(); RunLog("WORKER_CREATE_LIST_RESET_STARTED"); if (!ResetList(allocator_, list_, "WORKER_CREATE")) return Status::NativeFailure;
+        RunLog("WORKER_CREATE_LIST_RESET_COMPLETE");
         const NVSDK_NGX_Result result = create_(list_, NVSDK_NGX_Feature_FrameGeneration, parameters_, &feature_);
         RunLog("WORKER_CREATE_RESULT=0x%08X handle=%p", result, static_cast<void *>(feature_));
         if (NVSDK_NGX_FAILED(result) || !feature_ || FAILED(list_->Close())) return Status::NativeFailure;
         ID3D12CommandList *commands[] = {list_}; queue_->ExecuteCommandLists(1, commands);
         if (!WaitFence(queue_, fence_, ++fenceValue_, event_, device_, "WORKER_CREATE")) return Status::NativeFailure;
+        if (gpuFlowEnabled_ && motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow) && nvof_.ForwardOnly()) {
+            const bool configured = nvof_.ConfigureGpuConversion(motion_.gpu);
+            RunLog("NVOF_GPU_CONVERSION_CONFIGURED=%d", configured ? 1 : 0);
+            if (!configured) return Status::NativeFailure;
+        }
         created_ = true; history_.Reset(); ++createCount_;
         RunLog("WORKER_CREATE_COMPLETE createCount=%u feature=%p width=%u height=%u motionMode=%u",
             createCount_, static_cast<void *>(feature_), width_, height_, motionMode_);
@@ -766,12 +777,20 @@ public:
         // readback and are deliberately reserved for the standalone
         // diagnostics harnesses.
         NvofFlowStatistics flowStatistics{};
+        const bool gpuFlow = motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow) &&
+            nvof_.ForwardOnly() && gpuFlowEnabled_ && !diagnosticMode_;
+        RunLog("WORKER_PROCESS_PATH gpuFlow=%d reset=%d", gpuFlow ? 1 : 0, effectiveReset ? 1 : 0);
         if (motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow)) {
             if (effectiveReset) {
                 internalMotion.assign(motion_.packed.size(), 0);
                 if (nvof_.ForwardOnly() && !nvof_.SeedForward(color)) {
                     RunLog("WORKER_NVOF_SEED_FAILED frame=%llu", request.frameId); return Status::NativeFailure;
                 }
+            } else if (gpuFlow) {
+                if (!nvof_.ComputeForwardGpu(color, motion_.gpu, &nvofTimings)) {
+                    RunLog("WORKER_NVOF_GPU_CONVERSION_FAILED frame=%llu", request.frameId); return Status::NativeFailure;
+                }
+                nvofHistoryValid_ = true;
             } else if (nvof_.ForwardOnly()
                 ? !nvof_.ComputeForward(color, !nvofHistoryValid_, internalMotion, nullptr, nullptr, &nvofTimings)
                 : previousColor_.size() != color_.packed.size() ||
@@ -781,11 +800,14 @@ public:
             } else {
                 nvofHistoryValid_ = true;
             }
-            std::memcpy(motion_.packed.data(), internalMotion.data(), motion_.packed.size());
+            if (!gpuFlow) std::memcpy(motion_.packed.data(), internalMotion.data(), motion_.packed.size());
         } else {
             std::memcpy(motion_.packed.data(), motion, motion_.packed.size());
         }
-        if (!UploadPair(color_, motion_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_)) return Status::NativeFailure;
+        if (gpuFlow && !effectiveReset) {
+            if (!Upload(color_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_)) return Status::NativeFailure;
+        } else if (!UploadPair(color_, motion_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_)) return Status::NativeFailure;
+        RunLog("WORKER_PROCESS_UPLOAD_COMPLETE gpuFlow=%d reset=%d", gpuFlow ? 1 : 0, effectiveReset ? 1 : 0);
         const auto uploadEnd = Clock::now();
         if (!ResetList(allocator_, list_, "WORKER_EVALUATE")) return Status::NativeFailure;
         RecordDisableZero(disable_, list_); if (diagnosticMode_ || !effectiveReset) RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
@@ -946,6 +968,7 @@ private:
     NvofD3D12 nvof_{}; std::vector<uint8_t> previousColor_{};
     bool nvofHistoryValid_ = false;
     bool diagnosticMode_ = false;
+    bool gpuFlowEnabled_ = false;
     uint32_t width_ = 0, height_ = 0, motionMode_ = 0, generatedPerGroup_ = 1;
     int capabilityMax_ = 1;
     bool created_ = false; uint32_t initCount_ = 0, createCount_ = 0, evaluateCount_ = 0, generatedCount_ = 0;

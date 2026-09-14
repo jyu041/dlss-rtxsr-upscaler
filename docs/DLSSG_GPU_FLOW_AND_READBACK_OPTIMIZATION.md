@@ -1,6 +1,9 @@
 # DLSS-G GPU Flow and Readback Optimization
 
-Status: bounded GPU-flow conversion and one-wait-per-MFG-group validation complete, 2026-09-14.
+Status: bounded GPU-flow conversion, one-wait-per-MFG-group validation, and
+pre-group input-wait removal complete, 2026-09-14.
+
+Final validated worker SHA-256: `0BC0E357E3383A34D7D08A2D50DCAF3C0639601D57BF4EA0FC1CA987196B270E`.
 
 ## Starting state
 
@@ -55,7 +58,7 @@ by the corrected resource construction.
 | Flow GPU→CPU readback | No in GPU-flow path |
 | CPU S10.5 conversion | No in GPU-flow path |
 | Motion CPU→GPU upload | No for normal GPU-flow frames |
-| Duplicate source-color upload removed | No |
+| Duplicate source-color upload removed | No; its separate submission/wait was removed |
 | MFG output readback grouped | No |
 | Real-frame groups in flight | 1 |
 
@@ -64,52 +67,69 @@ by the corrected resource construction.
 Self-test, deterministic forward-only NVOF, focused Python tests, and the
 bounded fallback 256x256 benchmark pass. The focused suite reports 37 passed.
 No device removal was observed after the opt-in GPU path was disabled.
-The clean 1080p GPU-flow medians were 111.04/136.88/165.65 ms per group for
-2X/3X/4X. Against the a21cddc baseline of 112.85/132.04/153.52 ms, this is
-about 1.6% faster at 2X, 3.7% slower at 3X, and 7.9% slower at 4X. The
-remaining dominant cost is per-index generated-output synchronization/readback.
+The clean 1080p GPU-flow medians after grouped scheduling and removal of the
+separate source-upload wait are 88.03/106.82/128.23 ms per group for 2X/3X/4X.
+Against the a21cddc baseline of 112.85/132.04/153.52 ms, these are 22.0%/19.1%/
+16.5% lower. The remaining dominant cost is GPU work and final grouped-fence
+wait, not per-index CPU synchronization.
 
-Natural-video throughput was not reprofiled. The previous reference remains
-3.38 input FPS and 13.52 output FPS.
+The bounded natural 1080p clip was reprofiled after the final worker change:
+60 inputs produced 240 outputs at exact 119.8801 FPS, with 177 unique
+interpolated frames and three terminal holds. Audio and BT.709/SDR metadata
+were preserved; no scene-cut holds, disabled frames, stale outputs, or device
+removal occurred. Mean `total_process_ms` was 152.03 ms and effective input
+throughput was 3.09 FPS for this short libx264 validation run.
 
-## Deferred readback
+## Deferred readback and grouped input upload
 
-The worker now submits Evaluate on the primary allocator/list, immediately
-submits output/disable copies on a dedicated readback allocator/list, and waits
-only for the readback fence. This removes the redundant Evaluate→CPU wait while
-keeping one real-frame group in flight and preserving per-index MFG semantics.
-The normal opt-in GPU-flow path therefore has no flow readback, CPU S10.5
-conversion, or motion upload; its output readback remains synchronous.
+The worker records each Evaluate followed immediately by ordered output/disable
+copies into durable per-index readback slots, submits one primary direct list,
+and waits only for the final group fence. Source color upload is staged in the
+persistent upload heap and recorded at the beginning of that same list. Reset
+and external-motion groups record both color and motion uploads there as well;
+the old separate `Upload`/`UploadPair` submission and CPU wait are gone. This
+keeps one real-frame group in flight and preserves per-index MFG semantics. The
+normal opt-in GPU-flow path therefore has no flow readback, CPU S10.5
+conversion, or motion upload; its output readback remains synchronous after
+the fence.
 
 The bounded 1080p medians after this change are:
 
 | Mode | Before deferred readback | After deferred readback |
 |---|---:|---:|
-| 2X | 111.04 ms | 107.26 ms |
-| 3X | 136.88 ms | 134.12 ms |
-| 4X | 165.65 ms | 159.14 ms |
+| 2X | 111.04 ms | 88.03 ms |
+| 3X | 136.88 ms | 106.82 ms |
+| 4X | 165.65 ms | 128.23 ms |
 
 All six GPU-flow gates (256x256 and 1080p at 2X/3X/4X) passed. The worker now
 logs `ARCH_COUNTERS` for CPU flow readbacks/conversions, motion uploads, GPU
-conversions, Evaluate submissions, readback submissions, and readback waits.
+conversions, Evaluate submissions, grouped command submissions, copies, slots,
+fence signals, input-upload waits, NVOF waits, group waits, and total waits.
 Fresh normal 256x256 GPU-flow captures over eight groups reported:
 
-| Mode | Outputs | Evaluate submissions | Readback submissions/waits | CPU flow readbacks/conversions | Motion CPU uploads | GPU conversions |
+| Mode | Outputs | Evaluate submissions | Group submissions | Output/disable copies | Slots | Group waits |
 |---|---:|---:|---:|---:|---:|---:|
-| 2X | 7 | 8 | 8 / 8 | 0 / 0 | 1 | 7 |
-| 3X | 14 | 16 | 16 / 16 | 0 / 0 | 1 | 7 |
-| 4X | 21 | 24 | 24 / 24 | 0 / 0 | 1 | 7 |
+| 2X | 7 | 8 | 8 | 8 / 8 | 8 | 8 |
+| 3X | 14 | 16 | 8 | 16 / 16 | 16 | 8 |
+| 4X | 21 | 24 | 8 | 24 / 24 | 24 | 8 |
 
 The one CPU motion upload is reset-frame initialization; normal non-reset
-GPU-flow groups have zero CPU motion uploads. Thus the current normal group
-has one blocking output-readback fence wait per generated output, and no
-separate Evaluate CPU wait.
+GPU-flow groups have zero CPU motion uploads. Every normal non-reset group has
+`input_upload_waits=0`, `nvof_cpu_waits=0`, `group_waits=1`, and
+`total_cpu_waits=1`. Reset groups retain the independently required NVOF
+SeedForward CPU wait, then use one final group wait. Source input upload has
+zero separate command submissions; it is recorded in the grouped DLSS-G list.
 
-`response.gpuWaitMs` is not trustworthy after the deferred-wait change: its
-timer still brackets the now-empty post-Evaluate section, while the actual
-blocking wait occurs inside `Readback()`. The future fix is to measure the
-Readback fence wait directly and aggregate that duration; end-to-end
-`totalProcessMs` remains the usable benchmark metric here.
+`response.gpuWaitMs` measures only CPU time blocked on the final group fence.
+`response.readbackMs` measures CPU mapping and row-copy time after that fence;
+it does not include the fence wait. In the final 1080p captures, the medians
+were:
+
+| Mode | Total | GPU wait | Readback | Upload staging |
+|---|---:|---:|---:|---:|
+| 2X | 88.03 ms | 78.26 ms | 2.18 ms | 5.25 ms |
+| 3X | 106.82 ms | 92.28 ms | 4.19 ms | 5.26 ms |
+| 4X | 128.23 ms | 105.74 ms | 6.37 ms | 5.26 ms |
 
 ## Gate closure: conversion and grouped MFG synchronization
 
@@ -142,27 +162,36 @@ Fresh normal 256x256 captures reported one `blockingCpuWaits=1` for every group:
 | 4X | 3 | 1 | 3 / 3 | 3 | 1 |
 
 The aggregate eight-group captures were 8/16/24 Evaluate calls and output
-copies for 2X/3X/4X respectively, with 8/16/24 group waits. Reset groups
-evaluated every required index and also used one final group wait.
+copies for 2X/3X/4X respectively, with exactly 8 group waits in each mode.
+Reset groups evaluated every required index and also used one final group wait.
 
-Grouped 1080p medians are 102.17/121.81/146.23 ms for 2X/3X/4X, using the
-same 20-frame, three-warmup production benchmark methodology as the earlier
+Grouped 1080p medians are 88.03/106.82/128.23 ms for 2X/3X/4X, using the same
+20-frame, three-warmup production benchmark methodology as the earlier
 measurements. `gpuWaitMs` now measures the final group fence wait only.
 
 ## Evidence boundaries
 
 The corrected UAV resource contract is confirmed by the original device-removed
-failure and the passing corrected path. A standalone compute-only test was not
-run, and a diagnostic numeric CPU/GPU flow comparison was not run; therefore
-numeric equivalence is not claimed. Direct SRV use of the registered NVOF output
-was not attempted. DRED/debug-layer diagnostics were not enabled.
+failure and the passing corrected path. The exhaustive conversion-only harness
+covered every int16 value in both channels against the production shader and
+matched 131,072/131,072 FP16 components exactly, including required edge
+samples. Direct SRV use of the registered NVOF output was not attempted.
+DRED/debug-layer diagnostics were not enabled.
 
-## Remaining work
+## Classification and remaining work
 
-The next safe experiments are a diagnostic numeric comparison harness and then
-MFG output-readback batching or a broader output ring. Duplicate color upload is
-still present, one group remains in flight, and natural-video throughput was not
-reprofiled.
+The bounded evidence supports `DLSSG_GPU_FLOW_NUMERIC_EQUIVALENCE_PROVEN`,
+`DLSSG_MFG_GROUP_SYNC_BATCHED`, and the narrow
+`DLSSG_NATIVE_GROUP_PERFORMANCE_REGRESSION_RESOLVED` classification for the
+tested native modes. It does not establish a broad end-to-end performance
+claim across arbitrary natural content.
+
+Remaining work
+
+Remaining bounded work is broader natural-video quality/throughput profiling
+and any future multi-group-in-flight design. Duplicate color transfer remains
+present by design, but its independent submission and CPU wait are removed.
+One real-frame group remains in flight.
 
 Full pytest remains blocked by ACLs on `runtime\\pytest-direct2` and
 `runtime\\pytest-temp-run`, and the environment lacks `cv2` and `psutil`.

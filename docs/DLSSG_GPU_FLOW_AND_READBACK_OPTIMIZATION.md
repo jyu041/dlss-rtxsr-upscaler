@@ -256,3 +256,65 @@ The evidence supports the existing GPU-resident-flow, numeric-equivalence, and
 grouped-synchronization classifications, plus the narrow
 `DLSSG_NVOF_RESET_LIFECYCLE_REGRESSION_RESOLVED` classification. It does not
 establish a broad end-to-end performance improvement claim.
+
+## Production-mode natural-video baseline
+
+The clean CLI invocation used for this baseline was:
+
+```text
+python tools/dlssg_video.py --input natural_2s_1080p_source.mp4 --output prod_clean_runN.mp4 --worker dlssg_sm86_offline.exe --community-runtime version.dll --official-runtime-dir _bin --codec h264_nvenc --multiplier 4 --terminal-frame-policy duplicate
+```
+
+The run environment removed diagnostic and BOTH-direction overrides, then set
+`DLSSG_NVOF_DIRECTION=forward` and `DLSSG_NVOF_GPU_FLOW=1`. No `--diagnostics`
+or `--artifact-dir` option was supplied. Source and runtime proof reported
+`diagnostics_enabled=false`, `WORKER_MODE=PRODUCTION`,
+`NVOF_DIRECTION_MODE=FORWARD`, `NVOF_GPU_CONVERSION_CONFIGURED=1`, and
+`NVOF_GPU_CONVERSION_*` stages on normal groups. No `ComputeBackward()` or CPU
+`ComputeForward()` path was observed.
+
+Five equivalent production 4X runs on the same 60-frame 1920x1080 source
+produced 240 frames, 177 generated frames, 177 unique interpolated frames,
+three terminal holds, exact 119.8801 FPS metadata, preserved AAC audio, 2.002 s
+duration, and preserved BT.709/SDR metadata on every run. Device-removed reason
+was `0x00000000` throughout.
+
+| Run | Wall (s) | Input FPS | Output FPS | worker `totalProcessMs` | worker pair wall (ms) | GPU wait (ms) |
+|---|---:|---:|---:|---:|---:|---:|
+| 4 | 13.63 | 4.40 | 17.61 | 42.10 | 90.26 | 16.62 |
+| 5 | 13.46 | 4.46 | 17.83 | 44.73 | 92.53 | 19.30 |
+| 6 | 13.20 | 4.54 | 18.18 | 40.77 | 88.88 | 16.51 |
+| 7 | 13.10 | 4.58 | 18.32 | 40.16 | 86.82 | 16.10 |
+| 8 | 12.93 | 4.64 | 18.56 | 41.84 | 88.58 | 17.53 |
+| Median | 13.20 | 4.54 | 18.18 | 41.84 | 88.88 | 16.62 |
+| Range | 12.93–13.63 | 4.40–4.64 | 17.61–18.56 | 40.16–44.73 | 86.82–92.53 | 16.10–19.30 |
+
+Median supporting timings were 7.09 ms generated-output readback, 5.97 ms
+upload staging, 2.74 ms NVOF upload, 1.13 ms NVOF execute/API time, 0.14 ms
+GPU flow conversion, 6.79 ms decode/read per input frame, and 3.69 ms encoder
+write per output frame. The five runs all reported
+`flow_cpu_readback=0`, `flow_cpu_conversion=0`, `motion_cpu_upload=1` only for
+the reset, `gpu_flow_conversion=59`, `input_upload_waits=0`,
+`nvof_cpu_waits=1` only for the reset, `group_waits=60`, and `total_cpu_waits=61`.
+Normal groups therefore had exactly one grouped wait and no CPU flow or motion
+upload work.
+
+Relative to the published CPU-BOTH characterization of 3.51 input FPS and
+14.04 output FPS, the clean production median is +1.03 input FPS (+29.3%) and
++4.14 output FPS (+29.5%). Its 13.20 s median wall time is 3.91 s shorter
+than that characterization's 17.11 s median. Relative to the older 3.38 / 13.52
+FPS reference, the differences are +1.16 input FPS (+34.3%) and +4.66 output
+FPS (+34.5%); 13.20 s is about 4.55 s shorter than the corresponding 17.75 s
+wall time implied by 240 output frames at 13.52 FPS.
+
+The natural worker timing is below the synthetic 4X native reference of
+125.56 ms/group: 41.84 ms median for the native `totalProcessMs` field and
+88.88 ms median for end-to-end worker pair wall time. The earlier 92 ms GPU-wait
+regime was not persistent; the five clean repetitions settled at 16.10–19.30
+ms. The measured accounting points to a mixed but input/output-pipeline-bound
+case: decode/read plus scene-cut preparation is about 10.6 ms per input frame,
+encoder writes are about 14.8 ms per input frame at 4X, while GPU flow
+conversion is negligible and grouped GPU execution is not dominant in the
+clean regime. The next target is therefore Candidate B: output/readback/encode
+pipeline accounting and overlap, starting with timestamped readback and encode
+boundaries. No optimization is implemented by this milestone.

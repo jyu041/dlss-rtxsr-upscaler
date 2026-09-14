@@ -154,6 +154,21 @@ def _write_all(stream: BinaryIO, data: bytes) -> None:
     stream.flush()
 
 
+def _write_parts(stream: BinaryIO, parts: tuple[bytes | bytearray | memoryview, ...]) -> None:
+    """Write protocol segments in order without materializing their concatenation."""
+    for part in parts:
+        view = memoryview(part)
+        written = 0
+        while written < len(view):
+            count = stream.write(view[written:])
+            if count is None:
+                count = 0
+            if count <= 0:
+                raise DlssgWorkerProcessError("worker input pipe stopped accepting data")
+            written += count
+    stream.flush()
+
+
 def _decode_response_header(data: bytes, expected_command: int, expected_request_id: int) -> tuple[int, int]:
     magic, version, command, request_id, status, payload_bytes = RESPONSE_HEADER.unpack(data)
     if magic != MAGIC:
@@ -317,6 +332,52 @@ class DlssgWorker:
             raise DlssgNativeError(status, command, tail)
         return response_payload
 
+    def _exchange_process(self, frame_id: int, fixed: bytes, color: bytes,
+                          motion: bytes, allowed_statuses: tuple[int, ...]) -> tuple[tuple, tuple[bytes, ...]]:
+        process = self._require_process()
+        self._request_id += 1
+        request_id = self._request_id
+        payload_bytes = len(fixed) + len(color) + len(motion)
+        header = REQUEST_HEADER.pack(MAGIC, PROTOCOL_VERSION, COMMAND_PROCESS, request_id, payload_bytes)
+        write_start = time.perf_counter()
+        _write_parts(process.stdin, (header, fixed, color, motion))
+        write_seconds = time.perf_counter() - write_start
+        header_start = time.perf_counter()
+        response_header = _read_exact(process.stdout, RESPONSE_HEADER.size)
+        header_seconds = time.perf_counter() - header_start
+        status, response_bytes = _decode_response_header(response_header, COMMAND_PROCESS, request_id)
+        if status not in allowed_statuses:
+            tail = " | ".join(self._diagnostics[-5:])
+            raise DlssgNativeError(status, COMMAND_PROCESS, tail)
+        if response_bytes < PROCESS_RESPONSE.size:
+            raise DlssgWorkerProtocolError("short PROCESS response")
+        payload_start = time.perf_counter()
+        metadata = _read_exact(process.stdout, PROCESS_RESPONSE.size)
+        values = PROCESS_RESPONSE.unpack(metadata)
+        generated_count, disable, width, height, pixel_format, output_bytes, *timings = values
+        expected_frame_bytes = width * height * 4
+        if response_bytes != PROCESS_RESPONSE.size + output_bytes:
+            raise DlssgWorkerProtocolError("PROCESS payload size does not match output_bytes")
+        if generated_count == 0:
+            if output_bytes:
+                raise DlssgWorkerProtocolError("reset PROCESS response unexpectedly contains output")
+            outputs: tuple[bytes, ...] = ()
+        else:
+            if generated_count not in (1, 2, 3) or output_bytes != generated_count * expected_frame_bytes:
+                raise DlssgWorkerProtocolError("invalid generated-frame count or payload size")
+            outputs = tuple(_read_exact(process.stdout, expected_frame_bytes) for _ in range(generated_count))
+        payload_seconds = time.perf_counter() - payload_start
+        self.last_exchange_metrics = {
+            "request_write_ms": write_seconds * 1000.0,
+            "response_header_read_ms": header_seconds * 1000.0,
+            "response_payload_read_ms": payload_seconds * 1000.0,
+            "request_payload_bytes": payload_bytes,
+            "response_payload_bytes": response_bytes,
+            "response_metadata_bytes": PROCESS_RESPONSE.size,
+            "response_generated_bytes": output_bytes,
+        }
+        return (generated_count, disable, width, height, pixel_format, output_bytes, *timings), outputs
+
     def create(
         self,
         width: int = 256,
@@ -378,29 +439,10 @@ class DlssgWorker:
             len(motion),
             0,
         )
-        payload = self._exchange(
-            COMMAND_PROCESS,
-            fixed + color + motion,
-            (STATUS_OK, STATUS_OK_RESET_NO_OUTPUT),
+        values, outputs = self._exchange_process(
+            frame_id, fixed, color, motion, (STATUS_OK, STATUS_OK_RESET_NO_OUTPUT)
         )
-        if len(payload) < PROCESS_RESPONSE.size:
-            raise DlssgWorkerProtocolError("short PROCESS response")
-        values = PROCESS_RESPONSE.unpack(payload[: PROCESS_RESPONSE.size])
         generated_count, disable, width, height, pixel_format, output_bytes, *timings = values
-        output = payload[PROCESS_RESPONSE.size :]
-        if len(output) != output_bytes:
-            raise DlssgWorkerProtocolError(
-                f"PROCESS output is {len(output)} bytes; header declares {output_bytes}"
-            )
-        expected_frame_bytes = width * height * 4
-        if generated_count == 0:
-            if output:
-                raise DlssgWorkerProtocolError("reset PROCESS response unexpectedly contains output")
-            outputs: tuple[bytes, ...] = ()
-        else:
-            if generated_count not in (1, 2, 3) or output_bytes != generated_count * expected_frame_bytes:
-                raise DlssgWorkerProtocolError("invalid generated-frame count or payload size")
-            outputs = tuple(output[index * expected_frame_bytes : (index + 1) * expected_frame_bytes] for index in range(generated_count))
         return ProcessResult(
             frame_id, generated_count, disable, width, height, pixel_format, outputs, *timings,
             reset_only=generated_count == 0,

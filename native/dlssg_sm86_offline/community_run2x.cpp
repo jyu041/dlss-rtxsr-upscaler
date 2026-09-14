@@ -1010,6 +1010,15 @@ static bool SendResponse(HANDLE output, const dlssg::protocol::RequestHeader &re
         request.command, request.requestId, static_cast<int32_t>(status), payloadBytes};
     return WriteExact(output, &response, sizeof(response)) && (!payloadBytes || WriteExact(output, payload, payloadBytes));
 }
+static bool SendProcessResponse(HANDLE output, const dlssg::protocol::RequestHeader &request, Status status,
+    const dlssg::protocol::ProcessResponse &response, const std::vector<uint8_t> &generated) {
+    const uint64_t payloadBytes64 = sizeof(response) + generated.size();
+    if (payloadBytes64 > UINT32_MAX) return false;
+    const dlssg::protocol::ResponseHeader header{dlssg::protocol::kMagic, dlssg::protocol::kVersion,
+        request.command, request.requestId, static_cast<int32_t>(status), static_cast<uint32_t>(payloadBytes64)};
+    return WriteExact(output, &header, sizeof(header)) && WriteExact(output, &response, sizeof(response)) &&
+        (generated.empty() || WriteExact(output, generated.data(), static_cast<uint32_t>(generated.size())));
+}
 } // namespace
 
 bool WorkerProtocolSelfTest() {
@@ -1018,8 +1027,18 @@ bool WorkerProtocolSelfTest() {
     if (!history.Begin(1, false, reset) || reset) return false; history.Complete(1);
     if (history.Begin(1, false, reset)) return false; history.Reset();
     if (!history.Begin(2, false, reset) || !reset) return false;
-    return sizeof(dlssg::protocol::RequestHeader) == 16 && sizeof(dlssg::protocol::ResponseHeader) == 20 &&
-        sizeof(dlssg::protocol::ProcessResponse) == 160;
+    if (sizeof(dlssg::protocol::RequestHeader) != 16 || sizeof(dlssg::protocol::ResponseHeader) != 20 ||
+        sizeof(dlssg::protocol::ProcessResponse) != 160) return false;
+    dlssg::protocol::ProcessResponse response{}; response.generatedCount = 3; response.outputBytes = 7;
+    const std::vector<uint8_t> generated{1, 2, 3, 4, 5, 6, 7};
+    std::vector<uint8_t> assembled(sizeof(response) + generated.size());
+    std::memcpy(assembled.data(), &response, sizeof(response));
+    std::memcpy(assembled.data() + sizeof(response), generated.data(), generated.size());
+    std::vector<uint8_t> segmented; segmented.reserve(assembled.size());
+    segmented.insert(segmented.end(), reinterpret_cast<const uint8_t *>(&response),
+        reinterpret_cast<const uint8_t *>(&response) + sizeof(response));
+    segmented.insert(segmented.end(), generated.begin(), generated.end());
+    return assembled == segmented;
 }
 
 int RunServer(const wchar_t *communityPath, const wchar_t *runtimeDir) {
@@ -1055,9 +1074,7 @@ int RunServer(const wchar_t *communityPath, const wchar_t *runtimeDir) {
             dlssg::protocol::ProcessResponse response{}; std::vector<uint8_t> generated;
             const uint8_t *color = payload.data() + sizeof(request); const uint8_t *motion = color + request.colorBytes;
             const Status status = worker.Process(request, color, motion, response, generated);
-            std::vector<uint8_t> responsePayload(sizeof(response) + generated.size()); std::memcpy(responsePayload.data(), &response, sizeof(response));
-            if (!generated.empty()) std::memcpy(responsePayload.data() + sizeof(response), generated.data(), generated.size());
-            if (!SendResponse(output, header, status, responsePayload.data(), static_cast<uint32_t>(responsePayload.size()))) return 74;
+            if (!SendProcessResponse(output, header, status, response, generated)) return 74;
         } else if (command == Command::ResetHistory) {
             if (header.payloadBytes) { if (!SendResponse(output, header, Status::InvalidPayloadSize)) return 74; continue; }
             worker.ResetHistory(); if (!SendResponse(output, header, Status::Ok)) return 74;

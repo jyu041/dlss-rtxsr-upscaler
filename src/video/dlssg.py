@@ -348,6 +348,7 @@ def render_dlssg(
             config.community_runtime,
             config.official_runtime_dir,
             diagnostic_callback=diagnostics,
+            diagnostic_mode=artifact_dir is not None,
         )
         with client:
             client.create(width, height, multiplier=multiplier, motion_mode=MOTION_MODE_NVIDIA_OPTICAL_FLOW)

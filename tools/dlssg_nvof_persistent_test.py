@@ -69,6 +69,7 @@ def main() -> int:
         args.community_runtime.resolve(),
         args.official_runtime_dir.resolve(),
         diagnostic_callback=None if args.quiet_worker_log else lambda line: print(line, file=sys.stderr, flush=True),
+        diagnostic_mode=True,
     )
     records: list[dict[str, object]] = []
     hashes: set[str] = set()

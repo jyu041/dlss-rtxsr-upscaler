@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import math
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -56,6 +57,11 @@ def mfg_group_indices(multiplier: int) -> tuple[int, ...]:
     if multiplier not in (2, 3, 4):
         raise ValueError("multiplier must be 2, 3, or 4")
     return tuple(range(1, multiplier))
+
+
+def mfg_group_complete(multiplier: int, completed_indices: tuple[int, ...]) -> bool:
+    """Return whether all generated indices completed exactly once."""
+    return completed_indices == mfg_group_indices(multiplier)
 
 
 class DlssgWorkerError(RuntimeError):
@@ -181,6 +187,7 @@ class DlssgWorker:
         expected_community_sha256: str | None = KNOWN_COMMUNITY_SHA256,
         strict_runtime_hash: bool = False,
         diagnostic_callback: Callable[[str], None] | None = None,
+        diagnostic_mode: bool = False,
     ):
         self.executable = Path(executable)
         self.community_runtime = Path(community_runtime)
@@ -188,6 +195,7 @@ class DlssgWorker:
         self.expected_community_sha256 = expected_community_sha256.upper() if expected_community_sha256 else None
         self.strict_runtime_hash = strict_runtime_hash
         self.diagnostic_callback = diagnostic_callback
+        self.diagnostic_mode = diagnostic_mode
         self._process: subprocess.Popen[bytes] | None = None
         self._request_id = 0
         self._diagnostics: list[str] = []
@@ -235,12 +243,18 @@ class DlssgWorker:
             "--official-runtime-dir",
             str(self.official_runtime_dir),
         ]
+        environment = os.environ.copy()
+        if self.diagnostic_mode:
+            environment["DLSSG_WORKER_DIAGNOSTIC"] = "1"
+        else:
+            environment.pop("DLSSG_WORKER_DIAGNOSTIC", None)
         self._process = subprocess.Popen(
             command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             bufsize=0,
+            env=environment,
         )
         self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
         self._stderr_thread.start()

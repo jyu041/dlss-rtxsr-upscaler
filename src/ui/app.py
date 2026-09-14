@@ -31,9 +31,9 @@ def status_html():
     rtx = "Ready" if d["rtx_vsr"]["available"] else "Unavailable"
     dlss = "Experimental Ready" if d["dlss5"]["available"] else "Unavailable"
     sr = "Experimental Ready" if d["dlss_sr"]["state"] == "EXPERIMENTAL READY" else "Unavailable"
-    fg = "Experimental Ready" if d["dlssg"]["available"] else "Not configured"
+    fg = "Validated 2X/3X/4X" if d["dlssg"]["available"] else "Not configured"
     ffmpeg = "Ready" if d["ffmpeg"] == "AVAILABLE" else "Unavailable"
-    return f"<div class=\"app-header\"><h1>NVIDIA Video Enhancer</h1><p>RTX VSR + DLSS SR/NR + offline DLSS Frame Generation</p></div><div class=\"backend-status\"><span class=\"status-badge\">RTX VSR <b>● {rtx}</b></span><span class=\"status-badge\">DLSS SR <b>● {sr}</b></span><span class=\"status-badge\">DLSS 5 <b>● {dlss}</b></span><span class=\"status-badge\">DLSS-G 2X <b>● {fg}</b></span><span class=\"status-badge\">FFmpeg <b>● {ffmpeg}</b></span></div>"
+    return f"<div class=\"app-header\"><h1>NVIDIA Video Enhancer</h1><p>RTX VSR + DLSS SR/NR + offline DLSS Frame Generation</p></div><div class=\"backend-status\"><span class=\"status-badge\">RTX VSR <b>● {rtx}</b></span><span class=\"status-badge\">DLSS SR <b>● {sr}</b></span><span class=\"status-badge\">DLSS 5 <b>● {dlss}</b></span><span class=\"status-badge\">DLSS-G 2X/3X/4X <b>● {fg}</b></span><span class=\"status-badge\">FFmpeg <b>● {ffmpeg}</b></span></div>"
 
 def _tip(mapping, key, label):
     return gr.HTML(setting_label(label, mapping[key]), show_label=False, elem_classes="setting-label")
@@ -295,7 +295,7 @@ def build():
                     dlssg_depth = gr.Dropdown(["Constant 0.5"], value=dlssglast.get("depth_mode", "Constant 0.5"), label="Depth mode")
                     dlssg_saved = gr.Markdown()
                     gr.Markdown("Constant depth is a first-generation quality limitation; it is not renderer-quality depth.")
-                    gr.Markdown("2X is hardware-validated. 3X and 4X use the generalized worker contract but remain experimental: the current RTX 3070 Ti/community-runtime 3X probe returned `InterpolationDisabled`, so neither is presented as validated output.")
+                    gr.Markdown("2X Frame Generation, 3X Multi Frame Generation, and 4X Multi Frame Generation are hardware-validated on the tested RTX 3070 Ti configuration.")
                 with gr.Accordion("Saved settings", open=False):
                     rtx_saved = gr.Dropdown(preset_choices("rtx_vsr"), label="RTX VSR saved preset")
                     rtx_name = gr.Textbox(label="Preset name", max_length=80)

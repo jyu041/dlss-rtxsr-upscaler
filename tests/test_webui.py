@@ -100,4 +100,4 @@ def test_ui_has_no_redundant_processing_or_sr_workflow():
     assert 'gr.Tab("Output")' not in source
     assert 'Load Last Render' in source
     assert 'show_label=False' in source
-    assert "3X and 4X use the generalized worker contract but remain experimental" in source
+    assert "2X Frame Generation, 3X Multi Frame Generation, and 4X Multi Frame Generation are hardware-validated" in source

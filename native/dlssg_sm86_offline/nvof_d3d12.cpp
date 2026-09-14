@@ -194,7 +194,7 @@ struct NvofD3D12::Impl {
         return status == NV_OF_SUCCESS && gpuHandle && WaitFence(ofFence, ofFenceValue, eventHandle);
     }
 
-    bool Upload(ID3D12Resource *upload, ID3D12Resource *texture, const uint8_t *rgba) {
+    bool MapUpload(ID3D12Resource *upload, const uint8_t *rgba) {
         uint8_t *mapped = nullptr;
         if (FAILED(upload->Map(0, nullptr, reinterpret_cast<void **>(&mapped)))) return false;
         for (uint32_t y = 0; y < height; ++y) {
@@ -208,7 +208,10 @@ struct NvofD3D12::Impl {
             }
         }
         upload->Unmap(0, nullptr);
-        if (!ResetList()) return false;
+        return true;
+    }
+
+    void RecordUpload(ID3D12Resource *upload, ID3D12Resource *texture) {
         Transition(list, texture, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
         D3D12_TEXTURE_COPY_LOCATION source{}, destination{};
         source.pResource = upload;
@@ -218,6 +221,11 @@ struct NvofD3D12::Impl {
         destination.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
         list->CopyTextureRegion(&destination, 0, 0, 0, &source, nullptr);
         Transition(list, texture, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON);
+    }
+
+    bool Upload(ID3D12Resource *upload, ID3D12Resource *texture, const uint8_t *rgba) {
+        if (!MapUpload(upload, rgba) || !ResetList()) return false;
+        RecordUpload(upload, texture);
         return SubmitAndWait();
     }
 
@@ -288,7 +296,10 @@ bool NvofD3D12::Initialize(ID3D12Device *device, ID3D12CommandQueue *queue, uint
     init.height = height;
     init.outGridSize = NV_OF_OUTPUT_VECTOR_GRID_SIZE_1;
     init.mode = NV_OF_MODE_OPTICALFLOW;
-    init.perfLevel = NV_OF_PERF_LEVEL_MEDIUM;
+    // The production video path is throughput-bound by NVOF at 720p/1080p.
+    // HIGH is the SDK-supported performance tier; it does not alter the
+    // flow direction, format, or temporal-hint contract.
+    init.perfLevel = NV_OF_PERF_LEVEL_FAST;
     init.predDirection = NV_OF_PRED_DIRECTION_BOTH;
     init.inputBufferFormat = NV_OF_BUFFER_FORMAT_ABGR8;
     if (state.api.nvOFInit(state.handle, &init) != NV_OF_SUCCESS) return false;
@@ -330,8 +341,11 @@ bool NvofD3D12::ComputeBackward(const uint8_t *previousRgba, const uint8_t *curr
     auto &state = *impl_;
     NvofTimings measured{};
     const auto uploadStart = Clock::now();
-    if (!state.Upload(state.previousUpload, state.previous, previousRgba) ||
-        !state.Upload(state.currentUpload, state.current, currentRgba)) return false;
+    if (!state.MapUpload(state.previousUpload, previousRgba) ||
+        !state.MapUpload(state.currentUpload, currentRgba) || !state.ResetList()) return false;
+    state.RecordUpload(state.previousUpload, state.previous);
+    state.RecordUpload(state.currentUpload, state.current);
+    if (!state.SubmitAndWait()) return false;
     const auto uploadEnd = Clock::now();
     NV_OF_FENCE_POINT inputFence{state.queueFence, state.queueFenceValue};
     NV_OF_FENCE_POINT outputFence{state.ofFence, ++state.ofFenceValue};

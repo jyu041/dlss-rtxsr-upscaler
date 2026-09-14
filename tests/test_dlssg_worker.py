@@ -63,6 +63,16 @@ def test_mfg_group_indices_reject_invalid_multiplier():
         worker.mfg_group_indices(1)
 
 
+@pytest.mark.parametrize("multiplier", [2, 3, 4])
+def test_mfg_history_commits_only_after_complete_ordered_group(multiplier):
+    expected = worker.mfg_group_indices(multiplier)
+    assert not worker.mfg_group_complete(multiplier, expected[:-1])
+    assert not worker.mfg_group_complete(multiplier, expected[1:])
+    if len(expected) > 1:
+        assert not worker.mfg_group_complete(multiplier, tuple(reversed(expected)))
+    assert worker.mfg_group_complete(multiplier, expected)
+
+
 def test_exact_io_handles_partial_reads_and_writes():
     assert worker._read_exact(ChunkedReader(b"abcdef", 2), 6) == b"abcdef"
     destination = ChunkedWriter(2)

@@ -181,6 +181,15 @@ static bool Upload(Texture &texture, ID3D12Device *device, ID3D12CommandAllocato
     return true;
 }
 
+static bool MapTextureUpload(Texture &texture) {
+    uint8_t *mapped = nullptr; const HRESULT mr = texture.upload->Map(0, nullptr, reinterpret_cast<void **>(&mapped));
+    if (FAILED(mr)) { RunLog("UPLOAD_MAP_FAILED name=%s hr=0x%08X", texture.name, static_cast<unsigned>(mr)); return false; }
+    for (UINT row = 0; row < texture.height; ++row) std::memcpy(mapped + static_cast<size_t>(row) * texture.footprint.Footprint.RowPitch,
+        texture.packed.data() + static_cast<size_t>(row) * texture.rowBytes, texture.rowBytes);
+    texture.upload->Unmap(0, nullptr);
+    return true;
+}
+
 static void RecordTextureUpload(Texture &texture, ID3D12GraphicsCommandList *list,
     D3D12_RESOURCE_STATES restoreState) {
     Transition(list, texture.gpu, texture.state, D3D12_RESOURCE_STATE_COPY_DEST);
@@ -189,6 +198,19 @@ static void RecordTextureUpload(Texture &texture, ID3D12GraphicsCommandList *lis
     dst.pResource = texture.gpu; dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
     list->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
     Transition(list, texture.gpu, D3D12_RESOURCE_STATE_COPY_DEST, restoreState); texture.state = restoreState;
+}
+
+static bool UploadPair(Texture &first, Texture &second, ID3D12Device *device, ID3D12CommandAllocator *allocator,
+    ID3D12GraphicsCommandList *list, ID3D12CommandQueue *queue, ID3D12Fence *fence,
+    HANDLE eventHandle, UINT64 &fenceValue) {
+    if (!MapTextureUpload(first) || !MapTextureUpload(second) || !ResetList(allocator, list, "UPLOAD_PAIR")) return false;
+    RecordTextureUpload(first, list, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    RecordTextureUpload(second, list, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    if (FAILED(list->Close())) return false;
+    ID3D12CommandList *commands[] = {list}; queue->ExecuteCommandLists(1, commands);
+    if (!WaitFence(queue, fence, ++fenceValue, eventHandle, device, "UPLOAD_PAIR")) return false;
+    RunLog("UPLOAD_PAIR_COMPLETE first=%s second=%s fence=%llu", first.name, second.name, fenceValue);
+    return true;
 }
 static void RecordDisableZero(Buffer &disable, ID3D12GraphicsCommandList *list) {
     Transition(list, disable.gpu, disable.state, D3D12_RESOURCE_STATE_COPY_DEST);
@@ -600,6 +622,9 @@ struct HistoryState {
 class PersistentWorker {
 public:
     bool Initialize(const wchar_t *communityPath, const wchar_t *runtimeDir) {
+        wchar_t diagnostic[8]{};
+        diagnosticMode_ = GetEnvironmentVariableW(L"DLSSG_WORKER_DIAGNOSTIC", diagnostic, static_cast<DWORD>(std::size(diagnostic))) != 0;
+        RunLog("WORKER_MODE=%s", diagnosticMode_ ? "DIAGNOSTIC" : "PRODUCTION");
         runtimeDir_ = runtimeDir;
         IDXGIAdapter1 *candidate = nullptr;
         if (FAILED(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory_)))) return false;
@@ -753,11 +778,10 @@ public:
         } else {
             std::memcpy(motion_.packed.data(), motion, motion_.packed.size());
         }
-        if (!Upload(color_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_) ||
-            !Upload(motion_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_)) return Status::NativeFailure;
+        if (!UploadPair(color_, motion_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_)) return Status::NativeFailure;
         const auto uploadEnd = Clock::now();
         if (!ResetList(allocator_, list_, "WORKER_EVALUATE")) return Status::NativeFailure;
-        RecordDisableZero(disable_, list_); RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        RecordDisableZero(disable_, list_); if (diagnosticMode_ || !effectiveReset) RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         NVSDK_NGX_DLSSG_Opt_Eval_Params options{};
         if (!SetOptions(parameters_, color_.gpu, depth_.gpu, motion_.gpu, output_.gpu, disable_.gpu,
             effectiveReset, request.frameId, generatedPerGroup_, 1, options, false, width_, height_)) return Status::NativeFailure;
@@ -786,7 +810,7 @@ public:
             RunLog("WORKER_RESET_GROUP frame=%llu generatedCount=%u generatedIndex=1 disableValue=%u", request.frameId, generatedPerGroup_, disableValue);
             for (uint32_t index = 2; index <= generatedPerGroup_; ++index) {
                 if (!ResetList(allocator_, list_, "WORKER_MFG_RESET_EVALUATE")) return Status::NativeFailure;
-                RecordDisableZero(disable_, list_); RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+                RecordDisableZero(disable_, list_); if (diagnosticMode_) RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
                 if (!SetOptions(parameters_, color_.gpu, depth_.gpu, motion_.gpu, output_.gpu, disable_.gpu,
                     true, request.frameId, generatedPerGroup_, index, options, false, width_, height_)) return Status::NativeFailure;
                 const auto nextStart = Clock::now(); const NVSDK_NGX_Result next = evaluate_(list_, feature_, parameters_, nullptr);
@@ -814,14 +838,14 @@ public:
             return Status::InterpolationDisabled;
         }
         const auto validOutput = [&](const std::vector<uint8_t> &value) {
-            return value != output_.packed && !std::all_of(value.begin(), value.end(), [](uint8_t item) { return item == 0; }) &&
+            return (!diagnosticMode_ || value != output_.packed) && !std::all_of(value.begin(), value.end(), [](uint8_t item) { return item == 0; }) &&
                 !( !value.empty() && std::all_of(value.begin(), value.end(), [&](uint8_t item) { return item == value.front(); }) );
         };
         if (!validOutput(one)) return Status::InvalidOutput;
         generated = one;
         for (uint32_t index = 2; index <= generatedPerGroup_; ++index) {
             if (!ResetList(allocator_, list_, "WORKER_MFG_EVALUATE")) return Status::NativeFailure;
-            RecordDisableZero(disable_, list_); RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            RecordDisableZero(disable_, list_); if (diagnosticMode_) RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
             if (!SetOptions(parameters_, color_.gpu, depth_.gpu, motion_.gpu, output_.gpu, disable_.gpu,
                 false, request.frameId, generatedPerGroup_, index, options, false, width_, height_)) return Status::NativeFailure;
             const auto nextStart = Clock::now(); const NVSDK_NGX_Result next = evaluate_(list_, feature_, parameters_, nullptr);
@@ -914,6 +938,7 @@ private:
     Texture color_{}, depth_{}, motion_{}, output_{}; Buffer disable_{}; HistoryState history_{};
     NvofD3D12 nvof_{}; std::vector<uint8_t> previousColor_{};
     bool nvofHistoryValid_ = false;
+    bool diagnosticMode_ = false;
     uint32_t width_ = 0, height_ = 0, motionMode_ = 0, generatedPerGroup_ = 1;
     int capabilityMax_ = 1;
     bool created_ = false; uint32_t initCount_ = 0, createCount_ = 0, evaluateCount_ = 0, generatedCount_ = 0;

@@ -44,12 +44,12 @@ class DLSSGBackend(Backend):
         if not config.official_runtime_dir.is_dir():
             missing.append(f"official runtime directory: {config.official_runtime_dir}")
         if missing:
-            return BackendStatus("DLSS Frame Generation 2X", False, "NOT CONFIGURED", "; ".join(missing))
+            return BackendStatus("DLSS-G 2X/3X/4X", False, "NOT CONFIGURED", "; ".join(missing))
         return BackendStatus(
-            "DLSS Frame Generation 2X",
+            "DLSS-G 2X/3X/4X",
             True,
-            "EXPERIMENTAL READY",
-            "Offline frame interpolation using NVIDIA Optical Flow and external Ampere DLSS-G runtime",
+            "VALIDATED",
+            "Offline 2X Frame Generation and 3X/4X Multi Frame Generation using NVIDIA Optical Flow and external Ampere DLSS-G runtime",
         )
 
     def require_configuration(self) -> DlssgConfiguration:

@@ -5,8 +5,10 @@ Status: bounded GPU-flow and deferred-readback validation complete, 2026-09-14.
 ## Starting state
 
 Public started at `81f76f0e0868a8ef6078f54cb0158c4986b0ac85`; private started at
-`8d27f9117f5508d10ef0baf6107a1df0a3358dd8`. The starting worker was
-`522F77E...` (the exact SHA-256 is recorded with the final validation).
+`8d27f9117f5508d10ef0baf6107a1df0a3358dd8`. That private lock held starting
+worker `B44E58967A61501B138465EEADCE447D9CF0F68CE81DC93DB89C6BFF15D3C0F9`.
+The validated deferred-readback worker is
+`321D78A5844E352D4B7E35C3EDF359585DF4618CDCE58FB385BDEF41A228294C`.
 
 ## Regression diagnosis
 
@@ -90,6 +92,24 @@ The bounded 1080p medians after this change are:
 All six GPU-flow gates (256x256 and 1080p at 2X/3X/4X) passed. The worker now
 logs `ARCH_COUNTERS` for CPU flow readbacks/conversions, motion uploads, GPU
 conversions, Evaluate submissions, readback submissions, and readback waits.
+Fresh normal 256x256 GPU-flow captures over eight groups reported:
+
+| Mode | Outputs | Evaluate submissions | Readback submissions/waits | CPU flow readbacks/conversions | Motion CPU uploads | GPU conversions |
+|---|---:|---:|---:|---:|---:|---:|
+| 2X | 7 | 8 | 8 / 8 | 0 / 0 | 1 | 7 |
+| 3X | 14 | 16 | 16 / 16 | 0 / 0 | 1 | 7 |
+| 4X | 21 | 24 | 24 / 24 | 0 / 0 | 1 | 7 |
+
+The one CPU motion upload is reset-frame initialization; normal non-reset
+GPU-flow groups have zero CPU motion uploads. Thus the current normal group
+has one blocking output-readback fence wait per generated output, and no
+separate Evaluate CPU wait.
+
+`response.gpuWaitMs` is not trustworthy after the deferred-wait change: its
+timer still brackets the now-empty post-Evaluate section, while the actual
+blocking wait occurs inside `Readback()`. The future fix is to measure the
+Readback fence wait directly and aggregate that duration; end-to-end
+`totalProcessMs` remains the usable benchmark metric here.
 
 ## Evidence boundaries
 

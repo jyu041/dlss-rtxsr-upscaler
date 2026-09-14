@@ -3,7 +3,7 @@
 Status: bounded GPU-flow conversion, one-wait-per-MFG-group validation, and
 pre-group input-wait removal complete, 2026-09-14.
 
-Final validated worker SHA-256: `0BC0E357E3383A34D7D08A2D50DCAF3C0639601D57BF4EA0FC1CA987196B270E`.
+Final validated worker SHA-256: `1ABB87FD42DAEE277510EB33C2E6F46A8D76540D0F4B806DC2BDE4C9A9E7CBCE`.
 
 ## Starting state
 

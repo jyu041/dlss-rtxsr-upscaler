@@ -15,8 +15,7 @@ The same object was copied to the private LFS repository and locked in commit
 
 The final native changes rebuilt and validated a new worker with SHA-256
 `8A9C6EFC308D1D6A4F6B6AA192B809CAE32F8D34B53A80BCB9B4E269CF1BA631`.
-It is not yet copied to private resources because the code is not being
-released as a validated performance milestone.
+That exact object is in private LFS and is locked by private commit `70ffd72`.
 
 ## Dataflow and implemented changes
 

@@ -14,6 +14,7 @@ from pathlib import Path
 import struct
 import subprocess
 import threading
+import time
 import warnings
 from typing import BinaryIO, Callable
 
@@ -199,6 +200,7 @@ class DlssgWorker:
         self._process: subprocess.Popen[bytes] | None = None
         self._request_id = 0
         self._diagnostics: list[str] = []
+        self.last_exchange_metrics: dict[str, float | int] = {}
         self._stderr_thread: threading.Thread | None = None
         self.width: int | None = None
         self.height: int | None = None
@@ -293,10 +295,23 @@ class DlssgWorker:
         self._request_id += 1
         request_id = self._request_id
         header = REQUEST_HEADER.pack(MAGIC, PROTOCOL_VERSION, command, request_id, len(payload))
+        write_start = time.perf_counter()
         _write_all(process.stdin, header + payload)
+        write_seconds = time.perf_counter() - write_start
+        header_start = time.perf_counter()
         response_header = _read_exact(process.stdout, RESPONSE_HEADER.size)
+        header_seconds = time.perf_counter() - header_start
         status, payload_bytes = _decode_response_header(response_header, command, request_id)
+        payload_start = time.perf_counter()
         response_payload = _read_exact(process.stdout, payload_bytes)
+        payload_seconds = time.perf_counter() - payload_start
+        self.last_exchange_metrics = {
+            "request_write_ms": write_seconds * 1000.0,
+            "response_header_read_ms": header_seconds * 1000.0,
+            "response_payload_read_ms": payload_seconds * 1000.0,
+            "request_payload_bytes": len(payload),
+            "response_payload_bytes": payload_bytes,
+        }
         if status not in allowed_statuses:
             tail = " | ".join(self._diagnostics[-5:])
             raise DlssgNativeError(status, command, tail)

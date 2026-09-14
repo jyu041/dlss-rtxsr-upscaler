@@ -212,6 +212,16 @@ def _read_frame(stream, frame_bytes: int) -> bytes:
     return b"".join(chunks)
 
 
+def _latency_summary(values: list[float]) -> dict[str, float | int]:
+    if not values:
+        return {"count": 0, "median_ms": 0.0, "p90_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0, "max_ms": 0.0}
+    ordered = sorted(values)
+    def percentile(fraction: float) -> float:
+        return ordered[min(len(ordered) - 1, int((len(ordered) - 1) * fraction))]
+    return {"count": len(values), "median_ms": percentile(0.50), "p90_ms": percentile(0.90),
+            "p95_ms": percentile(0.95), "p99_ms": percentile(0.99), "max_ms": ordered[-1]}
+
+
 def _write_contact_triplet(directory: Path, index: int, previous: bytes, generated: bytes,
                            current: bytes, width: int, height: int) -> list[str]:
     try:
@@ -269,6 +279,7 @@ def render_dlssg(
     diagnostic_callback: Callable[[str], None] | None = None,
     multiplier: int = 2,
     diagnostics: bool | None = None,
+    encode_output: bool = True,
 ) -> dict[str, object]:
     """Generate ordered intermediate frames and preserve duration at multiplier CFR.
 
@@ -317,6 +328,11 @@ def render_dlssg(
     interpolation_disabled_ids: list[int] = []
     previous_generated_digest: str | None = None
     decode_seconds = encode_seconds = 0.0
+    lifecycle: dict[str, float] = {}
+    write_latencies: list[float] = []
+    write_group_latencies: list[float] = []
+    sink_hash = hashlib.sha256()
+    sink_bytes = sink_frames = 0
     scene_cut_seconds = python_diagnostics_seconds = worker_seconds = 0.0
     manifest_started = time.perf_counter()
     started = time.perf_counter()
@@ -330,13 +346,31 @@ def render_dlssg(
         if diagnostic_callback:
             diagnostic_callback(line)
 
+    def write_output(frame: bytes) -> float:
+        nonlocal sink_bytes, sink_frames
+        write_start = time.perf_counter()
+        if encode_output:
+            assert encoder is not None and encoder.stdin is not None
+            encoder.stdin.write(frame)
+        else:
+            sink_hash.update(frame)
+            sink_bytes += len(frame)
+            sink_frames += 1
+        elapsed = time.perf_counter() - write_start
+        write_latencies.append(elapsed * 1000.0)
+        return elapsed
+
     try:
+        setup_start = time.perf_counter()
+        lifecycle["setup_before_decoder_seconds"] = setup_start - started
+        popen_start = time.perf_counter()
         decoder = subprocess.Popen(
             [ffmpeg, "-v", "error", "-i", str(source_path), "-f", "rawvideo", "-pix_fmt", "rgba",
              "-fps_mode", "passthrough", "-"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
+        lifecycle["decoder_popen_seconds"] = time.perf_counter() - popen_start
         encode_options = ["-c:v", codec, "-preset", "p5", "-cq", "19"] if codec.endswith("_nvenc") else [
             "-c:v", codec, "-preset", "medium", "-crf", "18"
         ]
@@ -344,16 +378,22 @@ def render_dlssg(
             ["-video_track_timescale", str(fps_numerator * multiplier)]
             if h26x_output and fps_numerator else []
         )
-        encoder = subprocess.Popen(
-            [ffmpeg, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{width}x{height}",
-             "-r", output_rate, "-i", "-", "-an", *encode_options,
-             *_encoder_color_options(info), *_bitstream_color_options(codec, info),
-             *container_options, str(temporary)],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
-        assert decoder.stdout is not None and encoder.stdin is not None
+        if encode_output:
+            popen_start = time.perf_counter()
+            encoder = subprocess.Popen(
+                [ffmpeg, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{width}x{height}",
+                 "-r", output_rate, "-i", "-", "-an", *encode_options,
+                 *_encoder_color_options(info), *_bitstream_color_options(codec, info),
+                 *container_options, str(temporary)],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            lifecycle["encoder_popen_seconds"] = time.perf_counter() - popen_start
+        else:
+            lifecycle["encoder_popen_seconds"] = 0.0
+        assert decoder.stdout is not None
+        worker_start = time.perf_counter()
         client = DlssgWorker(
             config.worker,
             config.community_runtime,
@@ -361,16 +401,25 @@ def render_dlssg(
             diagnostic_callback=on_diagnostic_line,
             diagnostic_mode=bool(diagnostics),
         )
+        lifecycle["worker_construction_seconds"] = time.perf_counter() - worker_start
+        context_start = time.perf_counter()
         with client:
+            lifecycle["worker_context_hello_seconds"] = time.perf_counter() - context_start
+            create_start = time.perf_counter()
             client.create(width, height, multiplier=multiplier, motion_mode=MOTION_MODE_NVIDIA_OPTICAL_FLOW)
+            lifecycle["worker_create_seconds"] = time.perf_counter() - create_start
             previous: bytes | None = None
             frame_id = 0
+            loop_start = time.perf_counter()
+            first_decode_seconds: float | None = None
             while True:
                 if cancel is not None and cancel.is_set():
                     raise InterruptedError("DLSS-G interpolation cancelled")
                 decode_start = time.perf_counter()
                 current = _read_frame(decoder.stdout, frame_bytes)
                 decode_seconds += time.perf_counter() - decode_start
+                if first_decode_seconds is None:
+                    first_decode_seconds = time.perf_counter() - loop_start
                 if not current:
                     break
                 input_count += 1
@@ -381,7 +430,7 @@ def render_dlssg(
                         raise RuntimeError(f"DLSS-G worker failed at input frame {frame_id}") from exc
                     frame_id += 1
                     assert result.reset_only and not result.output
-                    encode_start = time.perf_counter(); encoder.stdin.write(current)
+                    encode_start = time.perf_counter(); write_output(current)
                     encode_seconds += time.perf_counter() - encode_start
                     output_count += 1
                 else:
@@ -405,8 +454,10 @@ def render_dlssg(
                         if diagnostics:
                             _write_contact_triplet(artifacts / "scene_cuts", frame_id, previous, previous, current, width, height)
                         encode_start = time.perf_counter()
-                        for _ in range(generated_per_pair): encoder.stdin.write(previous)
-                        encoder.stdin.write(current)
+                        group_write_start = time.perf_counter()
+                        for _ in range(generated_per_pair): write_output(previous)
+                        write_output(current)
+                        write_group_latencies.append((time.perf_counter() - group_write_start) * 1000.0)
                         encode_seconds += time.perf_counter() - encode_start
                         output_count += multiplier
                         frame_id += 1
@@ -420,6 +471,11 @@ def render_dlssg(
                     except Exception as exc:
                         raise RuntimeError(f"DLSS-G worker failed at input frame {frame_id}") from exc
                     worker_seconds += time.perf_counter() - worker_started
+                    exchange = client.last_exchange_metrics
+                    for name in ("request_write_ms", "response_header_read_ms", "response_payload_read_ms"):
+                        timings[f"worker_{name}"].append(float(exchange.get(name, 0.0)))
+                    timings["worker_request_payload_bytes"].append(float(exchange.get("request_payload_bytes", 0)))
+                    timings["worker_response_payload_bytes"].append(float(exchange.get("response_payload_bytes", 0)))
                     frame_id += 1
                     if result.generated_count != generated_per_pair or len(result.outputs) != generated_per_pair or result.disable_interpolation:
                         interpolation_disabled_ids.append(frame_id - 1)
@@ -450,8 +506,10 @@ def render_dlssg(
                         group.extend(result.outputs)
                         generated_count += len(group)
                     encode_start = time.perf_counter()
-                    for generated in group: encoder.stdin.write(generated)
-                    encoder.stdin.write(current)
+                    group_write_start = time.perf_counter()
+                    for generated in group: write_output(generated)
+                    write_output(current)
+                    write_group_latencies.append((time.perf_counter() - group_write_start) * 1000.0)
                     encode_seconds += time.perf_counter() - encode_start
                     output_count += multiplier
                     for name in ("nvof_upload_ms", "nvof_execute_ms", "flow_conversion_ms", "upload_ms",
@@ -463,14 +521,26 @@ def render_dlssg(
             if input_count == 0 or previous is None:
                 raise RuntimeError("input video contains no decodable frames")
             if terminal_frame_policy == "duplicate":
-                for _ in range(generated_per_pair): encoder.stdin.write(previous)
+                terminal_write_start = time.perf_counter()
+                for _ in range(generated_per_pair): write_output(previous)
+                lifecycle["terminal_duplicate_write_seconds"] = time.perf_counter() - terminal_write_start
                 output_count += generated_per_pair
-        encoder.stdin.close(); encoder.wait(timeout=300)
-        if encoder.returncode:
+        lifecycle["main_loop_seconds"] = time.perf_counter() - loop_start
+        if encode_output:
+            close_start = time.perf_counter(); assert encoder is not None and encoder.stdin is not None
+            encoder.stdin.close(); lifecycle["encoder_stdin_close_seconds"] = time.perf_counter() - close_start
+            drain_start = time.perf_counter(); encoder.wait(timeout=300)
+            lifecycle["encoder_drain_seconds"] = time.perf_counter() - drain_start
+        else:
+            lifecycle["encoder_stdin_close_seconds"] = 0.0
+            lifecycle["encoder_drain_seconds"] = 0.0
+        if encode_output and encoder is not None and encoder.returncode:
             raise RuntimeError((encoder.stderr.read() if encoder.stderr else b"").decode(errors="replace")[-4000:])
-        if decoder.wait(timeout=60):
+        decoder_drain_start = time.perf_counter(); decoder_returncode = decoder.wait(timeout=60); lifecycle["decoder_drain_seconds"] = time.perf_counter() - decoder_drain_start
+        if decoder_returncode:
             raise RuntimeError((decoder.stderr.read() if decoder.stderr else b"").decode(errors="replace")[-4000:])
-        if preserve_audio and bool(info["audio"]):
+        remux_start = time.perf_counter()
+        if encode_output and preserve_audio and bool(info["audio"]):
             mux = subprocess.run(
                 [ffmpeg, "-y", "-v", "error", "-i", str(temporary), "-i", str(source_path), "-map", "0:v:0",
                  "-map", "1:a?", "-c:v", "copy", "-c:a", "copy", "-map_metadata", "1", str(destination_path)],
@@ -478,10 +548,16 @@ def render_dlssg(
             )
             if mux.returncode:
                 raise RuntimeError(f"audio remux failed: {mux.stderr[-4000:]}")
-        else:
+        elif encode_output:
             temporary.replace(destination_path)
-        peak_vram = vram_sampler.stop()
-        output_info = probe_video(destination_path)
+        lifecycle["audio_remux_seconds"] = time.perf_counter() - remux_start if encode_output else 0.0
+        sampler_start = time.perf_counter(); peak_vram = vram_sampler.stop(); lifecycle["vram_sampler_stop_seconds"] = time.perf_counter() - sampler_start
+        probe_start = time.perf_counter(); output_info = probe_video(destination_path) if encode_output else None; lifecycle["final_probe_seconds"] = time.perf_counter() - probe_start if encode_output else 0.0
+        if not encode_output:
+            output_info = dict(info)
+            output_info.update({"path": str(destination_path), "frames": sink_frames, "fps": output_fps,
+                                "duration": 0.0, "audio": False})
+        validation_start = time.perf_counter()
         encoded_frames = int(output_info["frames"])
         if encoded_frames and encoded_frames != output_count:
             raise RuntimeError(
@@ -498,6 +574,7 @@ def render_dlssg(
                 f"source={tuple(info[key] for key in ('color_range', 'color_space', 'color_primaries', 'color_transfer'))} "
                 f"output={tuple(output_info[key] for key in ('color_range', 'color_space', 'color_primaries', 'color_transfer'))}"
             )
+        lifecycle["output_validation_seconds"] = time.perf_counter() - validation_start
         selected = sorted(candidates, reverse=True) if diagnostics else []
         selected_files: list[str] = []
         if diagnostics:
@@ -517,7 +594,7 @@ def render_dlssg(
                 "flow_unusually_large_percent",
             )
         } if comparisons else {}
-        lifecycle = {
+        lifecycle.update({
             "worker_process_count": 1,
             "nvof_initialization_count": sum(line == "NVOF_INSTANCE_CREATED" for line in worker_lines),
             "dlssg_create_feature_count": sum(line.startswith("WORKER_CREATE_COMPLETE") for line in worker_lines),
@@ -526,7 +603,26 @@ def render_dlssg(
             "device_removal_results": sorted({
                 line.rsplit("=", 1)[-1] for line in worker_lines if "DEVICE_REMOVED_REASON=" in line
             }),
-        }
+        })
+        native_process_ms = summary.get("total_process_ms", 0.0)
+        worker_pair_ms = worker_seconds * 1000 / max(input_count - 1 - scene_cut_holds, 1)
+        lifecycle["first_decoded_frame_seconds"] = first_decode_seconds or 0.0
+        lifecycle["worker_rpc_ipc_gap_ms_per_pair"] = worker_pair_ms - native_process_ms
+        lifecycle["worker_rpc_ipc_gap_ms_per_generated_group"] = worker_pair_ms - native_process_ms
+        lifecycle["encoder_write_latency_ms"] = _latency_summary(write_latencies)
+        lifecycle["encoder_group_write_latency_ms"] = _latency_summary(write_group_latencies)
+        lifecycle["no_encode_sink_frames"] = sink_frames
+        lifecycle["no_encode_sink_bytes"] = sink_bytes
+        lifecycle["no_encode_sink_sha256"] = sink_hash.hexdigest().upper() if not encode_output else None
+        accounted_regions = (
+            "setup_before_decoder_seconds", "decoder_popen_seconds", "encoder_popen_seconds",
+            "worker_construction_seconds", "worker_context_hello_seconds", "worker_create_seconds",
+            "main_loop_seconds", "encoder_stdin_close_seconds", "encoder_drain_seconds",
+            "decoder_drain_seconds", "audio_remux_seconds", "vram_sampler_stop_seconds",
+            "final_probe_seconds", "output_validation_seconds",
+        )
+        lifecycle["accounted_wall_seconds"] = sum(float(lifecycle.get(name, 0.0)) for name in accounted_regions)
+        lifecycle["unaccounted_wall_seconds"] = max(0.0, (time.perf_counter() - started) - lifecycle["accounted_wall_seconds"])
         manifest_started = time.perf_counter()
         manifest = {
             "status": "PASS",
@@ -566,8 +662,16 @@ def render_dlssg(
             "scene_cut_ms_per_pair": scene_cut_seconds * 1000 / max(input_count - 1, 1),
             "python_diagnostics_ms_per_pair": python_diagnostics_seconds * 1000 / max(input_count - 1 - scene_cut_holds, 1),
             "worker_ms_per_pair": worker_seconds * 1000 / max(input_count - 1 - scene_cut_holds, 1),
+            "worker_rpc_ipc_gap_ms_per_pair": worker_pair_ms - native_process_ms,
+            "worker_rpc_ipc_gap_ms_per_generated_group": worker_pair_ms - native_process_ms,
             "decode_ms_per_frame": decode_seconds * 1000 / input_count,
             "encode_write_ms_per_output": encode_seconds * 1000 / output_count,
+            "encode_write_latency_ms": _latency_summary(write_latencies),
+            "encode_group_write_latency_ms": _latency_summary(write_group_latencies),
+            "no_encode_sink": not encode_output,
+            "no_encode_sink_frames": sink_frames,
+            "no_encode_sink_sha256": sink_hash.hexdigest().upper() if not encode_output else None,
+            "lifecycle_timing_seconds": lifecycle,
             "end_to_end_fps": output_count / max(time.perf_counter() - started, 1e-9),
             "total_wall_seconds": time.perf_counter() - started,
             "effective_input_fps": input_count / max(time.perf_counter() - started, 1e-9),
@@ -577,6 +681,11 @@ def render_dlssg(
         }
         manifest["manifest_finalize_ms"] = (time.perf_counter() - manifest_started) * 1000.0
         log_path.write_text("\n".join(worker_lines) + "\n", encoding="utf-8")
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        lifecycle["manifest_log_finalization_seconds"] = time.perf_counter() - manifest_started
+        lifecycle["accounted_wall_seconds"] += lifecycle["manifest_log_finalization_seconds"]
+        lifecycle["unaccounted_wall_seconds"] = max(0.0, (time.perf_counter() - started) - lifecycle["accounted_wall_seconds"])
+        manifest["lifecycle_timing_seconds"] = lifecycle
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         return manifest
     finally:

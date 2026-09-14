@@ -30,6 +30,7 @@ def main() -> int:
     parser.add_argument("--diagnostic-count", type=int, default=8)
     parser.add_argument("--quiet-worker-log", action="store_true")
     parser.add_argument("--diagnostics", action="store_true", help="Enable slow per-generated-frame validation and visual artifacts")
+    parser.add_argument("--no-encode-control", action="store_true", help="Measurement-only sink: consume/hash RGBA frames without FFmpeg encoding")
     args = parser.parse_args()
     backend = DLSSGBackend(args.worker, args.community_runtime, args.official_runtime_dir)
     result = render_dlssg(
@@ -45,6 +46,7 @@ def main() -> int:
         diagnostic_callback=None if args.quiet_worker_log else lambda line: print(line, file=sys.stderr, flush=True),
         multiplier=args.multiplier,
         diagnostics=args.diagnostics,
+        encode_output=not args.no_encode_control,
     )
     print(json.dumps(result, indent=2))
     return 0

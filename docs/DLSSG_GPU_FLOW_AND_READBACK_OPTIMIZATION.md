@@ -318,3 +318,56 @@ conversion is negligible and grouped GPU execution is not dominant in the
 clean regime. The next target is therefore Candidate B: output/readback/encode
 pipeline accounting and overlap, starting with timestamped readback and encode
 boundaries. No optimization is implemented by this milestone.
+
+## Lifecycle accounting and fixed-overhead study
+
+Measurement-only tooling now records non-overlapping lifecycle regions,
+per-frame pipe-write latency, and request/response pipe timing. The long source
+was made by stream-copy repeating the same 60-frame source ten times: 600 input
+frames, 1920x1080, 29.970 FPS, SDR BT.709, and compatible audio.
+
+| Set | Runs | Wall median/range | Input FPS median/range | Output FPS median/range | Setup median | Main loop median | Finalization median | Unaccounted median |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 60 frames | 3 | 11.99 s / 11.96–12.56 | 5.00 / 4.78–5.02 | 20.02 / 19.11–20.07 | 4.92 s | 6.95 s | 0.17 s | <0.001 s |
+| 600 frames | 3 | 95.14 s / 87.26–95.23 | 6.31 / 6.30–6.88 | 25.23 / 25.20–27.50 | 4.67 s | 90.29 s | 0.19 s | <0.01 s |
+
+The accounted regions include setup, decoder and encoder creation, worker
+construction/Hello/Create, first decode, the main loop, terminal writes, stdin
+close, encoder and decoder drain, audio remux, VRAM sampler stop, final probe,
+output validation, and manifest/log finalization. Accounted wall time matched
+total wall time within measurement noise on every run.
+
+Fitting `total_wall = fixed + per_input * N` to the short and long median totals
+estimates 3.37 s fixed overhead and 153.10 ms per input frame. That implies
+6.53 steady-state input FPS and 26.13 output FPS at 4X. Fixed overhead accounts
+for about 26.8% of the 60-frame runtime and 3.5% of the 600-frame runtime.
+
+The median worker pair wall time was 81.97 ms on the short set and 133.12 ms on
+the long set, versus native `totalProcessMs` of 38.41 and 86.79 ms. The measured
+gaps were 43.56 and 46.34 ms per generated group. A focused repeat measured
+about 5.0 ms request-pipe write, 104.2 ms response-header wait, and 5.5 ms
+response-payload read on the long run, with a 24,883,360-byte response payload
+for three 1920x1080 RGBA outputs. The gap is primarily native response
+availability/protocol wait plus payload transfer, not GPU execution alone.
+
+Encoder stdin writes were not individually backpressured at a large scale. On
+the short set, median/p90/p95/p99/max write latency was approximately
+4.01/5.70/6.15/6.52/7.44 ms; on the long set it was
+3.57/5.32/5.78/6.44/7.99 ms. Four-write group p95 was approximately 18.5 ms
+short and 18.7 ms long. Encoder drain was 0.09–0.10 s short and 0.08–0.09 s
+long; audio remux was 0.06 s short and 0.09–0.15 s long. These writes include
+pipe acceptance time only and are not equivalent to NVENC execution time.
+
+A no-encode hash sink consumed every full RGBA output without FFmpeg encoding:
+240 frames in 15.67 s for the short source and 2,400 frames in 110.42 s for the
+long source. These controls were slower than the encoded runs because the worker
+entered a slower GPU-wait regime and the sink intentionally hashes every
+payload; they are an upper-bound control, not a direct encode-cost subtraction.
+They show that remux/drain are not the missing wall time.
+
+The refined bottleneck classification is mixed / insufficient evidence between
+worker response/IPC payload handling and decode/input plus output packaging.
+The single next target is worker-output/readback/IPC timing and bounded overlap
+analysis, beginning with stage-level timestamps. A future asynchronous encoder
+queue remains deferred. No worker, NVOF, protocol, scheduling, or encoding
+behavior was changed.

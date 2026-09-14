@@ -62,11 +62,13 @@ struct Texture {
     UINT width = 0, height = 0, rowBytes = 0;
     D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
     std::vector<uint8_t> packed;
+    uint8_t *mappedUpload = nullptr;
 };
 struct Buffer { ID3D12Resource *gpu = nullptr, *upload = nullptr, *readback = nullptr;
     D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON; };
 
 static void ReleaseTexture(Texture &texture) {
+    if (texture.upload && texture.mappedUpload) texture.upload->Unmap(0, nullptr);
     RunRelease(texture.gpu); RunRelease(texture.upload); RunRelease(texture.readback);
     texture = {};
 }
@@ -123,6 +125,7 @@ static bool MakeTexture(ID3D12Device *device, Texture &texture, const char *name
     texture.readback = MakeBuffer(device, texture.allocationBytes, D3D12_HEAP_TYPE_READBACK,
         D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
     texture.packed.resize(static_cast<size_t>(rowBytes) * height);
+    if (FAILED(texture.upload->Map(0, nullptr, reinterpret_cast<void **>(&texture.mappedUpload)))) return false;
     RunLog("RESOURCE_CREATED name=%s ptr=%p format=%u width=%u height=%u rowPitch=%u initialState=0x%X",
         name, static_cast<void *>(texture.gpu), static_cast<unsigned>(format), width, height,
         texture.footprint.Footprint.RowPitch, static_cast<unsigned>(initialState));
@@ -161,11 +164,11 @@ static bool WaitFence(ID3D12CommandQueue *queue, ID3D12Fence *fence, UINT64 valu
 static bool Upload(Texture &texture, ID3D12Device *device, ID3D12CommandAllocator *allocator,
     ID3D12GraphicsCommandList *list, ID3D12CommandQueue *queue, ID3D12Fence *fence,
     HANDLE eventHandle, UINT64 &fenceValue) {
-    uint8_t *mapped = nullptr; const HRESULT mr = texture.upload->Map(0, nullptr, reinterpret_cast<void **>(&mapped));
-    if (FAILED(mr)) { RunLog("UPLOAD_MAP_FAILED name=%s hr=0x%08X", texture.name, static_cast<unsigned>(mr)); return false; }
+    uint8_t *mapped = texture.mappedUpload;
+    if (!mapped) { RunLog("UPLOAD_MAP_FAILED name=%s", texture.name); return false; }
     for (UINT row = 0; row < texture.height; ++row) std::memcpy(mapped + static_cast<size_t>(row) * texture.footprint.Footprint.RowPitch,
         texture.packed.data() + static_cast<size_t>(row) * texture.rowBytes, texture.rowBytes);
-    texture.upload->Unmap(0, nullptr); if (!ResetList(allocator, list, texture.name)) return false;
+    if (!ResetList(allocator, list, texture.name)) return false;
     D3D12_TEXTURE_COPY_LOCATION src{}, dst{}; src.pResource = texture.upload;
     src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT; src.PlacedFootprint = texture.footprint;
     dst.pResource = texture.gpu; dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
@@ -182,11 +185,10 @@ static bool Upload(Texture &texture, ID3D12Device *device, ID3D12CommandAllocato
 }
 
 static bool MapTextureUpload(Texture &texture) {
-    uint8_t *mapped = nullptr; const HRESULT mr = texture.upload->Map(0, nullptr, reinterpret_cast<void **>(&mapped));
-    if (FAILED(mr)) { RunLog("UPLOAD_MAP_FAILED name=%s hr=0x%08X", texture.name, static_cast<unsigned>(mr)); return false; }
+    uint8_t *mapped = texture.mappedUpload;
+    if (!mapped) { RunLog("UPLOAD_MAP_FAILED name=%s", texture.name); return false; }
     for (UINT row = 0; row < texture.height; ++row) std::memcpy(mapped + static_cast<size_t>(row) * texture.footprint.Footprint.RowPitch,
         texture.packed.data() + static_cast<size_t>(row) * texture.rowBytes, texture.rowBytes);
-    texture.upload->Unmap(0, nullptr);
     return true;
 }
 
@@ -767,9 +769,14 @@ public:
         if (motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow)) {
             if (effectiveReset) {
                 internalMotion.assign(motion_.packed.size(), 0);
-            } else if (previousColor_.size() != color_.packed.size() ||
-                !nvof_.ComputeBackward(previousColor_.data(), color, !nvofHistoryValid_, internalMotion,
-                    nullptr, nullptr, &nvofTimings)) {
+                if (nvof_.ForwardOnly() && !nvof_.SeedForward(color)) {
+                    RunLog("WORKER_NVOF_SEED_FAILED frame=%llu", request.frameId); return Status::NativeFailure;
+                }
+            } else if (nvof_.ForwardOnly()
+                ? !nvof_.ComputeForward(color, !nvofHistoryValid_, internalMotion, nullptr, nullptr, &nvofTimings)
+                : previousColor_.size() != color_.packed.size() ||
+                    !nvof_.ComputeBackward(previousColor_.data(), color, !nvofHistoryValid_, internalMotion,
+                        nullptr, nullptr, &nvofTimings)) {
                 RunLog("WORKER_NVOF_FAILED frame=%llu", request.frameId); return Status::NativeFailure;
             } else {
                 nvofHistoryValid_ = true;
@@ -825,7 +832,7 @@ public:
             }
             history_.Complete(request.frameId);
             if (motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow)) {
-                previousColor_.assign(color, color + color_.packed.size());
+                if (!nvof_.ForwardOnly()) previousColor_.assign(color, color + color_.packed.size());
                 nvofHistoryValid_ = false;
             }
             response.totalProcessMs = Milliseconds(totalStart, Clock::now());
@@ -870,7 +877,7 @@ public:
         response.generatedCount = generatedPerGroup_; response.outputBytes = static_cast<uint32_t>(generated.size());
         history_.Complete(request.frameId);
         if (motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow))
-            previousColor_.assign(color, color + color_.packed.size());
+            if (!nvof_.ForwardOnly()) previousColor_.assign(color, color + color_.packed.size());
         generatedCount_ += generatedPerGroup_; RunLog("WORKER_OUTPUT frame=%llu outputs=%u sha256=%s generatedCount=%u totalMs=%.3f",
             request.frameId, generatedPerGroup_, Sha256(generated).c_str(), generatedCount_, response.totalProcessMs);
         return Status::Ok;

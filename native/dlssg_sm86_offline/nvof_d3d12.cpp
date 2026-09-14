@@ -168,6 +168,9 @@ struct NvofD3D12::Impl {
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT outputFootprint{};
     uint64_t inputBytes = 0;
     uint64_t outputBytes = 0;
+    bool historyValid = false;
+    uint8_t *previousUploadMapped = nullptr;
+    uint8_t *currentUploadMapped = nullptr;
     NvOFGPUBufferHandle previousHandle = nullptr;
     NvOFGPUBufferHandle currentHandle = nullptr;
     NvOFGPUBufferHandle forwardHandle = nullptr;
@@ -196,8 +199,8 @@ struct NvofD3D12::Impl {
     }
 
     bool MapUpload(ID3D12Resource *upload, const uint8_t *rgba) {
-        uint8_t *mapped = nullptr;
-        if (FAILED(upload->Map(0, nullptr, reinterpret_cast<void **>(&mapped)))) return false;
+        uint8_t *mapped = upload == previousUpload ? previousUploadMapped : currentUploadMapped;
+        if (!mapped) return false;
         for (uint32_t y = 0; y < height; ++y) {
             uint8_t *dst = mapped + static_cast<size_t>(y) * inputFootprint.Footprint.RowPitch;
             const uint8_t *src = rgba + static_cast<size_t>(y) * width * 4;
@@ -209,6 +212,14 @@ struct NvofD3D12::Impl {
             }
         }
         upload->Unmap(0, nullptr);
+        return true;
+    }
+
+    bool SeedForward(const uint8_t *rgba) {
+        if (!rgba || !MapUpload(currentUpload, rgba) || !ResetList()) return false;
+        RecordUpload(currentUpload, previous);
+        if (!SubmitAndWait()) return false;
+        historyValid = true;
         return true;
     }
 
@@ -264,6 +275,7 @@ bool NvofD3D12::Initialize(ID3D12Device *device, ID3D12CommandQueue *queue, uint
     auto &state = *impl_;
     state.width = width;
     state.height = height;
+    state.historyValid = false;
     state.device = device;
     state.queue = queue;
     state.device->AddRef();
@@ -331,10 +343,73 @@ bool NvofD3D12::Initialize(ID3D12Device *device, ID3D12CommandQueue *queue, uint
     state.currentUpload = CreateBuffer(device, state.inputBytes, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ);
     state.backwardReadback = CreateBuffer(device, state.outputBytes, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_STATE_COPY_DEST);
     if (!state.previousUpload || !state.currentUpload || !state.backwardReadback) return false;
+    if (FAILED(state.previousUpload->Map(0, nullptr, reinterpret_cast<void **>(&state.previousUploadMapped))) ||
+        FAILED(state.currentUpload->Map(0, nullptr, reinterpret_cast<void **>(&state.currentUploadMapped)))) return false;
     if (!state.Register(state.previous, state.previousHandle) || !state.Register(state.current, state.currentHandle) ||
         !state.Register(state.forward, state.forwardHandle) || !state.Register(state.backward, state.backwardHandle)) return false;
     Log("NVOF_RESOURCES_REGISTERED width=%u height=%u inputFormat=%u outputFormat=%u", width, height,
         static_cast<unsigned>(DXGI_FORMAT_B8G8R8A8_UNORM), static_cast<unsigned>(DXGI_FORMAT_R16G16_SINT));
+    return true;
+}
+
+bool NvofD3D12::SeedForward(const uint8_t *currentRgba) {
+    if (!impl_->forwardOnly || !currentRgba) return false;
+    return impl_->SeedForward(currentRgba);
+}
+
+bool NvofD3D12::ComputeForward(const uint8_t *currentRgba, bool resetTemporalHints,
+    std::vector<uint8_t> &motionR16G16Float, std::vector<NvofFlowVector> *flowPixels,
+    NvofFlowStatistics *statistics, NvofTimings *timings) {
+    if (!impl_->forwardOnly || !currentRgba || !impl_->historyValid) return false;
+    auto &state = *impl_;
+    NvofTimings measured{};
+    const auto uploadStart = Clock::now();
+    if (!state.MapUpload(state.currentUpload, currentRgba) || !state.ResetList()) return false;
+    state.RecordUpload(state.currentUpload, state.current);
+    if (FAILED(state.list->Close())) return false;
+    ID3D12CommandList *commands[] = {state.list};
+    state.queue->ExecuteCommandLists(1, commands);
+    const uint64_t uploadFence = ++state.queueFenceValue;
+    // The NVOF input fence is the producer/consumer contract.  The CPU must
+    // not wait here; NVOF waits on this point before reading currentFrame.
+    if (FAILED(state.queue->Signal(state.queueFence, uploadFence))) return false;
+    const auto uploadEnd = Clock::now();
+    NV_OF_FENCE_POINT inputFence{state.queueFence, uploadFence};
+    NV_OF_FENCE_POINT outputFence{state.ofFence, ++state.ofFenceValue};
+    NV_OF_EXECUTE_INPUT_PARAMS_D3D12 input{};
+    input.inputFrame = state.currentHandle;
+    input.referenceFrame = state.previousHandle;
+    input.disableTemporalHints = resetTemporalHints ? NV_OF_TRUE : NV_OF_FALSE;
+    input.numFencePoints = 1; input.fencePoint = &inputFence;
+    NV_OF_EXECUTE_OUTPUT_PARAMS_D3D12 output{};
+    output.outputBuffer = state.forwardHandle; output.fencePoint = &outputFence;
+    const auto executeStart = Clock::now();
+    if (state.api.nvOFExecuteD3D12(state.handle, &input, &output) != NV_OF_SUCCESS ||
+        !WaitFence(state.ofFence, state.ofFenceValue, state.eventHandle)) return false;
+    const auto executeEnd = Clock::now();
+    std::vector<NV_OF_FLOW_VECTOR> raw;
+    const auto readbackStart = Clock::now();
+    if (!state.ReadFlow(state.forward, raw)) return false;
+    const auto readbackEnd = Clock::now();
+    const auto conversionStart = Clock::now();
+    motionR16G16Float.resize(raw.size() * 4);
+    if (flowPixels) flowPixels->resize(raw.size());
+    for (size_t i = 0; i < raw.size(); ++i) {
+        const float x = static_cast<float>(raw[i].flowx) / 32.0f;
+        const float y = static_cast<float>(raw[i].flowy) / 32.0f;
+        const uint16_t hx = FloatToHalf(x), hy = FloatToHalf(y);
+        std::memcpy(motionR16G16Float.data() + i * 4, &hx, 2);
+        std::memcpy(motionR16G16Float.data() + i * 4 + 2, &hy, 2);
+        if (flowPixels) (*flowPixels)[i] = {x, y};
+    }
+    const auto conversionEnd = Clock::now();
+    measured.uploadMs = Milliseconds(uploadStart, uploadEnd);
+    measured.executeMs = Milliseconds(executeStart, executeEnd);
+    measured.readbackMs = Milliseconds(readbackStart, readbackEnd);
+    measured.conversionMs = Milliseconds(conversionStart, conversionEnd);
+    if (timings) *timings = measured;
+    std::swap(state.previous, state.current);
+    std::swap(state.previousHandle, state.currentHandle);
     return true;
 }
 
@@ -459,6 +534,10 @@ bool NvofD3D12::ComputeBackward(const uint8_t *previousRgba, const uint8_t *curr
 void NvofD3D12::Shutdown() {
     if (!impl_) return;
     auto &state = *impl_;
+    state.historyValid = false;
+    if (state.previousUpload && state.previousUploadMapped) state.previousUpload->Unmap(0, nullptr);
+    if (state.currentUpload && state.currentUploadMapped) state.currentUpload->Unmap(0, nullptr);
+    state.previousUploadMapped = nullptr; state.currentUploadMapped = nullptr;
     if (!state.handle && !state.module) return;
     Log("NVOF_SHUTDOWN_STARTED handle=%p", static_cast<void *>(state.handle));
     const std::array<NvOFGPUBufferHandle *, 4> handles = {
@@ -511,6 +590,7 @@ void NvofD3D12::Shutdown() {
 
 uint32_t NvofD3D12::Width() const { return impl_->width; }
 uint32_t NvofD3D12::Height() const { return impl_->height; }
+bool NvofD3D12::ForwardOnly() const { return impl_->forwardOnly; }
 
 int RunNvofProbe() {
     Log("PROCESS_ENTRY");

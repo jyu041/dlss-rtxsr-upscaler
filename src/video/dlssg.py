@@ -85,7 +85,13 @@ def output_frame_count(input_frames: int, duplicate_terminal_frame: bool = True,
 def _mad(a: bytes, b: bytes) -> float:
     if len(a) != len(b) or not a:
         raise ValueError("MAD inputs must be equal non-empty frames")
-    return sum(abs(x - y) for x, y in zip(a, b)) / len(a)
+    try:
+        import numpy as np
+        left = np.frombuffer(a, dtype=np.uint8).astype(np.int16)
+        right = np.frombuffer(b, dtype=np.uint8).astype(np.int16)
+        return float(np.abs(left - right).mean())
+    except ImportError:
+        return sum(abs(x - y) for x, y in zip(a, b)) / len(a)
 
 
 def scene_cut_metrics(previous: bytes, current: bytes, width: int, height: int) -> dict[str, float | bool]:
@@ -262,6 +268,7 @@ def render_dlssg(
     diagnostic_count: int = 8,
     diagnostic_callback: Callable[[str], None] | None = None,
     multiplier: int = 2,
+    diagnostics: bool | None = None,
 ) -> dict[str, object]:
     """Generate ordered intermediate frames and preserve duration at multiplier CFR.
 
@@ -273,6 +280,8 @@ def render_dlssg(
         raise ValueError("terminal_frame_policy must be duplicate or short")
     if multiplier not in (2, 3, 4):
         raise ValueError("multiplier must be 2, 3, or 4")
+    if diagnostics is None:
+        diagnostics = artifact_dir is not None
     source_path = safe_input(str(source))
     destination_path = Path(destination).expanduser().resolve()
     if destination_path == source_path:
@@ -308,13 +317,15 @@ def render_dlssg(
     interpolation_disabled_ids: list[int] = []
     previous_generated_digest: str | None = None
     decode_seconds = encode_seconds = 0.0
+    scene_cut_seconds = python_diagnostics_seconds = worker_seconds = 0.0
+    manifest_started = time.perf_counter()
     started = time.perf_counter()
     vram_before = _vram_mib()
     vram_sampler = _VramSampler()
     vram_sampler.start()
     peak_vram: int | None = None
 
-    def diagnostics(line: str) -> None:
+    def on_diagnostic_line(line: str) -> None:
         worker_lines.append(line)
         if diagnostic_callback:
             diagnostic_callback(line)
@@ -347,8 +358,8 @@ def render_dlssg(
             config.worker,
             config.community_runtime,
             config.official_runtime_dir,
-            diagnostic_callback=diagnostics,
-            diagnostic_mode=artifact_dir is not None,
+            diagnostic_callback=on_diagnostic_line,
+            diagnostic_mode=bool(diagnostics),
         )
         with client:
             client.create(width, height, multiplier=multiplier, motion_mode=MOTION_MODE_NVIDIA_OPTICAL_FLOW)
@@ -374,9 +385,11 @@ def render_dlssg(
                     encode_seconds += time.perf_counter() - encode_start
                     output_count += 1
                 else:
+                    scene_cut_started = time.perf_counter()
                     cut = scene_cut_metrics(previous, current, width, height) if scene_cut_detection else {
-                        "rgb_mad": _mad(previous, current), "histogram_distance": 0.0, "is_cut": False
+                        "rgb_mad": 0.0, "histogram_distance": 0.0, "is_cut": False
                     }
+                    scene_cut_seconds += time.perf_counter() - scene_cut_started
                     if bool(cut["is_cut"]):
                         client.reset_history()
                         try:
@@ -389,7 +402,8 @@ def render_dlssg(
                         scene_cuts.append(scene_cut)
                         scene_cut_holds += generated_per_pair
                         previous_generated_digest = None
-                        _write_contact_triplet(artifacts / "scene_cuts", frame_id, previous, previous, current, width, height)
+                        if diagnostics:
+                            _write_contact_triplet(artifacts / "scene_cuts", frame_id, previous, previous, current, width, height)
                         encode_start = time.perf_counter()
                         for _ in range(generated_per_pair): encoder.stdin.write(previous)
                         encoder.stdin.write(current)
@@ -400,34 +414,41 @@ def render_dlssg(
                         report_progress(progress, frame_index=input_count, total_frames=int(info["frames"]) or None,
                                         phase=f"DLSS-G {multiplier}X", message=f"Scene cut reset at frame {input_count}")
                         continue
+                    worker_started = time.perf_counter()
                     try:
                         result = client.process(frame_id, current)
                     except Exception as exc:
                         raise RuntimeError(f"DLSS-G worker failed at input frame {frame_id}") from exc
+                    worker_seconds += time.perf_counter() - worker_started
                     frame_id += 1
                     if result.generated_count != generated_per_pair or len(result.outputs) != generated_per_pair or result.disable_interpolation:
                         interpolation_disabled_ids.append(frame_id - 1)
                         raise RuntimeError(f"DLSS-G returned incomplete generated group for input frame {frame_id - 1}")
-                    real_pair_mad = _mad(previous, current)
                     group: list[bytes] = []
-                    for generated_index, generated in enumerate(result.outputs, start=1):
-                        digest = hashlib.sha256(generated).hexdigest().upper()
-                        stale_suspect = previous_generated_digest == digest and real_pair_mad > 1.0
-                        comparison = {"pair": frame_id - 1, "generated_index": generated_index, "sha256": digest,
-                            "identical_previous": generated == previous, "identical_current": generated == current,
-                            "identical_previous_generated": previous_generated_digest == digest, "stale_suspect": stale_suspect,
-                            "mad_previous": _mad(generated, previous), "mad_current": _mad(generated, current), "mad_real_pair": real_pair_mad,
-                            "flow_mean_x": result.flow_mean_x, "flow_mean_y": result.flow_mean_y, "flow_median_x": result.flow_median_x,
-                            "flow_median_y": result.flow_median_y, "flow_p95_magnitude": result.flow_p95_magnitude,
-                            "flow_maximum_magnitude": result.flow_maximum_magnitude, "flow_standard_deviation_magnitude": result.flow_standard_deviation_magnitude,
-                            "flow_near_zero_percent": result.flow_near_zero_percent, "flow_unusually_large_percent": result.flow_unusually_large_percent}
-                        hashes.append(digest); comparisons.append(comparison); group.append(generated); generated_count += 1
-                        previous_generated_digest = digest
-                    score = (result.flow_p95_magnitude + result.flow_standard_deviation_magnitude +
-                             real_pair_mad / 8.0)
-                    heapq.heappush(candidates, (score, frame_id - 1, previous, group[0], current, comparisons[-1]))
-                    if len(candidates) > max(1, diagnostic_count):
-                        heapq.heappop(candidates)
+                    if diagnostics:
+                        python_diagnostics_started = time.perf_counter()
+                        real_pair_mad = _mad(previous, current)
+                        for generated_index, generated in enumerate(result.outputs, start=1):
+                            digest = hashlib.sha256(generated).hexdigest().upper()
+                            stale_suspect = previous_generated_digest == digest and real_pair_mad > 1.0
+                            comparison = {"pair": frame_id - 1, "generated_index": generated_index, "sha256": digest,
+                                "identical_previous": generated == previous, "identical_current": generated == current,
+                                "identical_previous_generated": previous_generated_digest == digest, "stale_suspect": stale_suspect,
+                                "mad_previous": _mad(generated, previous), "mad_current": _mad(generated, current), "mad_real_pair": real_pair_mad,
+                                "flow_mean_x": result.flow_mean_x, "flow_mean_y": result.flow_mean_y, "flow_median_x": result.flow_median_x,
+                                "flow_median_y": result.flow_median_y, "flow_p95_magnitude": result.flow_p95_magnitude,
+                                "flow_maximum_magnitude": result.flow_maximum_magnitude, "flow_standard_deviation_magnitude": result.flow_standard_deviation_magnitude,
+                                "flow_near_zero_percent": result.flow_near_zero_percent, "flow_unusually_large_percent": result.flow_unusually_large_percent}
+                            hashes.append(digest); comparisons.append(comparison); group.append(generated); generated_count += 1
+                            previous_generated_digest = digest
+                        score = (result.flow_p95_magnitude + result.flow_standard_deviation_magnitude + real_pair_mad / 8.0)
+                        heapq.heappush(candidates, (score, frame_id - 1, previous, group[0], current, comparisons[-1]))
+                        if len(candidates) > max(1, diagnostic_count):
+                            heapq.heappop(candidates)
+                        python_diagnostics_seconds += time.perf_counter() - python_diagnostics_started
+                    else:
+                        group.extend(result.outputs)
+                        generated_count += len(group)
                     encode_start = time.perf_counter()
                     for generated in group: encoder.stdin.write(generated)
                     encoder.stdin.write(current)
@@ -477,13 +498,14 @@ def render_dlssg(
                 f"source={tuple(info[key] for key in ('color_range', 'color_space', 'color_primaries', 'color_transfer'))} "
                 f"output={tuple(output_info[key] for key in ('color_range', 'color_space', 'color_primaries', 'color_transfer'))}"
             )
-        selected = sorted(candidates, reverse=True)
+        selected = sorted(candidates, reverse=True) if diagnostics else []
         selected_files: list[str] = []
-        for _score, pair, previous_bytes, generated_bytes, current_bytes, _record in selected:
-            selected_files.extend(_write_contact_triplet(
-                artifacts, pair, previous_bytes, generated_bytes, current_bytes, width, height
-            ))
-        contact_sheet = _write_contact_sheet(artifacts, selected, width, height)
+        if diagnostics:
+            for _score, pair, previous_bytes, generated_bytes, current_bytes, _record in selected:
+                selected_files.extend(_write_contact_triplet(
+                    artifacts, pair, previous_bytes, generated_bytes, current_bytes, width, height
+                ))
+        contact_sheet = _write_contact_sheet(artifacts, selected, width, height) if diagnostics else None
         duration_policy = f"duplicate final real frame {generated_per_pair} times for exact {multiplier}X CFR duration" if terminal_frame_policy == "duplicate" else "short tail"
         summary = {name: sum(values) / len(values) for name, values in timings.items() if values}
         flow_summary = {
@@ -505,8 +527,10 @@ def render_dlssg(
                 line.rsplit("=", 1)[-1] for line in worker_lines if "DEVICE_REMOVED_REASON=" in line
             }),
         }
+        manifest_started = time.perf_counter()
         manifest = {
             "status": "PASS",
+            "diagnostics_enabled": bool(diagnostics),
             "input": str(source_path),
             "output": str(destination_path),
             "width": width,
@@ -528,18 +552,20 @@ def render_dlssg(
             "color_metadata_preserved": color_metadata_preserved,
             "scene_cuts": scene_cuts,
             "interpolation_disabled_frame_ids": interpolation_disabled_ids,
-            "generated": comparisons,
-            "generated_unique_hashes": len(set(hashes)),
-            "generated_endpoint_duplicates": sum(
-                bool(item["identical_previous"] or item["identical_current"]) for item in comparisons
-            ),
-            "stale_output_suspects": sum(bool(item["stale_suspect"]) for item in comparisons),
-            "flow_summary_mean": flow_summary,
-            "selected_transition_pairs": [item[1] for item in selected],
-            "selected_transition_files": selected_files,
+            "generated": comparisons if diagnostics else [],
+            "generated_unique_hashes": len(set(hashes)) if diagnostics else None,
+            "generated_endpoint_duplicates": sum(bool(item["identical_previous"] or item["identical_current"]) for item in comparisons) if diagnostics else None,
+            "stale_output_suspects": sum(bool(item["stale_suspect"]) for item in comparisons) if diagnostics else None,
+            "flow_summary_mean": flow_summary if diagnostics else {},
+            "selected_transition_pairs": [item[1] for item in selected] if diagnostics else [],
+            "selected_transition_files": selected_files if diagnostics else [],
             "contact_sheet": contact_sheet,
             "lifecycle": lifecycle,
             "timings_mean_ms": summary,
+            "decode_read_ms_per_frame": decode_seconds * 1000 / input_count,
+            "scene_cut_ms_per_pair": scene_cut_seconds * 1000 / max(input_count - 1, 1),
+            "python_diagnostics_ms_per_pair": python_diagnostics_seconds * 1000 / max(input_count - 1 - scene_cut_holds, 1),
+            "worker_ms_per_pair": worker_seconds * 1000 / max(input_count - 1 - scene_cut_holds, 1),
             "decode_ms_per_frame": decode_seconds * 1000 / input_count,
             "encode_write_ms_per_output": encode_seconds * 1000 / output_count,
             "end_to_end_fps": output_count / max(time.perf_counter() - started, 1e-9),
@@ -549,6 +575,7 @@ def render_dlssg(
             "vram_peak_mib": peak_vram,
             "worker_diagnostics": str(log_path),
         }
+        manifest["manifest_finalize_ms"] = (time.perf_counter() - manifest_started) * 1000.0
         log_path.write_text("\n".join(worker_lines) + "\n", encoding="utf-8")
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         return manifest

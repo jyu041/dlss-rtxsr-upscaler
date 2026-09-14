@@ -154,6 +154,7 @@ struct NvofD3D12::Impl {
     HANDLE eventHandle = nullptr;
     uint64_t queueFenceValue = 0;
     uint64_t ofFenceValue = 0;
+    bool forwardOnly = false;
     uint32_t width = 0;
     uint32_t height = 0;
     ID3D12Resource *previous = nullptr;
@@ -229,17 +230,17 @@ struct NvofD3D12::Impl {
         return SubmitAndWait();
     }
 
-    bool ReadBackward(std::vector<NV_OF_FLOW_VECTOR> &raw) {
+    bool ReadFlow(ID3D12Resource *flow, std::vector<NV_OF_FLOW_VECTOR> &raw) {
         if (!ResetList()) return false;
-        Transition(list, backward, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_SOURCE);
+        Transition(list, flow, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_SOURCE);
         D3D12_TEXTURE_COPY_LOCATION source{}, destination{};
-        source.pResource = backward;
+        source.pResource = flow;
         source.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
         destination.pResource = backwardReadback;
         destination.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
         destination.PlacedFootprint = outputFootprint;
         list->CopyTextureRegion(&destination, 0, 0, 0, &source, nullptr);
-        Transition(list, backward, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_COMMON);
+        Transition(list, flow, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_COMMON);
         if (!SubmitAndWait()) return false;
         uint8_t *mapped = nullptr;
         if (FAILED(backwardReadback->Map(0, nullptr, reinterpret_cast<void **>(&mapped)))) return false;
@@ -300,10 +301,13 @@ bool NvofD3D12::Initialize(ID3D12Device *device, ID3D12CommandQueue *queue, uint
     // HIGH is the SDK-supported performance tier; it does not alter the
     // flow direction, format, or temporal-hint contract.
     init.perfLevel = NV_OF_PERF_LEVEL_FAST;
-    init.predDirection = NV_OF_PRED_DIRECTION_BOTH;
+    wchar_t direction[32]{};
+    state.forwardOnly = GetEnvironmentVariableW(L"DLSSG_NVOF_DIRECTION", direction, static_cast<DWORD>(std::size(direction))) != 0 &&
+        _wcsicmp(direction, L"forward") == 0;
+    init.predDirection = state.forwardOnly ? NV_OF_PRED_DIRECTION_FORWARD : NV_OF_PRED_DIRECTION_BOTH;
     init.inputBufferFormat = NV_OF_BUFFER_FORMAT_ABGR8;
     if (state.api.nvOFInit(state.handle, &init) != NV_OF_SUCCESS) return false;
-    Log("NVOF_PRED_BOTH_SUPPORTED=1");
+    Log("NVOF_DIRECTION_MODE=%s", state.forwardOnly ? "FORWARD" : "BOTH");
 
     D3D12_COMMAND_QUEUE_DESC queueDesc{};
     if (FAILED(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&state.allocator))) ||
@@ -350,14 +354,14 @@ bool NvofD3D12::ComputeBackward(const uint8_t *previousRgba, const uint8_t *curr
     NV_OF_FENCE_POINT inputFence{state.queueFence, state.queueFenceValue};
     NV_OF_FENCE_POINT outputFence{state.ofFence, ++state.ofFenceValue};
     NV_OF_EXECUTE_INPUT_PARAMS_D3D12 input{};
-    input.inputFrame = state.previousHandle;
-    input.referenceFrame = state.currentHandle;
+    input.inputFrame = state.forwardOnly ? state.currentHandle : state.previousHandle;
+    input.referenceFrame = state.forwardOnly ? state.previousHandle : state.currentHandle;
     input.disableTemporalHints = resetTemporalHints ? NV_OF_TRUE : NV_OF_FALSE;
     input.numFencePoints = 1;
     input.fencePoint = &inputFence;
     NV_OF_EXECUTE_OUTPUT_PARAMS_D3D12 output{};
     output.outputBuffer = state.forwardHandle;
-    output.bwdOutputBuffer = state.backwardHandle;
+    output.bwdOutputBuffer = state.forwardOnly ? nullptr : state.backwardHandle;
     output.fencePoint = &outputFence;
     const auto executeStart = Clock::now();
     const NV_OF_STATUS executeStatus = state.api.nvOFExecuteD3D12(state.handle, &input, &output);
@@ -368,7 +372,7 @@ bool NvofD3D12::ComputeBackward(const uint8_t *previousRgba, const uint8_t *curr
     const auto executeEnd = Clock::now();
     std::vector<NV_OF_FLOW_VECTOR> raw;
     const auto readbackStart = Clock::now();
-    if (!state.ReadBackward(raw)) return false;
+    if (!state.ReadFlow(state.forwardOnly ? state.forward : state.backward, raw)) return false;
     const auto readbackEnd = Clock::now();
     const auto conversionStart = Clock::now();
     motionR16G16Float.resize(raw.size() * 4);
@@ -446,7 +450,8 @@ bool NvofD3D12::ComputeBackward(const uint8_t *previousRgba, const uint8_t *curr
     measured.readbackMs = Milliseconds(readbackStart, readbackEnd);
     measured.conversionMs = Milliseconds(conversionStart, conversionEnd);
     if (timings) *timings = measured;
-    Log("NVOF_EXECUTE_COMPLETE direction=BACKWARD_CURRENT_TO_PREVIOUS uploadMs=%.3f executeMs=%.3f readbackMs=%.3f conversionMs=%.3f",
+    Log("NVOF_EXECUTE_COMPLETE direction=%s uploadMs=%.3f executeMs=%.3f readbackMs=%.3f conversionMs=%.3f",
+        state.forwardOnly ? "FORWARD_CURRENT_TO_PREVIOUS" : "BACKWARD_CURRENT_TO_PREVIOUS",
         measured.uploadMs, measured.executeMs, measured.readbackMs, measured.conversionMs);
     return true;
 }

@@ -248,6 +248,10 @@ class DlssgWorker:
             environment["DLSSG_WORKER_DIAGNOSTIC"] = "1"
         else:
             environment.pop("DLSSG_WORKER_DIAGNOSTIC", None)
+        # Forward-only NVOF produces the same current-to-previous field as
+        # BOTH on the validated Ampere path, while avoiding the unused reverse
+        # output.  Keep BOTH available for explicit diagnostic/fallback runs.
+        environment.setdefault("DLSSG_NVOF_DIRECTION", "both" if self.diagnostic_mode else "forward")
         self._process = subprocess.Popen(
             command,
             stdin=subprocess.PIPE,

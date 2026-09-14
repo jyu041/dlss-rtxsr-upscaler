@@ -1,6 +1,6 @@
 # DLSS-G GPU Flow and Readback Optimization
 
-Status: bounded GPU-flow and deferred-readback validation complete, 2026-09-14.
+Status: bounded GPU-flow conversion and one-wait-per-MFG-group validation complete, 2026-09-14.
 
 ## Starting state
 
@@ -110,6 +110,44 @@ timer still brackets the now-empty post-Evaluate section, while the actual
 blocking wait occurs inside `Readback()`. The future fix is to measure the
 Readback fence wait directly and aggregate that duration; end-to-end
 `totalProcessMs` remains the usable benchmark metric here.
+
+## Gate closure: conversion and grouped MFG synchronization
+
+An isolated conversion-only D3D12 harness exercised the actual production
+`flow_convert.hlsl` bytecode contract without invoking NVOF or DLSS-G. At 256x256
+it covered 65,536 pixels and 131,072 components, enumerating every int16 input
+value in both channels. CPU `FloatToHalf(static_cast<float>(raw) / 32.0f)` and
+GPU output matched exactly: 131,072/131,072 FP16 components, 100%, zero
+mismatches, zero maximum/mean decoded-float error, and zero FP16 ULP difference.
+The required edge-value samples, including -32768, -32767, -1024, -1, 0, 1,
+1024, 32766, and 32767, were included and matched. The harness was removed
+after the evidence run and is not part of the production path.
+
+The grouped scheduler uses one primary direct command list per MFG group. Each
+Evaluate is followed immediately by an ordered copy of the shared output and
+disable buffer into one of three durable per-index readback slots. The list is
+submitted once, one group fence is signaled and waited on, then slots are mapped
+in generated-index order. This proves the shared output texture is safe under
+same-queue ordering; no output texture ring or cross-group pipeline was added.
+The mutable NGX parameter object is set immediately before each synchronous
+Evaluate call and the call records into the same command list; no retained
+parameter references were observed in the runtime evidence.
+
+Fresh normal 256x256 captures reported one `blockingCpuWaits=1` for every group:
+
+| Mode | Evaluate calls/group | command submissions/group | output/disable copies/group | slots used/group | group waits/group |
+|---|---:|---:|---:|---:|---:|
+| 2X | 1 | 1 | 1 / 1 | 1 | 1 |
+| 3X | 2 | 1 | 2 / 2 | 2 | 1 |
+| 4X | 3 | 1 | 3 / 3 | 3 | 1 |
+
+The aggregate eight-group captures were 8/16/24 Evaluate calls and output
+copies for 2X/3X/4X respectively, with 8/16/24 group waits. Reset groups
+evaluated every required index and also used one final group wait.
+
+Grouped 1080p medians are 102.17/121.81/146.23 ms for 2X/3X/4X, using the
+same 20-frame, three-warmup production benchmark methodology as the earlier
+measurements. `gpuWaitMs` now measures the final group fence wait only.
 
 ## Evidence boundaries
 

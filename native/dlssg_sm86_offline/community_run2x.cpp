@@ -66,6 +66,7 @@ struct Texture {
 };
 struct Buffer { ID3D12Resource *gpu = nullptr, *upload = nullptr, *readback = nullptr;
     D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON; };
+struct ReadbackSlot { ID3D12Resource *output = nullptr; ID3D12Resource *disable = nullptr; };
 
 static void ReleaseTexture(Texture &texture) {
     if (texture.upload && texture.mappedUpload) texture.upload->Unmap(0, nullptr);
@@ -76,6 +77,7 @@ static void ReleaseBuffer(Buffer &buffer) {
     RunRelease(buffer.gpu); RunRelease(buffer.upload); RunRelease(buffer.readback);
     buffer = {};
 }
+static void ReleaseReadbackSlot(ReadbackSlot &slot) { RunRelease(slot.output); RunRelease(slot.disable); slot = {}; }
 
 static std::string Sha256(const std::vector<uint8_t> &bytes) {
     BCRYPT_ALG_HANDLE algorithm = nullptr; BCRYPT_HASH_HANDLE hash = nullptr;
@@ -231,6 +233,34 @@ static uint16_t FloatToHalf(float value) {
     if (adjusted >= 31) return static_cast<uint16_t>(sign | 0x7c00u);
     if (adjusted <= 0) { if (adjusted < -10) return static_cast<uint16_t>(sign); mantissa |= 0x800000u; return static_cast<uint16_t>(sign | (mantissa >> (14 - adjusted))); }
     return static_cast<uint16_t>(sign | (static_cast<uint32_t>(adjusted) << 10) | (mantissa >> 13));
+}
+static bool MakeReadbackSlot(ID3D12Device *device, const Texture &output, ReadbackSlot &slot) {
+    slot.output = MakeBuffer(device, output.allocationBytes, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+    slot.disable = MakeBuffer(device, 4, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+    return slot.output && slot.disable;
+}
+static void RecordReadbackSlot(Texture &output, Buffer &disable, ReadbackSlot &slot, ID3D12GraphicsCommandList *list) {
+    Transition(list, output.gpu, output.state, D3D12_RESOURCE_STATE_COPY_SOURCE); output.state = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    Transition(list, disable.gpu, disable.state, D3D12_RESOURCE_STATE_COPY_SOURCE); disable.state = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    D3D12_TEXTURE_COPY_LOCATION source{}, destination{}; source.pResource = output.gpu; source.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    destination.pResource = slot.output; destination.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT; destination.PlacedFootprint = output.footprint;
+    list->CopyTextureRegion(&destination, 0, 0, 0, &source, nullptr); list->CopyBufferRegion(slot.disable, 0, disable.gpu, 0, 4);
+    Transition(list, output.gpu, output.state, D3D12_RESOURCE_STATE_UNORDERED_ACCESS); output.state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    Transition(list, disable.gpu, disable.state, D3D12_RESOURCE_STATE_UNORDERED_ACCESS); disable.state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+}
+static bool MapReadbackSlot(const Texture &output, const ReadbackSlot &slot, std::vector<uint8_t> &packed, uint32_t &disableValue) {
+    uint8_t *mapped = nullptr; D3D12_RANGE range{0, static_cast<SIZE_T>(output.allocationBytes)};
+    if (!slot.output) { RunLog("GROUP_READBACK_OUTPUT_SLOT_NULL"); return false; }
+    const HRESULT outputMap = slot.output->Map(0, &range, reinterpret_cast<void **>(&mapped));
+    if (FAILED(outputMap)) { RunLog("GROUP_READBACK_OUTPUT_MAP_FAILED hr=0x%08X bytes=%llu", static_cast<unsigned>(outputMap), output.allocationBytes); return false; }
+    packed.resize(static_cast<size_t>(output.rowBytes) * output.height);
+    for (UINT row = 0; row < output.height; ++row) std::memcpy(packed.data() + static_cast<size_t>(row) * output.rowBytes,
+        mapped + static_cast<size_t>(row) * output.footprint.Footprint.RowPitch, output.rowBytes);
+    slot.output->Unmap(0, nullptr); uint8_t *disableMapped = nullptr; D3D12_RANGE disableRange{0, 4};
+    if (!slot.disable) { RunLog("GROUP_READBACK_DISABLE_SLOT_NULL"); return false; }
+    const HRESULT disableMap = slot.disable->Map(0, &disableRange, reinterpret_cast<void **>(&disableMapped));
+    if (FAILED(disableMap)) { RunLog("GROUP_READBACK_DISABLE_MAP_FAILED hr=0x%08X", static_cast<unsigned>(disableMap)); return false; }
+    std::memcpy(&disableValue, disableMapped, 4); slot.disable->Unmap(0, nullptr); return true;
 }
 static void Identity(float matrix[4][4]) { std::memset(matrix, 0, sizeof(float) * 16); for (int i = 0; i < 4; ++i) matrix[i][i] = 1.0f; }
 static void SetResource(NVSDK_NGX_Parameter *p, const char *key, ID3D12Resource *r) { NVSDK_NGX_Parameter_SetD3d12Resource(p, key, r); }
@@ -731,6 +761,7 @@ public:
             !MakeTexture(device_, output_, "WORKER_OUTPUT", DXGI_FORMAT_R8G8B8A8_UNORM,
                 D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                 width_, height_, colorRowBytes)) return Status::NativeFailure;
+        for (auto &slot : readbackSlots_) if (!MakeReadbackSlot(device_, output_, slot)) return Status::NativeFailure;
         disable_.gpu = MakeBuffer(device_, 4, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         disable_.upload = MakeBuffer(device_, 4, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
         disable_.readback = MakeBuffer(device_, 4, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
@@ -820,6 +851,7 @@ public:
         if (!gpuFlow || effectiveReset) ++motionCpuUploadCount_;
         RunLog("WORKER_PROCESS_UPLOAD_COMPLETE gpuFlow=%d reset=%d", gpuFlow ? 1 : 0, effectiveReset ? 1 : 0);
         const auto uploadEnd = Clock::now();
+        return ProcessGrouped(request, response, generated, totalStart, uploadStart, uploadEnd, nvofTimings, gpuFlow, effectiveReset);
         if (!ResetList(allocator_, list_, "WORKER_EVALUATE")) return Status::NativeFailure;
         RecordDisableZero(disable_, list_); if (diagnosticMode_ || !effectiveReset) RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         NVSDK_NGX_DLSSG_Opt_Eval_Params options{};
@@ -917,6 +949,60 @@ public:
         return Status::Ok;
     }
 
+    Status ProcessGrouped(const dlssg::protocol::ProcessRequest &request, dlssg::protocol::ProcessResponse &response,
+        std::vector<uint8_t> &generated, Clock::time_point totalStart, Clock::time_point uploadStart,
+        Clock::time_point uploadEnd, const NvofTimings &nvofTimings, bool gpuFlow, bool effectiveReset) {
+        if (!ResetList(allocator_, list_, "WORKER_GROUP_EVALUATE")) return Status::NativeFailure;
+        RecordDisableZero(disable_, list_);
+        if (diagnosticMode_ || !effectiveReset) RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        NVSDK_NGX_DLSSG_Opt_Eval_Params options{};
+        const uint32_t count = generatedPerGroup_;
+        for (uint32_t index = 1; index <= count; ++index) {
+            const bool reset = effectiveReset;
+            if (!SetOptions(parameters_, color_.gpu, depth_.gpu, gpuFlow && !reset ? motionGpu_.gpu : motion_.gpu,
+                output_.gpu, disable_.gpu, reset, request.frameId, count, index, options, false, width_, height_)) return Status::NativeFailure;
+            const auto evaluateStart = Clock::now(); ++evaluateSubmissionCount_;
+            const NVSDK_NGX_Result result = evaluate_(list_, feature_, parameters_, nullptr);
+            response.evaluateCpuMs += Milliseconds(evaluateStart, Clock::now()); ++evaluateCount_;
+            RunLog("WORKER_GROUP_EVALUATE frame=%llu reset=%d generatedCount=%u generatedIndex=%u result=0x%08X evaluateCount=%u",
+                request.frameId, reset ? 1 : 0, count, index, result, evaluateCount_);
+            if (NVSDK_NGX_FAILED(result)) return Status::NativeFailure;
+            RecordReadbackSlot(output_, disable_, readbackSlots_[index - 1], list_);
+            ++outputCopyCount_; ++disableCopyCount_;
+        }
+        if (FAILED(list_->Close())) return Status::NativeFailure;
+        ID3D12CommandList *commands[] = {list_}; queue_->ExecuteCommandLists(1, commands); ++commandListSubmissionCount_; ++groupFenceSignalCount_;
+        const auto waitStart = Clock::now();
+        if (!WaitFence(queue_, fence_, ++fenceValue_, event_, device_, "WORKER_GROUP_COMPLETE")) return Status::NativeFailure;
+        response.gpuWaitMs = Milliseconds(waitStart, Clock::now()); ++groupWaitCount_;
+        RunLog("WORKER_GROUP_SYNC frame=%llu generatedCount=%u commandSubmissions=1 outputCopies=%u disableCopies=%u slotsUsed=%u blockingCpuWaits=1 gpuWaitMs=%.3f",
+            request.frameId, count, count, count, count, response.gpuWaitMs);
+        response.uploadMs = Milliseconds(uploadStart, uploadEnd); response.nvofUploadMs = nvofTimings.uploadMs;
+        response.nvofExecuteMs = nvofTimings.executeMs; response.flowConversionMs = nvofTimings.conversionMs;
+        std::array<std::vector<uint8_t>, 3> outputs{}; std::array<uint32_t, 3> disables{};
+        for (uint32_t index = 0; index < count; ++index) {
+            ++readbackSlotsUsed_;
+            if (!MapReadbackSlot(output_, readbackSlots_[index], outputs[index], disables[index])) return Status::NativeFailure;
+            RunLog("WORKER_GROUP_READBACK frame=%llu generatedIndex=%u disableValue=%u", request.frameId, index + 1, disables[index]);
+            if (!effectiveReset && disables[index] != 0) return Status::InterpolationDisabled;
+        }
+        const auto validOutput = [&](const std::vector<uint8_t> &value) {
+            return (!diagnosticMode_ || value != output_.packed) && !std::all_of(value.begin(), value.end(), [](uint8_t item) { return item == 0; }) &&
+                !( !value.empty() && std::all_of(value.begin(), value.end(), [&](uint8_t item) { return item == value.front(); }) );
+        };
+        if (effectiveReset) {
+            history_.Complete(request.frameId); nvofHistoryValid_ = false;
+            response.totalProcessMs = Milliseconds(totalStart, Clock::now());
+            RunLog("WORKER_GROUP_RESET_COMPLETE frame=%llu generatedCount=%u", request.frameId, count); return Status::OkResetNoOutput;
+        }
+        for (uint32_t index = 0; index < count; ++index) { if (!validOutput(outputs[index])) return Status::InvalidOutput; generated.insert(generated.end(), outputs[index].begin(), outputs[index].end()); }
+        response.readbackMs = 0.0; response.totalProcessMs = Milliseconds(totalStart, Clock::now()); response.disableInterpolation = 0;
+        response.generatedCount = count; response.outputBytes = static_cast<uint32_t>(generated.size()); history_.Complete(request.frameId);
+        if (motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow) && !nvof_.ForwardOnly()) previousColor_.assign(color_.packed.begin(), color_.packed.end());
+        generatedCount_ += count; RunLog("WORKER_GROUP_OUTPUT frame=%llu outputs=%u sha256=%s generatedCount=%u totalMs=%.3f",
+            request.frameId, count, Sha256(generated).c_str(), generatedCount_, response.totalProcessMs); return Status::Ok;
+    }
+
     void ResetHistory() { history_.Reset(); previousColor_.clear(); nvofHistoryValid_ = false; RunLog("WORKER_HISTORY_RESET nextFrameForcedReset=1"); }
     uint32_t Width() const { return width_; }
     uint32_t Height() const { return height_; }
@@ -932,6 +1018,12 @@ public:
     uint64_t EvaluateSubmissionCount() const { return evaluateSubmissionCount_; }
     uint64_t ReadbackSubmissionCount() const { return readbackSubmissionCount_; }
     uint64_t ReadbackWaitCount() const { return readbackWaitCount_; }
+    uint64_t CommandListSubmissionCount() const { return commandListSubmissionCount_; }
+    uint64_t OutputCopyCount() const { return outputCopyCount_; }
+    uint64_t DisableCopyCount() const { return disableCopyCount_; }
+    uint64_t ReadbackSlotsUsed() const { return readbackSlotsUsed_; }
+    uint64_t GroupFenceSignalCount() const { return groupFenceSignalCount_; }
+    uint64_t GroupWaitCount() const { return groupWaitCount_; }
 
 private:
     bool DestroyFeatureAndResources() {
@@ -943,7 +1035,7 @@ private:
             feature_ = nullptr;
         }
         ReleaseTexture(color_); ReleaseTexture(depth_); ReleaseTexture(motion_); ReleaseTexture(motionGpu_); ReleaseTexture(output_);
-        ReleaseBuffer(disable_); created_ = false; previousColor_.clear(); nvofHistoryValid_ = false; history_.Reset();
+        ReleaseBuffer(disable_); for (auto &slot : readbackSlots_) ReleaseReadbackSlot(slot); created_ = false; previousColor_.clear(); nvofHistoryValid_ = false; history_.Reset();
         return true;
     }
     bool MapPackedUpload(Texture &texture) {
@@ -984,9 +1076,11 @@ private:
     CreateFn create_ = nullptr; EvalFn evaluate_ = nullptr; ReleaseFeatureFn releaseFeature_ = nullptr;
     PopulateParametersFn populateParameters_ = nullptr; PopulateDeviceParametersFn populateDeviceParameters_ = nullptr;
     NVSDK_NGX_Handle *feature_ = nullptr;
-    Texture color_{}, depth_{}, motion_{}, motionGpu_{}, output_{}; Buffer disable_{}; HistoryState history_{};
+    Texture color_{}, depth_{}, motion_{}, motionGpu_{}, output_{}; Buffer disable_{}; std::array<ReadbackSlot, 3> readbackSlots_{}; HistoryState history_{};
     uint64_t flowCpuReadbackCount_ = 0, flowCpuConversionCount_ = 0, motionCpuUploadCount_ = 0, gpuFlowConversionCount_ = 0;
     uint64_t evaluateSubmissionCount_ = 0, readbackSubmissionCount_ = 0, readbackWaitCount_ = 0;
+    uint64_t commandListSubmissionCount_ = 0, outputCopyCount_ = 0, disableCopyCount_ = 0;
+    uint64_t readbackSlotsUsed_ = 0, groupFenceSignalCount_ = 0, groupWaitCount_ = 0;
     NvofD3D12 nvof_{}; std::vector<uint8_t> previousColor_{};
     bool nvofHistoryValid_ = false;
     bool diagnosticMode_ = false;
@@ -1068,9 +1162,10 @@ int RunServer(const wchar_t *communityPath, const wchar_t *runtimeDir) {
             if (!SendResponse(output, header, Status::Ok)) return 74;
             RunLog("WORKER_CLOSE initCount=%u createCount=%u evaluateCount=%u generatedCount=%u",
                 worker.InitCount(), worker.CreateCount(), worker.EvaluateCount(), worker.GeneratedCount());
-            RunLog("ARCH_COUNTERS flow_cpu_readback=%llu flow_cpu_conversion=%llu motion_cpu_upload=%llu gpu_flow_conversion=%llu evaluate_submissions=%llu readback_submissions=%llu readback_waits=%llu",
+            RunLog("ARCH_COUNTERS flow_cpu_readback=%llu flow_cpu_conversion=%llu motion_cpu_upload=%llu gpu_flow_conversion=%llu evaluate_submissions=%llu readback_submissions=%llu readback_waits=%llu command_list_submissions=%llu output_copies=%llu disable_copies=%llu readback_slots_used=%llu group_fence_signals=%llu group_waits=%llu",
                 worker.FlowCpuReadbackCount(), worker.FlowCpuConversionCount(), worker.MotionCpuUploadCount(), worker.GpuFlowConversionCount(),
-                worker.EvaluateSubmissionCount(), worker.ReadbackSubmissionCount(), worker.ReadbackWaitCount());
+                worker.EvaluateSubmissionCount(), worker.ReadbackSubmissionCount(), worker.ReadbackWaitCount(), worker.CommandListSubmissionCount(),
+                worker.OutputCopyCount(), worker.DisableCopyCount(), worker.ReadbackSlotsUsed(), worker.GroupFenceSignalCount(), worker.GroupWaitCount());
             RunLog("WORKER_NGX_SHUTDOWN_SKIPPED_KNOWN_HANG=1"); std::fflush(stderr); ExitProcess(0);
         } else {
             if (!SendResponse(output, header, Status::InvalidMessage)) return 74;

@@ -45,6 +45,19 @@ PROCESS_REQUEST = struct.Struct("<QIIII")
 PROCESS_RESPONSE = struct.Struct("<IIIIII" + "d" * 17)
 
 
+def mfg_group_indices(multiplier: int) -> tuple[int, ...]:
+    """Return the complete DLSS-G generated-index sequence for one group.
+
+    DLSS-G numbers intermediate frames from one through the requested
+    multiplier minus one.  Reset and normal groups use the same sequence;
+    reset only changes the per-evaluation reset flag and never short-circuits
+    the group.
+    """
+    if multiplier not in (2, 3, 4):
+        raise ValueError("multiplier must be 2, 3, or 4")
+    return tuple(range(1, multiplier))
+
+
 class DlssgWorkerError(RuntimeError):
     """Base error for native worker failures."""
 

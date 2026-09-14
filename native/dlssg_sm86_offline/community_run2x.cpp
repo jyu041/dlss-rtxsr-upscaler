@@ -757,7 +757,7 @@ public:
             !Upload(motion_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_)) return Status::NativeFailure;
         const auto uploadEnd = Clock::now();
         if (!ResetList(allocator_, list_, "WORKER_EVALUATE")) return Status::NativeFailure;
-        RecordDisableZero(disable_, list_); if (!effectiveReset) RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        RecordDisableZero(disable_, list_); RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         NVSDK_NGX_DLSSG_Opt_Eval_Params options{};
         if (!SetOptions(parameters_, color_.gpu, depth_.gpu, motion_.gpu, output_.gpu, disable_.gpu,
             effectiveReset, request.frameId, generatedPerGroup_, 1, options, false, width_, height_)) return Status::NativeFailure;
@@ -780,13 +780,33 @@ public:
         response.flowStandardDeviationMagnitude = flowStatistics.standardDeviationMagnitude;
         response.flowNearZeroPercent = flowStatistics.nearZeroPercent;
         response.flowUnusuallyLargePercent = flowStatistics.unusuallyLargePercent;
-        if (effectiveReset) {
-            history_.Complete(request.frameId);
-            response.totalProcessMs = Milliseconds(totalStart, Clock::now());
-            RunLog("WORKER_PROCESS_RESET_COMPLETE frame=%llu", request.frameId); return Status::OkResetNoOutput;
-        }
         const auto readbackStart = Clock::now(); uint32_t disableValue = 0; std::vector<uint8_t> one;
         if (!Readback(output_, disable_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_, one, disableValue)) return Status::NativeFailure;
+        if (effectiveReset) {
+            RunLog("WORKER_RESET_GROUP frame=%llu generatedCount=%u generatedIndex=1 disableValue=%u", request.frameId, generatedPerGroup_, disableValue);
+            for (uint32_t index = 2; index <= generatedPerGroup_; ++index) {
+                if (!ResetList(allocator_, list_, "WORKER_MFG_RESET_EVALUATE")) return Status::NativeFailure;
+                RecordDisableZero(disable_, list_); RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+                if (!SetOptions(parameters_, color_.gpu, depth_.gpu, motion_.gpu, output_.gpu, disable_.gpu,
+                    true, request.frameId, generatedPerGroup_, index, options, false, width_, height_)) return Status::NativeFailure;
+                const auto nextStart = Clock::now(); const NVSDK_NGX_Result next = evaluate_(list_, feature_, parameters_, nullptr);
+                response.evaluateCpuMs += Milliseconds(nextStart, Clock::now()); ++evaluateCount_;
+                RunLog("WORKER_EVALUATE frame=%llu reset=1 generatedCount=%u generatedIndex=%u result=0x%08X evaluateCount=%u", request.frameId, generatedPerGroup_, index, next, evaluateCount_);
+                if (NVSDK_NGX_FAILED(next) || FAILED(list_->Close())) return Status::NativeFailure;
+                queue_->ExecuteCommandLists(1, commands); const auto nextWait = Clock::now();
+                if (!WaitFence(queue_, fence_, ++fenceValue_, event_, device_, "WORKER_MFG_RESET_EVALUATE")) return Status::NativeFailure;
+                response.gpuWaitMs += Milliseconds(nextWait, Clock::now()); one.clear(); disableValue = 0;
+                if (!Readback(output_, disable_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_, one, disableValue)) return Status::NativeFailure;
+                RunLog("WORKER_RESET_GROUP frame=%llu generatedCount=%u generatedIndex=%u disableValue=%u", request.frameId, generatedPerGroup_, index, disableValue);
+            }
+            history_.Complete(request.frameId);
+            if (motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow)) {
+                previousColor_.assign(color, color + color_.packed.size());
+                nvofHistoryValid_ = false;
+            }
+            response.totalProcessMs = Milliseconds(totalStart, Clock::now());
+            RunLog("WORKER_PROCESS_RESET_COMPLETE frame=%llu generatedCount=%u", request.frameId, generatedPerGroup_); return Status::OkResetNoOutput;
+        }
         if (disableValue != 0) {
             RunLog("WORKER_OUTPUT_DISABLED frame=%llu reset=%d generatedCount=%u generatedIndex=1 disableValue=%u capabilityMax=%d evalResult=0x%08X deviceRemoved=0x%08X",
                 request.frameId, effectiveReset ? 1 : 0, generatedPerGroup_, disableValue, capabilityMax_, evalResult,

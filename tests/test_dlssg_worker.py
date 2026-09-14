@@ -50,6 +50,19 @@ def test_protocol_layout_sizes_and_roundtrip():
     )
 
 
+@pytest.mark.parametrize(
+    ("multiplier", "expected"),
+    [(2, (1,)), (3, (1, 2)), (4, (1, 2, 3))],
+)
+def test_mfg_group_indices_are_complete_and_ordered(multiplier, expected):
+    assert worker.mfg_group_indices(multiplier) == expected
+
+
+def test_mfg_group_indices_reject_invalid_multiplier():
+    with pytest.raises(ValueError, match="multiplier"):
+        worker.mfg_group_indices(1)
+
+
 def test_exact_io_handles_partial_reads_and_writes():
     assert worker._read_exact(ChunkedReader(b"abcdef", 2), 6) == b"abcdef"
     destination = ChunkedWriter(2)

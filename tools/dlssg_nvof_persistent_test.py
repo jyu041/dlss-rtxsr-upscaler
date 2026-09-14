@@ -33,6 +33,22 @@ def frame(width: int, height: int, square_x: int, square_y: int = 96) -> bytes:
     return bytes(output)
 
 
+def bright_centroid(payload: bytes, width: int, height: int) -> tuple[float, float]:
+    """Estimate the moving test square's centroid for temporal-order checks."""
+    weighted_x = weighted_y = weight_total = 0.0
+    for y in range(height):
+        for x in range(width):
+            offset = (y * width + x) * 4
+            red, green = payload[offset], payload[offset + 1]
+            weight = max(0, red - 80) + max(0, green - 96)
+            weighted_x += x * weight
+            weighted_y += y * weight
+            weight_total += weight
+    if not weight_total:
+        raise AssertionError("generated output has no trackable bright subject")
+    return weighted_x / weight_total, weighted_y / weight_total
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--worker", type=Path, required=True)
@@ -93,6 +109,7 @@ def main() -> int:
                     assert result.generated_count == expected_count and result.disable_interpolation == 0
                     assert len(result.outputs) == expected_count
                     digests = []
+                    centroids = []
                     for output in result.outputs:
                         assert len(output) == width * height * 4
                         assert any(output) and len(set(output)) > 1
@@ -100,8 +117,12 @@ def main() -> int:
                         digest = hashlib.sha256(output).hexdigest().upper()
                         assert digest not in hashes, f"stale generated output {digest}"
                         hashes.add(digest); digests.append(digest)
+                        centroids.append(bright_centroid(output, width, height))
                     assert len(set(result.outputs)) == expected_count
+                    direction = 1 if delta > 0 else -1
+                    assert all((right[0] - left[0]) * direction > 0 for left, right in zip(centroids, centroids[1:]))
                     record["sha256"] = digests
+                    record["centroids"] = centroids
                     record["generated_count"] = expected_count
                 records.append(record)
                 frame_id += 1

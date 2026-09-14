@@ -722,6 +722,9 @@ public:
                 D3D12_RESOURCE_STATE_COPY_DEST, width_, height_, width_ * 4) ||
             !MakeTexture(device_, motion_, "WORKER_MOTION", DXGI_FORMAT_R16G16_FLOAT, D3D12_RESOURCE_FLAG_NONE,
                 D3D12_RESOURCE_STATE_COPY_DEST, width_, height_, width_ * 4) ||
+            !MakeTexture(device_, motionGpu_, "DLSSG_MOTION_GPU", DXGI_FORMAT_R16G16_FLOAT,
+                D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+                width_, height_, width_ * 4) ||
             !MakeTexture(device_, output_, "WORKER_OUTPUT", DXGI_FORMAT_R8G8B8A8_UNORM,
                 D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                 width_, height_, colorRowBytes)) return Status::NativeFailure;
@@ -749,7 +752,7 @@ public:
         ID3D12CommandList *commands[] = {list_}; queue_->ExecuteCommandLists(1, commands);
         if (!WaitFence(queue_, fence_, ++fenceValue_, event_, device_, "WORKER_CREATE")) return Status::NativeFailure;
         if (gpuFlowEnabled_ && motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow) && nvof_.ForwardOnly()) {
-            const bool configured = nvof_.ConfigureGpuConversion(motion_.gpu);
+            const bool configured = nvof_.ConfigureGpuConversion(motionGpu_.gpu);
             RunLog("NVOF_GPU_CONVERSION_CONFIGURED=%d", configured ? 1 : 0);
             if (!configured) return Status::NativeFailure;
         }
@@ -787,7 +790,7 @@ public:
                     RunLog("WORKER_NVOF_SEED_FAILED frame=%llu", request.frameId); return Status::NativeFailure;
                 }
             } else if (gpuFlow) {
-                if (!nvof_.ComputeForwardGpu(color, motion_.gpu, &nvofTimings)) {
+                if (!nvof_.ComputeForwardGpu(color, motionGpu_.gpu, &nvofTimings)) {
                     RunLog("WORKER_NVOF_GPU_CONVERSION_FAILED frame=%llu", request.frameId); return Status::NativeFailure;
                 }
                 nvofHistoryValid_ = true;
@@ -800,19 +803,25 @@ public:
             } else {
                 nvofHistoryValid_ = true;
             }
-            if (!gpuFlow) std::memcpy(motion_.packed.data(), internalMotion.data(), motion_.packed.size());
+            if (!gpuFlow) {
+                ++flowCpuReadbackCount_; ++flowCpuConversionCount_;
+                std::memcpy(motion_.packed.data(), internalMotion.data(), motion_.packed.size());
+            }
         } else {
             std::memcpy(motion_.packed.data(), motion, motion_.packed.size());
         }
         if (gpuFlow && !effectiveReset) {
             if (!Upload(color_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_)) return Status::NativeFailure;
         } else if (!UploadPair(color_, motion_, device_, allocator_, list_, queue_, fence_, event_, fenceValue_)) return Status::NativeFailure;
+        if (gpuFlow && !effectiveReset) ++gpuFlowConversionCount_;
+        if (!gpuFlow || effectiveReset) ++motionCpuUploadCount_;
         RunLog("WORKER_PROCESS_UPLOAD_COMPLETE gpuFlow=%d reset=%d", gpuFlow ? 1 : 0, effectiveReset ? 1 : 0);
         const auto uploadEnd = Clock::now();
         if (!ResetList(allocator_, list_, "WORKER_EVALUATE")) return Status::NativeFailure;
         RecordDisableZero(disable_, list_); if (diagnosticMode_ || !effectiveReset) RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         NVSDK_NGX_DLSSG_Opt_Eval_Params options{};
-        if (!SetOptions(parameters_, color_.gpu, depth_.gpu, motion_.gpu, output_.gpu, disable_.gpu,
+        ID3D12Resource *evaluateMotion = gpuFlow && !effectiveReset ? motionGpu_.gpu : motion_.gpu;
+        if (!SetOptions(parameters_, color_.gpu, depth_.gpu, evaluateMotion, output_.gpu, disable_.gpu,
             effectiveReset, request.frameId, generatedPerGroup_, 1, options, false, width_, height_)) return Status::NativeFailure;
         const auto evaluateStart = Clock::now(); const NVSDK_NGX_Result evalResult = evaluate_(list_, feature_, parameters_, nullptr);
         const auto evaluateEnd = Clock::now(); ++evaluateCount_;
@@ -875,7 +884,7 @@ public:
         for (uint32_t index = 2; index <= generatedPerGroup_; ++index) {
             if (!ResetList(allocator_, list_, "WORKER_MFG_EVALUATE")) return Status::NativeFailure;
             RecordDisableZero(disable_, list_); if (diagnosticMode_) RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-            if (!SetOptions(parameters_, color_.gpu, depth_.gpu, motion_.gpu, output_.gpu, disable_.gpu,
+            if (!SetOptions(parameters_, color_.gpu, depth_.gpu, gpuFlow ? motionGpu_.gpu : motion_.gpu, output_.gpu, disable_.gpu,
                 false, request.frameId, generatedPerGroup_, index, options, false, width_, height_)) return Status::NativeFailure;
             const auto nextStart = Clock::now(); const NVSDK_NGX_Result next = evaluate_(list_, feature_, parameters_, nullptr);
             response.evaluateCpuMs += Milliseconds(nextStart, Clock::now()); ++evaluateCount_;
@@ -913,6 +922,10 @@ public:
     uint32_t CreateCount() const { return createCount_; }
     uint32_t EvaluateCount() const { return evaluateCount_; }
     uint32_t GeneratedCount() const { return generatedCount_; }
+    uint64_t FlowCpuReadbackCount() const { return flowCpuReadbackCount_; }
+    uint64_t FlowCpuConversionCount() const { return flowCpuConversionCount_; }
+    uint64_t MotionCpuUploadCount() const { return motionCpuUploadCount_; }
+    uint64_t GpuFlowConversionCount() const { return gpuFlowConversionCount_; }
 
 private:
     bool DestroyFeatureAndResources() {
@@ -923,7 +936,7 @@ private:
             if (NVSDK_NGX_FAILED(result)) return false;
             feature_ = nullptr;
         }
-        ReleaseTexture(color_); ReleaseTexture(depth_); ReleaseTexture(motion_); ReleaseTexture(output_);
+        ReleaseTexture(color_); ReleaseTexture(depth_); ReleaseTexture(motion_); ReleaseTexture(motionGpu_); ReleaseTexture(output_);
         ReleaseBuffer(disable_); created_ = false; previousColor_.clear(); nvofHistoryValid_ = false; history_.Reset();
         return true;
     }
@@ -964,7 +977,8 @@ private:
     CreateFn create_ = nullptr; EvalFn evaluate_ = nullptr; ReleaseFeatureFn releaseFeature_ = nullptr;
     PopulateParametersFn populateParameters_ = nullptr; PopulateDeviceParametersFn populateDeviceParameters_ = nullptr;
     NVSDK_NGX_Handle *feature_ = nullptr;
-    Texture color_{}, depth_{}, motion_{}, output_{}; Buffer disable_{}; HistoryState history_{};
+    Texture color_{}, depth_{}, motion_{}, motionGpu_{}, output_{}; Buffer disable_{}; HistoryState history_{};
+    uint64_t flowCpuReadbackCount_ = 0, flowCpuConversionCount_ = 0, motionCpuUploadCount_ = 0, gpuFlowConversionCount_ = 0;
     NvofD3D12 nvof_{}; std::vector<uint8_t> previousColor_{};
     bool nvofHistoryValid_ = false;
     bool diagnosticMode_ = false;
@@ -1046,6 +1060,8 @@ int RunServer(const wchar_t *communityPath, const wchar_t *runtimeDir) {
             if (!SendResponse(output, header, Status::Ok)) return 74;
             RunLog("WORKER_CLOSE initCount=%u createCount=%u evaluateCount=%u generatedCount=%u",
                 worker.InitCount(), worker.CreateCount(), worker.EvaluateCount(), worker.GeneratedCount());
+            RunLog("ARCH_COUNTERS flow_cpu_readback=%llu flow_cpu_conversion=%llu motion_cpu_upload=%llu gpu_flow_conversion=%llu",
+                worker.FlowCpuReadbackCount(), worker.FlowCpuConversionCount(), worker.MotionCpuUploadCount(), worker.GpuFlowConversionCount());
             RunLog("WORKER_NGX_SHUTDOWN_SKIPPED_KNOWN_HANG=1"); std::fflush(stderr); ExitProcess(0);
         } else {
             if (!SendResponse(output, header, Status::InvalidMessage)) return 74;

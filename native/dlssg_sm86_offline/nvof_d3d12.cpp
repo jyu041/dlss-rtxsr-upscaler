@@ -173,6 +173,8 @@ struct NvofD3D12::Impl {
     uint8_t *previousUploadMapped = nullptr;
     uint8_t *currentUploadMapped = nullptr;
     ID3D12Resource *conversionMotion = nullptr;
+    ID3D12Resource *flowCopy = nullptr;
+    D3D12_RESOURCE_STATES flowCopyState = D3D12_RESOURCE_STATE_COPY_DEST;
     ID3D12DescriptorHeap *conversionHeap = nullptr;
     ID3D12RootSignature *conversionRoot = nullptr;
     ID3D12PipelineState *conversionPso = nullptr;
@@ -234,6 +236,12 @@ struct NvofD3D12::Impl {
 
     bool ConfigureConversion(ID3D12Resource *motion) {
         if (!motion || !device) return false;
+        D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+        D3D12_RESOURCE_DESC flowDesc{}; flowDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        flowDesc.Width = width; flowDesc.Height = height; flowDesc.DepthOrArraySize = 1; flowDesc.MipLevels = 1;
+        flowDesc.Format = DXGI_FORMAT_R16G16_SINT; flowDesc.SampleDesc.Count = 1; flowDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+        if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &flowDesc,
+            D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&flowCopy)))) return false;
         D3D12_DESCRIPTOR_HEAP_DESC heapDesc{}; heapDesc.NumDescriptors = 2;
         heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
@@ -269,7 +277,7 @@ struct NvofD3D12::Impl {
         conversionGpu = conversionHeap->GetGPUDescriptorHandleForHeapStart();
         D3D12_SHADER_RESOURCE_VIEW_DESC srv{}; srv.Format = DXGI_FORMAT_R16G16_SINT; srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D; srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING; srv.Texture2D.MipLevels = 1;
         D3D12_UNORDERED_ACCESS_VIEW_DESC uav{}; uav.Format = DXGI_FORMAT_R16G16_FLOAT; uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-        device->CreateShaderResourceView(forward, &srv, conversionCpu);
+        device->CreateShaderResourceView(flowCopy, &srv, conversionCpu);
         auto uavCpu = conversionCpu; uavCpu.ptr += stride; device->CreateUnorderedAccessView(motion, nullptr, &uav, uavCpu);
         return true;
     }
@@ -442,13 +450,20 @@ bool NvofD3D12::ComputeForwardGpu(const uint8_t *currentRgba, ID3D12Resource *mo
     state.conversionList->SetComputeRootDescriptorTable(1, uavGpu);
     const uint32_t dimensions[] = {state.width, state.height};
     state.conversionList->SetComputeRoot32BitConstants(2, 2, dimensions, 0);
-    Transition(state.conversionList, state.forward, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(state.conversionList, state.forward, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    Transition(state.conversionList, state.flowCopy, state.flowCopyState, D3D12_RESOURCE_STATE_COPY_DEST);
+    D3D12_TEXTURE_COPY_LOCATION source{}, destination{};
+    source.pResource = state.forward; source.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    destination.pResource = state.flowCopy; destination.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    state.conversionList->CopyTextureRegion(&destination, 0, 0, 0, &source, nullptr);
+    Transition(state.conversionList, state.forward, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_COMMON);
+    Transition(state.conversionList, state.flowCopy, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    state.flowCopyState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
     Transition(state.conversionList, state.conversionMotion, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     state.conversionList->Dispatch((state.width + 15) / 16, (state.height + 15) / 16, 1);
     D3D12_RESOURCE_BARRIER uavBarrier{}; uavBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
     state.conversionList->ResourceBarrier(1, &uavBarrier);
     Transition(state.conversionList, state.conversionMotion, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    Transition(state.conversionList, state.forward, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COMMON);
     if (FAILED(state.conversionList->Close())) return false;
     ID3D12CommandList *conversionCommands[] = {state.conversionList}; state.queue->ExecuteCommandLists(1, conversionCommands);
     const auto conversionEnd = Clock::now();
@@ -667,6 +682,7 @@ void NvofD3D12::Shutdown() {
     Release(state.currentUpload);
     Release(state.backwardReadback);
     Release(state.conversionMotion);
+    Release(state.flowCopy);
     Release(state.conversionList);
     Release(state.conversionAllocator);
     Release(state.conversionPso);

@@ -33,11 +33,14 @@ separate conversion command allocator/list. The intended path uses
 `queue->Wait(nvofOutputFence)` before dispatch and transitions the registered
 flow texture through `NON_PIXEL_SHADER_RESOURCE`.
 
-The first bounded 256x256 production gate failed: after compute setup, the
-first reset upload reported `DXGI_ERROR_DEVICE_REMOVED (0x887A0001)` before
-Evaluate. The same worker without compute setup passed the existing path.
-GPU flow is therefore opt-in via `DLSSG_NVOF_GPU_FLOW=1` and disabled by
-default. No GPU-resident-flow classification is earned.
+The first bounded 256x256 production gate failed because the destination motion
+resource lacked `D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS`. The corrected
+worker keeps the CPU fallback resource unchanged, creates a separate UAV-capable
+`motionGpu_`, and copies the registered NVOF output to an unregistered
+`flowCopy_` before compute. The 256x256 2X/3X/4X and 1080p 2X/3X/4X gates now
+pass with GPU flow enabled. DRED was not required after the contract fix; the
+failure was reproduced as `DXGI_ERROR_DEVICE_REMOVED (0x887A0001)` and removed
+by the corrected resource construction.
 
 ## Architecture proof
 
@@ -46,10 +49,10 @@ default. No GPU-resident-flow classification is earned.
 | Persistent previous-frame history | Yes |
 | Previous-frame upload per normal pair | 0 in forward history path |
 | NVOF input CPU wait | No in forward history path |
-| NVOF output CPU wait before GPU consumer | Not removed |
-| Flow GPU→CPU readback | Yes |
-| CPU S10.5 conversion | Yes |
-| Motion CPU→GPU upload | Yes |
+| NVOF output CPU wait before GPU consumer | No in GPU-flow path |
+| Flow GPU→CPU readback | No in GPU-flow path |
+| CPU S10.5 conversion | No in GPU-flow path |
+| Motion CPU→GPU upload | No for normal GPU-flow frames |
 | Duplicate source-color upload removed | No |
 | MFG output readback grouped | No |
 | Real-frame groups in flight | 1 |
@@ -59,7 +62,10 @@ default. No GPU-resident-flow classification is earned.
 Self-test, deterministic forward-only NVOF, focused Python tests, and the
 bounded fallback 256x256 benchmark pass. The focused suite reports 37 passed.
 No device removal was observed after the opt-in GPU path was disabled.
-The 1080p GPU-flow benchmark was not run after the safety failure.
+The clean 1080p GPU-flow medians were 111.04/136.88/165.65 ms per group for
+2X/3X/4X. Against the a21cddc baseline of 112.85/132.04/153.52 ms, this is
+about 1.6% faster at 2X, 3.7% slower at 3X, and 7.9% slower at 4X. The
+remaining dominant cost is per-index generated-output synchronization/readback.
 
 Natural-video throughput was not reprofiled. The previous reference remains
 3.38 input FPS and 13.52 output FPS.

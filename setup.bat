@@ -4,7 +4,7 @@ cd /d "%~dp0"
 set PYTHONNOUSERSITE=1
 set GRADIO_ANALYTICS_ENABLED=False
 if not defined NVE_CONDA_ENV set "NVE_CONDA_ENV=dlss-rtxsr-upscaler"
-if defined NVE_CONDA_PREFIX (set "NVE_CONDA_TARGET=--prefix \"%NVE_CONDA_PREFIX%\"") else (set "NVE_CONDA_TARGET=--name \"%NVE_CONDA_ENV%\"")
+if defined NVE_CONDA_PREFIX (set NVE_CONDA_TARGET=--prefix "%NVE_CONDA_PREFIX%") else (set NVE_CONDA_TARGET=--name "%NVE_CONDA_ENV%")
 if defined NVE_CONDA_PREFIX (if not exist "%NVE_CONDA_PREFIX%\conda-meta\history" (echo NVE_CONDA_PREFIX must point to an existing Conda environment.& exit /b 2)) else (echo(%NVE_CONDA_ENV%| %SystemRoot%\System32\findstr.exe /r /x "[A-Za-z0-9][A-Za-z0-9_.-]*" >nul || (echo NVE_CONDA_ENV must contain only letters, numbers, underscore, period, or hyphen.& exit /b 2))
 where conda >nul 2>nul || (echo Miniconda or Anaconda is required.& exit /b 1)
 echo [1/5] Checking Conda

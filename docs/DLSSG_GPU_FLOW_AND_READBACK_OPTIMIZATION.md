@@ -530,3 +530,60 @@ The final direct-packing worker hash is
 `C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916`.
 The narrow classification `DLSSG_READBACK_ASSEMBLY_COPY_OVERHEAD_REDUCED` is
 supported; no universal throughput claim is made.
+
+## Measurement-only GPU-stage and source-copy audit
+
+The completed timestamp audit covered all twelve requested runs: three old and
+three candidate runs at 60 frames, plus three old and three candidate runs at
+600 frames. Each run has a PASS JSON artifact and a worker log under
+`runtime/gpu_ts_ab`; no long A/B run was restarted. The bounded runner emitted
+START/HEARTBEAT/PASS progress and its per-run timeout remained 240 seconds.
+
+The timestamp probe was intentionally treated as diagnostic evidence, not as a
+production performance result. At 600 frames, the candidate no-encode wall
+median was 57.820 s without timestamps and 73.443 s with timestamps, a 27.1%
+perturbation. At 60 frames the corresponding medians were 12.651 s and
+13.005 s, a 2.8% perturbation. The probe therefore identifies stage shape but
+must not be used to claim an end-to-end speedup.
+
+For the three 600-frame candidate logs, the GPU timestamp stage medians were
+stable enough to classify the group interval. The median across the three runs
+was approximately 27.105 ms for the complete group, 2.513 ms for color upload,
+0.005 ms for the disable copy, 10.690/5.021/5.025 ms for the three DLSS-G
+Evaluate regions, and 1.237/1.235/1.236 ms for their three output-copy
+regions. The sum is approximately 26.96 ms, leaving only a small command-list
+gap. The reported maxima in these old logs are invalid because the temporary
+logger omitted the minimum argument in its printf-style format call; they are
+not used here. NVOF execution itself is an external submission and was not
+timestamped internally by this probe.
+
+The existing production JSON gives the complementary CPU/API view. Across the
+600-frame candidate timestamp runs, mean `nvof_upload_ms` was 2.57--2.66 ms,
+`nvof_execute_ms` about 0.55 ms, and `flow_conversion_ms` 0.125--0.129 ms;
+these fields include CPU/API and queue-wait behavior, not GPU execution
+durations. The published direct-packing encoded candidate remains the trusted
+control for `gpuWaitMs`: 31.552 ms median at 600 frames, with 6.763 ms
+readback. The timestamp-on `gpuWaitMs` values are not comparable because the
+probe itself perturbs the queue.
+
+At 1920x1080, one RGBA source frame is 8,294,400 bytes. The current synchronous
+path still performs three distinct source-image touches for a normal pair:
+the protocol payload is received into the request buffer, native staging copies
+the color payload into the DLSSG upload allocation, and the NVOF upload mapper
+reads the source while producing its NVOF upload allocation. The two explicit
+native upload destinations therefore account for 16,588,800 bytes of per-frame
+CPU-side copy/write traffic, in addition to the protocol receive. This is an
+accounting result, not a measured optimization opportunity: the protocol,
+queue ownership, NVOF temporal state, and synchronous scheduling remain
+unchanged. NVOF capability probing also confirmed input formats
+`B8G8R8A8_UNORM` (87), `NV12` (103), and `R8_UNORM` (61), output formats
+`R16G16_SINT` (38) and `R16G16_UINT` (36), and successful BOTH prediction;
+`R8G8B8A8_UNORM` is not in the advertised input list.
+
+This audit does not justify source sharing, asynchronous submission, concurrent
+NVOF/DLSS-G execution, or a protocol change. The exact next optimization target
+is **Candidate D — DLSS-G Evaluate GPU execution characterization**, limited to
+non-concurrent per-group work and beginning with the temporal-state/resource
+hazards around the three Evaluate regions. No implementation was made in this
+measurement milestone. The public change is documentation-only; the private
+resources repository and published worker SHA remain unchanged.

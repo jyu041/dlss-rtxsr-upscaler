@@ -38,18 +38,37 @@ function Get-FreeBytes([string] $path) {
     return [int64]$drive.Free
 }
 function Get-TreePids([int] $rootPid) {
-    try { $all = @(Get-CimInstance Win32_Process -ErrorAction Stop) } catch { return @($rootPid) }
-    $ids = [System.Collections.Generic.List[int]]::new(); $ids.Add($rootPid)
+    Update-SupervisedProcessTree
+    return @($script:supervisedIdentities.Keys | ForEach-Object { [int]$_ })
+}
+function Get-ProcessIdentity([int] $processId) {
+    $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
+    if (-not $process) { return $null }
+    try {
+        return [pscustomobject]@{ pid = [int]$process.Id; process_name = [string]$process.ProcessName; creation_time_ticks = [int64]$process.StartTime.ToUniversalTime().Ticks }
+    } catch { return $null }
+}
+function Test-ProcessIdentity($identity) {
+    $current = Get-ProcessIdentity ([int]$identity.pid)
+    return ($current -and [int64]$current.creation_time_ticks -eq [int64]$identity.creation_time_ticks)
+}
+function Update-SupervisedProcessTree {
+    try { $all = @(Get-CimInstance Win32_Process -ErrorAction Stop) } catch { return }
     $changed = $true
     while ($changed) {
         $changed = $false
-        foreach ($item in $all) { if ($ids.Contains([int]$item.ParentProcessId) -and -not $ids.Contains([int]$item.ProcessId)) { $ids.Add([int]$item.ProcessId); $changed = $true } }
+        foreach ($item in $all) {
+            $parentPid = [int]$item.ParentProcessId
+            if ($script:supervisedIdentities.ContainsKey($parentPid) -and (Test-ProcessIdentity $script:supervisedIdentities[$parentPid]) -and -not $script:supervisedIdentities.ContainsKey([int]$item.ProcessId)) {
+                $identity = Get-ProcessIdentity ([int]$item.ProcessId)
+                if ($identity) { $script:supervisedIdentities[[int]$item.ProcessId] = $identity; $changed = $true }
+            }
+        }
     }
-    return $ids
 }
 function Get-TreeWorkingSet([int] $rootPid) {
     $total = [int64]0
-    foreach ($childPid in (Get-TreePids $rootPid)) { $p = Get-Process -Id $childPid -ErrorAction SilentlyContinue; if ($p) { $total += [int64]$p.WorkingSet64 } }
+    foreach ($childPid in (Get-TreePids $rootPid)) { $identity = $script:supervisedIdentities[[int]$childPid]; if ($identity -and (Test-ProcessIdentity $identity)) { $p = Get-Process -Id $childPid -ErrorAction SilentlyContinue; if ($p) { $total += [int64]$p.WorkingSet64 } } }
     return $total
 }
 function Read-Record([string] $path) {
@@ -71,23 +90,33 @@ function Write-Summary([string] $directory) {
     $md -join "`r`n" | Set-Content -LiteralPath (Join-Path $directory 'soak-summary.md') -Encoding utf8
 }
 function Stop-ProcessTree([int] $rootPid) {
+    Update-SupervisedProcessTree
     & taskkill.exe /PID $rootPid /T /F | Out-Host
     Start-Sleep -Milliseconds 500
-    $root = Get-Process -Id $rootPid -ErrorAction SilentlyContinue
-    if ($root) { Stop-Process -Id $rootPid -Force -ErrorAction SilentlyContinue }
-    foreach ($candidate in @(Get-Process -Name python,ffmpeg,dlssg_sm86_offline,cmd,powershell -ErrorAction SilentlyContinue)) {
-        if (-not $script:baselineProcessPids.Contains([int]$candidate.Id) -and [int]$candidate.Id -ne $rootPid) { Stop-Process -Id $candidate.Id -Force -ErrorAction SilentlyContinue }
+    Update-SupervisedProcessTree
+    foreach ($identity in @($script:supervisedIdentities.Values)) {
+        if (Test-ProcessIdentity $identity) {
+            Stop-Process -Id ([int]$identity.pid) -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 function Get-MemorySample([int] $rootPid) {
-    $sample = [ordered]@{ elapsed_seconds = ((Get-Date) - $started).TotalSeconds; root_working_set_bytes = 0; python_working_set_bytes = 0; ffmpeg_working_set_bytes = 0; worker_working_set_bytes = 0; gpu_memory_used_mib = $null }
-    $root = Get-Process -Id $rootPid -ErrorAction SilentlyContinue
-    if ($root) { $sample.root_working_set_bytes = [int64]$root.WorkingSet64 }
-    foreach ($candidate in @(Get-Process -Name ffmpeg,dlssg_sm86_offline -ErrorAction SilentlyContinue)) {
-        $key = if ($candidate.ProcessName -eq 'ffmpeg') { 'ffmpeg_working_set_bytes' } else { 'worker_working_set_bytes' }
-        $sample[$key] = [int64]$sample[$key] + [int64]$candidate.WorkingSet64
+    Update-SupervisedProcessTree
+    $sample = [ordered]@{ elapsed_seconds = ((Get-Date) - $started).TotalSeconds; root_working_set_bytes = 0; root_python_working_set_bytes = 0; python_working_set_bytes = 0; ffmpeg_working_set_bytes = 0; worker_working_set_bytes = 0; other_supervised_working_set_bytes = 0; total_tree_working_set_bytes = 0; tracked_processes = @(); gpu_memory_used_mib = $null }
+    foreach ($identity in @($script:supervisedIdentities.Values)) {
+        if (-not (Test-ProcessIdentity $identity)) { continue }
+        $process = Get-Process -Id ([int]$identity.pid) -ErrorAction SilentlyContinue
+        if (-not $process) { continue }
+        $bytes = [int64]$process.WorkingSet64
+        $sample.tracked_processes += [pscustomobject]@{ pid = [int]$identity.pid; process_name = [string]$identity.process_name; creation_time_ticks = [int64]$identity.creation_time_ticks; working_set_bytes = $bytes }
+        $sample.total_tree_working_set_bytes = [int64]$sample.total_tree_working_set_bytes + $bytes
+        $name = ([string]$identity.process_name).ToLowerInvariant()
+        if ([int]$identity.pid -eq $rootPid) { $sample.root_working_set_bytes = $bytes; if ($name -eq 'python') { $sample.root_python_working_set_bytes = $bytes } }
+        elseif ($name -like 'ffmpeg*') { $sample.ffmpeg_working_set_bytes = [int64]$sample.ffmpeg_working_set_bytes + $bytes }
+        elseif ($name -eq 'dlssg_sm86_offline') { $sample.worker_working_set_bytes = [int64]$sample.worker_working_set_bytes + $bytes }
+        else { $sample.other_supervised_working_set_bytes = [int64]$sample.other_supervised_working_set_bytes + $bytes }
     }
-    $sample.python_working_set_bytes = $sample.root_working_set_bytes
+    $sample.python_working_set_bytes = $sample.root_python_working_set_bytes
     $smi = 'C:\Windows\System32\nvidia-smi.exe'
     if (Test-Path -LiteralPath $smi) {
         try { $raw = & $smi '--query-gpu=memory.used' '--format=csv,noheader,nounits' 2>$null | Select-Object -First 1; if ($raw -match '^\s*(\d+)') { $sample.gpu_memory_used_mib = [int]$matches[1] } } catch {}
@@ -120,13 +149,15 @@ $args = @('tools/dlssg_video.py', '--input', $inputPath, '--output', $outputPath
     '--worker', $workerPath, '--community-runtime', $communityPath, '--official-runtime-dir', $officialPath,
     '--codec', $Codec, '--multiplier', $Multiplier, '--terminal-frame-policy', 'duplicate')
 $started = Get-Date
-$script:baselineProcessPids = [System.Collections.Generic.HashSet[int]]::new()
-foreach ($existingProcess in @(Get-Process -Name python,ffmpeg,dlssg_sm86_offline,cmd,powershell -ErrorAction SilentlyContinue)) { [void]$script:baselineProcessPids.Add([int]$existingProcess.Id) }
 $proc = Start-Process -FilePath $PythonExecutable -ArgumentList $args -WorkingDirectory $root -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru -WindowStyle Hidden
+$script:supervisedIdentities = @{}
+$rootIdentity = Get-ProcessIdentity ([int]$proc.Id)
+if ($rootIdentity) { $script:supervisedIdentities[[int]$proc.Id] = $rootIdentity }
 Write-Host "[$(Get-Date -Format HH:mm:ss)] START $JobName pid=$($proc.Id) timeout=${PerJobTimeoutSeconds}s"
 $peakWorkingSet = [int64]0; $lastHeartbeat = $started; $lastSample = $started; $memorySamples = @()
 while (-not $proc.HasExited) {
     $now = Get-Date; $elapsed = ($now - $started).TotalSeconds
+    Update-SupervisedProcessTree
     $workingSet = Get-TreeWorkingSet $proc.Id; if ($workingSet -gt $peakWorkingSet) { $peakWorkingSet = $workingSet }
     if (($now - $lastSample).TotalSeconds -ge $HeartbeatSeconds) { $memorySamples += Get-MemorySample $proc.Id; $lastSample = $now }
     if (($now - $lastHeartbeat).TotalSeconds -ge $HeartbeatSeconds) { Write-Host "[$(Get-Date -Format HH:mm:ss)] HEARTBEAT $JobName elapsed=$([int]$elapsed)s workingSetMiB=$([math]::Round($workingSet / 1MB, 1))"; $lastHeartbeat = $now }

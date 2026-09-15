@@ -24,11 +24,11 @@ The exact requested candidate suite passed under normal filesystem permissions: 
 
 - `START`, periodic `HEARTBEAT`, `PASS`, and failure/timeout output;
 - a hard per-job timeout (default 2,400 seconds);
-- process-tree termination through `taskkill /T /F` on timeout;
+- process-tree termination through `taskkill /T /F` on timeout, followed only by PID-plus-creation-time identity verification for previously observed supervised descendants; no process-name-wide fallback;
 - PASS-artifact skipping, with `-RerunCompleted` as the explicit override;
 - retained stdout/stderr and worker diagnostics for successful and failed jobs;
 - JSON per-job evidence plus aggregate JSON and Markdown summaries;
-- output ffprobe validation, SHA-256 identities, free-space checks, CPU working-set sampling, and inherited VRAM telemetry from the video runner.
+- output ffprobe validation, SHA-256 identities, free-space checks, tree-owned CPU working-set sampling, and inherited VRAM telemetry from the video runner. Memory samples retain the tracked PID, executable name, creation-time identity, and working set for each supervised process.
 
 The harness smoke job passed in 11.17 seconds and the second invocation skipped the existing PASS artifact without rerunning it. An expected missing-input failure was rejected before worker launch.
 
@@ -85,11 +85,13 @@ Evidence: `runtime/phase4a_soak/soak_10m_1080p_4x.json`, `soak-summary.json`, an
 
 Phase 4A runtime soak result: **PASS for the exercised RTX 3070 Ti / Windows 10 environment**.
 
-Release blocker: reproduce the canonical 53-test suite in a correctly permissioned test environment and attach that clean result. No performance or runtime correctness blocker was found in the completed soak. Compatibility coverage beyond this GPU/OS/runtime identity remains untested and is not claimed by this report.
+The canonical 53-test candidate passed under normal filesystem permissions. No performance or runtime correctness blocker was found in the completed soak. Compatibility coverage beyond this GPU/OS/runtime identity remains untested and is not claimed by this report.
 
 ## Controlled failures, fresh clone, and final gate
 
 Validated harness failures include missing community runtime, missing official runtime directory, missing FFprobe, malformed input, invalid output target, injected encoder exit, exact native-worker termination, and one-second timeout. Failures preserve source and stdout/stderr; timeout writes structured FAIL JSON and aggregate FAIL summary. The deterministic timeout fixture exercised ten parent/child/grandchild cycles; every cycle wrote FAIL evidence and every recorded fixture PID was absent after cleanup. `taskkill /T /F` still reports access denied in this managed shell, but identity-scoped fallback cleanup leaves no fixture process behind.
+
+The pre-fix regression reproduced the defect: unrelated PowerShell PID `46580`, parent PID `29540`, started after the published harness baseline, was terminated by the name-based fallback. After the correction, ten final cycles (`ownership_final_1` through `ownership_final_10`) alternated unrelated-process creation before and after soak startup. Each recorded the supervised root and two descendants, returned bounded structured FAIL, terminated all supervised identities, and left the unrelated sibling alive. The concurrent memory proof `ownership_memory_unrelated.json` recorded zero tracked-PID matches for unrelated FFmpeg PID `21192`; only supervised identities contribute to the memory fields.
 
 Compact gate table:
 
@@ -113,7 +115,7 @@ Final gate status: **BACKEND HARDENING BASELINE ESTABLISHED**. All Phase 4A gate
 | Priority | Finding | Status |
 |---|---|---|
 | P0 | Data loss, security issue, or system instability | None observed |
-| P1 | Timeout cleanup initially left an externally spawned worker after `taskkill` returned access denied | Closed by ten deterministic parent/child/grandchild cycles with zero recorded PID survivors |
+| P1 | Published fallback could terminate unrelated same-name processes | Resolved by PID-plus-creation-time ownership tracking; pre-fix defect reproduced and ten final before/after regressions passed |
 | P2 | Natural-content coverage is limited to the three recorded licensed sources and exercised machine | Scope limitation; no Phase 4A blocker |
 | P2 | Invalid output target, encoder unexpected exit, and worker unexpected exit | Closed with retained expected-failure artifacts |
 | P2 | Per-timepoint memory slope/plateau samples were not retained by the accepted soak | Closed for the short characterization; long-soak time-series was intentionally not rerun |

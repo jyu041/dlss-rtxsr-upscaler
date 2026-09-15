@@ -1,5 +1,7 @@
 # Optional NVIDIA License Clarification Email
 
+**OPTIONAL / NOT A RELEASE PREREQUISITE**
+
 To: nvidia-rtx-license-questions@nvidia.com
 Subject: DLSS/NGX object-code distribution in an MIT Windows application
 

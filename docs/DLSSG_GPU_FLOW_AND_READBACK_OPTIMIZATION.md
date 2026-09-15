@@ -489,3 +489,44 @@ before its final sentinel became visible.
 
 The final candidate worker hash is
 `460F37E889F9AA5B45B8289F1E13A9D4AE0C39E52376CCC516921EF875480978`.
+
+## Direct readback-to-final-buffer packing
+
+The next bounded optimization removed the normal-group host assembly copy.
+`MapReadbackSlotInto()` now validates an explicit destination span and copies
+each mapped row directly into pre-sized `generated` storage. Reset groups retain
+one scratch frame and still return `OkResetNoOutput`; protocol v4, response
+layout, group ordering, synchronization, and GPU scheduling are unchanged.
+
+Before the change, a 1080p 4X measurement showed median map/row-packing time of
+6.900 ms/group and generated assembly of 10.113 ms/group. The 600-frame source
+contains 9 scene cuts, producing 590 normal groups and 1,770 generated frames.
+Thus measured avoidable temporary-to-final traffic was 14,681,088,000 bytes,
+with another 14,681,088,000 bytes recopied by generated-vector reallocations.
+The required mapped-row-to-packed-frame traffic remains; it was not claimed as
+eliminated. After the change, normal groups allocate final storage once, use no
+large temporary output vectors, perform zero assembly inserts, and eliminate
+both avoidable copy classes.
+
+The direct candidate produced identical raw generated-output sink hashes to the
+published 460F baseline for every 60- and 600-frame run. Encoded production
+medians were:
+
+| Workload / side | Wall (s) | Main loop (s) | Worker pair (ms) | Native total (ms) | GPU wait (ms) | Readback (ms) | RPC gap (ms) | Header wait (ms) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 60 old | 10.206 | 5.133 | 50.967 | 37.797 | 16.525 | 6.781 | 13.170 | 38.974 |
+| 60 candidate | 9.478 | 4.467 | 40.288 | 28.845 | 16.793 | 6.686 | 11.443 | 28.871 |
+| 600 old | 62.237 | 57.145 | 70.785 | 55.361 | 34.702 | 6.728 | 15.424 | 56.487 |
+| 600 candidate | 54.264 | 49.063 | 56.721 | 43.374 | 31.552 | 6.763 | 13.346 | 43.401 |
+
+Encoded wall improvement was 7.13% at 60 frames and 12.81% at 600 frames.
+The no-encode medians were 13.583 s old versus 12.651 s candidate at 60
+frames, and 66.117 s old versus 57.820 s candidate at 600 frames. The direct
+packing signal is primarily native: 600-frame native total fell 21.67% while
+readback remained unchanged within measurement noise. Encoder write latency
+was retained and remained part of the end-to-end measurement.
+
+The final direct-packing worker hash is
+`C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916`.
+The narrow classification `DLSSG_READBACK_ASSEMBLY_COPY_OVERHEAD_REDUCED` is
+supported; no universal throughput claim is made.

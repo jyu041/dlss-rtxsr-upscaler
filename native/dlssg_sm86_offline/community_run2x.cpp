@@ -234,13 +234,16 @@ static void RecordReadbackSlot(Texture &output, Buffer &disable, ReadbackSlot &s
     Transition(list, output.gpu, output.state, D3D12_RESOURCE_STATE_UNORDERED_ACCESS); output.state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
     Transition(list, disable.gpu, disable.state, D3D12_RESOURCE_STATE_UNORDERED_ACCESS); disable.state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 }
-static bool MapReadbackSlot(const Texture &output, const ReadbackSlot &slot, std::vector<uint8_t> &packed, uint32_t &disableValue) {
+static bool MapReadbackSlotInto(const Texture &output, const ReadbackSlot &slot, uint8_t *destination,
+    size_t destinationBytes, uint32_t &disableValue) {
     uint8_t *mapped = nullptr; D3D12_RANGE range{0, static_cast<SIZE_T>(output.allocationBytes)};
+    const size_t frameBytes = static_cast<size_t>(output.rowBytes) * output.height;
+    if (!destination || destinationBytes != frameBytes) { RunLog("GROUP_READBACK_DESTINATION_INVALID expected=%llu actual=%llu",
+        static_cast<unsigned long long>(frameBytes), static_cast<unsigned long long>(destinationBytes)); return false; }
     if (!slot.output) { RunLog("GROUP_READBACK_OUTPUT_SLOT_NULL"); return false; }
     const HRESULT outputMap = slot.output->Map(0, &range, reinterpret_cast<void **>(&mapped));
     if (FAILED(outputMap)) { RunLog("GROUP_READBACK_OUTPUT_MAP_FAILED hr=0x%08X bytes=%llu", static_cast<unsigned>(outputMap), output.allocationBytes); return false; }
-    packed.resize(static_cast<size_t>(output.rowBytes) * output.height);
-    for (UINT row = 0; row < output.height; ++row) std::memcpy(packed.data() + static_cast<size_t>(row) * output.rowBytes,
+    for (UINT row = 0; row < output.height; ++row) std::memcpy(destination + static_cast<size_t>(row) * output.rowBytes,
         mapped + static_cast<size_t>(row) * output.footprint.Footprint.RowPitch, output.rowBytes);
     slot.output->Unmap(0, nullptr); uint8_t *disableMapped = nullptr; D3D12_RANGE disableRange{0, 4};
     if (!slot.disable) { RunLog("GROUP_READBACK_DISABLE_SLOT_NULL"); return false; }
@@ -881,24 +884,35 @@ public:
             request.frameId, count, count, count, count, response.gpuWaitMs);
         response.uploadMs = Milliseconds(uploadStart, uploadEnd); response.nvofUploadMs = nvofTimings.uploadMs;
         response.nvofExecuteMs = nvofTimings.executeMs; response.flowConversionMs = nvofTimings.conversionMs;
-        const auto readbackStart = Clock::now(); std::array<std::vector<uint8_t>, 3> outputs{}; std::array<uint32_t, 3> disables{};
+        const auto postFenceStart = Clock::now();
+        const auto readbackStart = Clock::now();
+        const size_t frameBytes = static_cast<size_t>(output_.rowBytes) * output_.height;
+        std::vector<uint8_t> resetScratch;
+        if (effectiveReset) resetScratch.resize(frameBytes);
+        else generated.resize(static_cast<size_t>(count) * frameBytes);
+        std::array<uint32_t, 3> disables{};
         for (uint32_t index = 0; index < count; ++index) {
             ++readbackSlotsUsed_;
-            if (!MapReadbackSlot(output_, readbackSlots_[index], outputs[index], disables[index])) return Status::NativeFailure;
+            uint8_t *destination = effectiveReset ? resetScratch.data() : generated.data() + static_cast<size_t>(index) * frameBytes;
+            if (!MapReadbackSlotInto(output_, readbackSlots_[index], destination, frameBytes, disables[index])) return Status::NativeFailure;
             if (diagnosticMode_) RunLog("WORKER_GROUP_READBACK frame=%llu generatedIndex=%u disableValue=%u", request.frameId, index + 1, disables[index]);
             if (!effectiveReset && disables[index] != 0) return Status::InterpolationDisabled;
         }
         response.readbackMs = Milliseconds(readbackStart, Clock::now());
-        const auto validOutput = [&](const std::vector<uint8_t> &value) {
-            return (!diagnosticMode_ || value != output_.packed) && !std::all_of(value.begin(), value.end(), [](uint8_t item) { return item == 0; }) &&
-                !( !value.empty() && std::all_of(value.begin(), value.end(), [&](uint8_t item) { return item == value.front(); }) );
+        const auto validOutput = [&](const uint8_t *value) {
+            return (!diagnosticMode_ || !std::equal(value, value + frameBytes, output_.packed.begin())) &&
+                !std::all_of(value, value + frameBytes, [](uint8_t item) { return item == 0; }) &&
+                !std::all_of(value + 1, value + frameBytes, [&](uint8_t item) { return item == value[0]; });
         };
         if (effectiveReset) {
             history_.Complete(request.frameId); nvofHistoryValid_ = false;
             response.totalProcessMs = Milliseconds(totalStart, Clock::now());
             if (diagnosticMode_) RunLog("WORKER_GROUP_RESET_COMPLETE frame=%llu generatedCount=%u", request.frameId, count); return Status::OkResetNoOutput;
         }
-        for (uint32_t index = 0; index < count; ++index) { if (!validOutput(outputs[index])) return Status::InvalidOutput; generated.insert(generated.end(), outputs[index].begin(), outputs[index].end()); }
+        for (uint32_t index = 0; index < count; ++index) {
+            const uint8_t *frame = generated.data() + static_cast<size_t>(index) * frameBytes;
+            if (!validOutput(frame)) return Status::InvalidOutput;
+        }
         response.totalProcessMs = Milliseconds(totalStart, Clock::now()); response.disableInterpolation = 0;
         response.generatedCount = count; response.outputBytes = static_cast<uint32_t>(generated.size()); history_.Complete(request.frameId);
         if (motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow) && !nvof_.ForwardOnly()) previousColor_.assign(color_.packed.begin(), color_.packed.end());

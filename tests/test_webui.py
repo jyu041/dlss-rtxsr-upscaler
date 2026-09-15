@@ -31,6 +31,69 @@ def test_dlss_sr_validation_action_runs_explicitly_and_refreshes_choices(monkeyp
     assert "READY" in message
     assert update["choices"] == [("DLSS SR", "DLSS SR only")]
 
+
+def test_dlss_sr_validation_is_reachable_before_ready(monkeypatch):
+    class Status:
+        state = "SELFTEST REQUIRED"
+        reason = "run explicit self-test"
+
+    monkeypatch.setattr(webui, "status_html", lambda: "status")
+    monkeypatch.setattr(webui, "available_mode_choices", lambda: [("RTX VSR", "RTX VSR only"), ("DLSS 5", "DLSS 5 only")])
+    monkeypatch.setattr(webui, "DLSSSRBackend", lambda: type("Backend", (), {"status": lambda self: Status()})())
+    ui = build()
+    components = ui.config["components"]
+    buttons = [item for item in components if item.get("type") == "button" and item.get("props", {}).get("value") == "Validate DLSS SR"]
+    readiness_groups = [item for item in components if item.get("type") == "group" and item.get("props", {}).get("elem_classes") == ["backend-readiness"]]
+    radios = [item for item in components if item.get("type") == "radio" and item.get("props", {}).get("elem_id") == "enhancement-selector"]
+    assert len(buttons) == 1
+    assert buttons[0]["props"].get("visible", True) is True
+    assert len(readiness_groups) == 1 and readiness_groups[0]["props"].get("visible", True) is True
+    assert ("DLSS SR", "DLSS SR only") not in radios[0]["props"]["choices"]
+
+
+def test_dlss_sr_ready_state_adds_processing_choice(monkeypatch):
+    class Status:
+        state = "READY"
+        reason = "current attestation"
+
+    monkeypatch.setattr(webui, "DLSSSRBackend", lambda: type("Backend", (), {"status": lambda self: Status()})())
+    ui = build()
+    radios = [item for item in ui.config["components"] if item.get("type") == "radio" and item.get("props", {}).get("elem_id") == "enhancement-selector"]
+    assert ("DLSS SR", "DLSS SR only") in radios[0]["props"]["choices"]
+
+
+@pytest.mark.parametrize("state", ["NO HOST", "NO RUNTIME", "IDENTITY MISMATCH"])
+def test_dlss_sr_unavailable_states_are_visible_and_non_actionable(monkeypatch, state):
+    class Status:
+        reason = "exact validated native files are required"
+    Status.state = state
+    monkeypatch.setattr(webui, "DLSSSRBackend", lambda: type("Backend", (), {"status": lambda self: Status()})())
+    ui = build()
+    components = ui.config["components"]
+    button = next(item for item in components if item.get("type") == "button" and item.get("props", {}).get("value") == "Validate DLSS SR")
+    readiness = next(item for item in components if item.get("type") == "markdown" and "Current state:" in item.get("props", {}).get("value", ""))
+    assert state in readiness["props"]["value"]
+    assert button["props"]["interactive"] is False
+
+
+def test_dlss_sr_failed_validation_does_not_enable_processing(monkeypatch):
+    class Status:
+        state = "IDENTITY MISMATCH"
+        reason = "hash mismatch"
+    class Backend:
+        def selftest(self):
+            raise RuntimeError("hash mismatch")
+        def status(self):
+            return Status()
+    monkeypatch.setattr(webui, "DLSSSRBackend", Backend)
+    monkeypatch.setattr(webui, "status_html", lambda: "status")
+    monkeypatch.setattr(webui, "available_mode_choices", lambda: [("RTX VSR", "RTX VSR only"), ("DLSS 5", "DLSS 5 only")])
+    status, message, update = webui.validate_dlss_sr()
+    assert status == "status"
+    assert "failed" in message.lower()
+    assert "IDENTITY MISMATCH" in message
+    assert ("DLSS SR", "DLSS SR only") not in update["choices"]
+
 def test_gradio_launch_configuration_matches_installed_api():
     blocks_params = inspect.signature(gr.Blocks).parameters
     launch_params = inspect.signature(gr.Blocks.launch).parameters

@@ -59,7 +59,7 @@ def validate_dlss_sr():
         message = f"DLSS SR self-test: {status.state} — {status.reason}"
     except Exception as exc:
         status = backend.status()
-        message = f"DLSS SR self-test failed: {exc}. {status.reason}"
+        message = f"DLSS SR self-test failed: {exc}. Current state: {status.state} — {status.reason}"
     return status_html(), message, gr.update(choices=available_mode_choices())
 def inspect(path):
     if not path: return "<span class=\"muted\">No video selected.</span>", "No video selected."
@@ -241,6 +241,8 @@ def build():
     dlssg_multiplier_default = dlssglast.get("multiplier", 2)
     if dlssg_multiplier_default not in {2, 3, 4}: dlssg_multiplier_default = 2
     previous_render = load_last_successful_render()
+    sr_initial_status = DLSSSRBackend().status()
+    sr_validation_enabled = sr_initial_status.state in {"SELFTEST REQUIRED", "READY"}
     with gr.Blocks(title="NVIDIA Video Enhancer", analytics_enabled=False) as ui:
         status = gr.HTML(status_html(), elem_classes="status-header")
         gr.HTML('<details class="advanced-diagnostics"><summary>Advanced diagnostics</summary><div>DLSS SR uses a separate native D3D12 NGX host with optical-flow motion guidance. Video mode is SDR, has no renderer depth or jitter, and requires the approved local NVIDIA runtime.</div></details>')
@@ -259,6 +261,10 @@ def build():
             with gr.Column(scale=35, min_width=360, elem_classes="settings-panel"):
                 gr.Markdown("## Enhancement")
                 mode = gr.Radio(available_mode_choices(), value="DLSS 5 only", show_label=False, elem_id="enhancement-selector", elem_classes="enhancement-selector")
+                with gr.Group(visible=True, elem_classes="backend-readiness"):
+                    gr.Markdown("### DLSS SR Readiness")
+                    sr_readiness = gr.Markdown(f"Current state: {sr_initial_status.state} — {sr_initial_status.reason}")
+                    sr_validate = gr.Button("Validate DLSS SR", interactive=sr_validation_enabled)
                 with gr.Group(visible=False, elem_classes="backend-group") as rtx_group:
                     gr.Markdown("### RTX VSR Settings")
                     _tip(RTX_TOOLTIPS, "mode", "Mode")
@@ -295,9 +301,6 @@ def build():
                     mask = gr.Dropdown(["Off", "On"], value="On" if dlast.get("automatic_mask", False) else "Off", show_label=False)
                 with gr.Group(visible=False, elem_classes="backend-group") as sr_group:
                     gr.Markdown("### DLSS SR Settings")
-                    with gr.Row():
-                        sr_validate = gr.Button("Validate DLSS SR")
-                    sr_readiness = gr.Markdown("DLSS SR requires an explicit first-run self-test.")
                     _tip(DLSS_SR_TOOLTIPS, "mode", "Mode")
                     sr_mode = gr.Dropdown(["DLAA", "Quality", "Balanced", "Performance", "Ultra Performance"], value=srlast.get("mode", "Quality"), show_label=False)
                     _tip(DLSS_SR_TOOLTIPS, "model_preset", "Model preset")

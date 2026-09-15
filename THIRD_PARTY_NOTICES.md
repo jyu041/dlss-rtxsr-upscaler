@@ -38,11 +38,17 @@ is not bundled.
 
 ## Community and official runtimes
 
+The beta.2 package includes the official DLSS SR REL `nvngx_dlss.dll` used by
+the validated host. It remains NVIDIA material under the applicable NVIDIA
+SDK/runtime terms, is not MIT-licensed, and must not be extracted or
+redistributed as a stand-alone runtime.
+
 The community `version.dll` from `sdli1995/dlssg_for_sm86` commit
 `5f62ff44a9c08f9841fa605e7b7160f79ccd2c40` (tested SHA-256
 `C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2`) remains
 user-supplied: its commit has GPLv3/proprietary notices but no standalone
-redistribution grant established here. The official NVIDIA feature runtime is
-also user-supplied. Neither is included or automatically downloaded.
+redistribution grant established here. The official DLSS-G feature runtime is
+also user-supplied. Neither the community runtime nor the official DLSS-G
+runtime is included or automatically downloaded.
 
 FFmpeg/FFprobe and Python dependencies retain their own upstream licenses.

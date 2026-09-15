@@ -51,6 +51,16 @@ def save_dlssg_settings(community_runtime, official_runtime_dir, motion_provider
     return "Runtime configuration saved locally."
 def check_dlssg_readiness(community_runtime, official_runtime_dir):
     return "```text\n" + format_summary(assess(community_runtime=community_runtime, official_runtime_dir=official_runtime_dir)) + "\n```"
+def validate_dlss_sr():
+    backend = DLSSSRBackend()
+    try:
+        backend.selftest()
+        status = backend.status()
+        message = f"DLSS SR self-test: {status.state} — {status.reason}"
+    except Exception as exc:
+        status = backend.status()
+        message = f"DLSS SR self-test failed: {exc}. {status.reason}"
+    return status_html(), message, gr.update(choices=available_mode_choices())
 def inspect(path):
     if not path: return "<span class=\"muted\">No video selected.</span>", "No video selected."
     try:
@@ -285,6 +295,9 @@ def build():
                     mask = gr.Dropdown(["Off", "On"], value="On" if dlast.get("automatic_mask", False) else "Off", show_label=False)
                 with gr.Group(visible=False, elem_classes="backend-group") as sr_group:
                     gr.Markdown("### DLSS SR Settings")
+                    with gr.Row():
+                        sr_validate = gr.Button("Validate DLSS SR")
+                    sr_readiness = gr.Markdown("DLSS SR requires an explicit first-run self-test.")
                     _tip(DLSS_SR_TOOLTIPS, "mode", "Mode")
                     sr_mode = gr.Dropdown(["DLAA", "Quality", "Balanced", "Performance", "Ultra Performance"], value=srlast.get("mode", "Quality"), show_label=False)
                     _tip(DLSS_SR_TOOLTIPS, "model_preset", "Model preset")
@@ -352,6 +365,7 @@ def build():
         for control in dlssg_inputs:
             control.change(save_dlssg_settings, dlssg_inputs, dlssg_saved, show_progress="hidden")
         dlssg_check.click(check_dlssg_readiness, [dlssg_runtime, dlssg_official_runtime], dlssg_readiness, show_progress="hidden")
+        sr_validate.click(validate_dlss_sr, outputs=[status, sr_readiness, mode], show_progress="full")
         frame.click(do_frame, [inp, timestamp, state, vsr_mode, scale, quality, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [before, after, job])
         clip.click(preview_clip, [inp, state, vsr_mode, scale, quality, container, timestamp, preview_duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [before_clip, result_video, job])
         render.click(render_video, [inp, state, vsr_mode, scale, quality, container, codec, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [result_video, job])

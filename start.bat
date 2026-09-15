@@ -9,4 +9,4 @@ where conda >nul 2>nul || (echo Conda was not found. Run setup.bat first.& exit 
 where ffmpeg >nul 2>nul || (echo FFmpeg was not found on PATH. Restart this shell or run setup.bat.& exit /b 1)
 where ffprobe >nul 2>nul || (echo FFprobe was not found on PATH. Restart this shell or run setup.bat.& exit /b 1)
 if exist runtime.local.ps1 powershell -NoProfile -ExecutionPolicy Bypass -File runtime.local.ps1
-call conda run --no-capture-output %NVE_CONDA_TARGET% python app.py
+if defined NVE_CONDA_PREFIX (call conda run --no-capture-output --prefix "%NVE_CONDA_PREFIX%" python app.py) else (call conda run --no-capture-output --name "%NVE_CONDA_ENV%" python app.py)

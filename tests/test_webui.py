@@ -15,6 +15,22 @@ from src.ui import app as webui
 from src.ui.app import build, mode_visibility
 from src.core import user_presets
 
+
+def test_dlss_sr_validation_action_runs_explicitly_and_refreshes_choices(monkeypatch):
+    class Status:
+        state = "READY"
+        reason = "fresh attestation"
+    class Backend:
+        def selftest(self): return {"status": "success"}
+        def status(self): return Status()
+    monkeypatch.setattr(webui, "DLSSSRBackend", Backend)
+    monkeypatch.setattr(webui, "status_html", lambda: "status")
+    monkeypatch.setattr(webui, "available_mode_choices", lambda: [("DLSS SR", "DLSS SR only")])
+    status, message, update = webui.validate_dlss_sr()
+    assert status == "status"
+    assert "READY" in message
+    assert update["choices"] == [("DLSS SR", "DLSS SR only")]
+
 def test_gradio_launch_configuration_matches_installed_api():
     blocks_params = inspect.signature(gr.Blocks).parameters
     launch_params = inspect.signature(gr.Blocks.launch).parameters

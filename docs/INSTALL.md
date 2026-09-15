@@ -5,7 +5,9 @@
 Download the official project beta ZIP, optionally verify its published
 SHA-256, extract it to a normal directory, and run `setup.bat` from the
 extracted directory. Then run `start.bat`. The archive includes the validated
-project worker but never includes community or official NVIDIA runtime DLLs.
+project worker, the DLSS SR host, and the official DLSS SR REL
+`nvngx_dlss.dll` under the applicable NVIDIA terms. It does not include
+community or official DLSS-G runtime DLLs.
 
 Use Windows 10 or 11 x64 with a compatible NVIDIA driver, Miniconda or
 Anaconda, and FFmpeg/FFprobe available on `PATH` (the full Gyan build is

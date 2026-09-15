@@ -8,4 +8,4 @@ dependencies:
       - --extra-index-url https://pypi.nvidia.com
       - --extra-index-url https://download.pytorch.org/whl/cu128
       - -r requirements.txt
-      # nvidia-vfx is deliberately not guessed or auto-installed. See docs/INSTALL.md.
+      # nvidia-vfx is pinned and installed from the validated package index. See docs/INSTALL.md.

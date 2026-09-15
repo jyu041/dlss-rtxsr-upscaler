@@ -13,6 +13,11 @@ recommended for NVENC). The scripts use only the dedicated
 `dlss-rtxsr-upscaler` Conda environment and do not modify system Python,
 ComfyUI, or another application environment.
 
+For isolated developer or validation runs only, set `NVE_CONDA_ENV` to a
+temporary Conda environment name before running `setup.bat` and `start.bat`.
+The default remains `dlss-rtxsr-upscaler`; the override is not required for
+normal users and accepts only letters, numbers, underscore, period, and hyphen.
+
 The packaged C55 worker uses the Microsoft Visual C++ runtime (`/MD`). Install
 the Microsoft Visual C++ 2015-2022 Redistributable x64 separately if it is not
 already present. It is not bundled by this project. The readiness check reports

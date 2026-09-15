@@ -21,6 +21,7 @@ from src.ui.progress_view import progress_html
 from src.ui.tooltips import RTX_TOOLTIPS, DLSS5_TOOLTIPS, DLSS_SR_TOOLTIPS, setting_label
 from src.ui.preset_controls import delete_dlss, delete_rtx, delete_dlss_sr, load_dlss, load_dlss_sr, load_rtx, preset_choices, save_dlss, save_dlss_sr, save_rtx
 from src.video.stream import render_vsr
+from src.video.rtx_vsr_worker import RTXVSRSession
 from src.video.dlss5 import render_dlss5
 from src.video.dlss_sr import process_dlss_sr_frame, render_dlss_sr
 from src.video.dlssg import ffmpeg_executable, render_dlssg
@@ -29,7 +30,8 @@ os.environ.setdefault("GRADIO_ANALYTICS_ENABLED","False")
 CONTROLLER = JobController()
 def status_html():
     d = collect()
-    rtx = "Ready" if d["rtx_vsr"]["available"] else "Unavailable"
+    rtx_state = d["rtx_vsr"].get("state", "UNAVAILABLE")
+    rtx = rtx_state if d["rtx_vsr"]["available"] else "Unavailable"
     dlss = "Experimental Ready" if d["dlss5"]["available"] else "Unavailable"
     sr = "Experimental Ready" if d["dlss_sr"]["state"] == "EXPERIMENTAL READY" else "Unavailable"
     fg = "Validated 2X/3X/4X" if d["dlssg"]["available"] else "Not configured"
@@ -92,16 +94,15 @@ def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_s
             used = composition.get("recompose_backend_used", "bypassed")
             return str(source_frame), str(out), f"DLSS5 Feature-18 verified | Recompose {used} | {dlss_scale}x | {style} | Intensity {float(intensity):.2f} | Output {enhanced.shape[1]}x{enhanced.shape[0]}"
         target=(w,h) if vsr_mode in {"Deblur","Denoise"} else aligned_dimensions(w,h,float(scale_value))
-        import torch
-        tensor=torch.from_numpy(image.copy()).to("cuda",dtype=torch.float32).div_(255)
-        result=RTXVSRBackend().process_frame(tensor,*target,quality_value) if vsr_mode == "Super Resolution" else None
-        if result is None:
-            backend=RTXVSRBackend(); level=backend.mode_quality(vsr_mode,quality_value)
-            with backend.nvvfx.VideoSuperRes(level) as effect:
-                effect.output_width,effect.output_height=target; effect.load(); native=effect.run(tensor); result=torch.from_dlpack(native.image).clone(); del native
-        enhanced=(result.clamp(0,1).mul(255).byte().cpu().numpy()) if vsr_mode == "Super Resolution" else (result.clamp(0,1).mul(255).byte().permute(1,2,0).cpu().numpy())
+        session = RTXVSRSession()
+        try:
+            session.start(w, h, target[0], target[1], vsr_mode, quality_value)
+            enhanced = session.process_frame(0, image)
+            session.finish()
+        finally:
+            session.close()
         out=TEMP/f"preview_{os.getpid()}.png"; Image.fromarray(enhanced).save(out)
-        del result,tensor,image,enhanced
+        del image,enhanced
         return str(source_frame), str(out), f"RTX VSR {vsr_mode} preview completed at {target[0]}x{target[1]}."
     except Exception as e: return None, None, str(e)
 def apply_preset(name):
@@ -162,7 +163,7 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
         elif processing_mode == "DLSS 5 only":
             backend = DLSS5Backend(); stats = render_dlss5(path, destination, backend, _dlss_options(backend, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model), codec=codec_value, cancel=job.cancel_event, progress=progress, nr_working_scale=nr_working_scale, recompose_backend=recompose_backend)
         else:
-            stats = render_vsr(path, destination, RTXVSRBackend(), float(scale_value), quality_value, vsr_mode, job.cancel_event, progress=progress)
+            stats = render_vsr(path, destination, RTXVSRBackend(), float(scale_value), quality_value, vsr_mode, job.cancel_event, progress=progress, codec=codec_value)
         MONITOR.set_active(False); CONTROLLER.finish("COMPLETED", f"Completed: {stats['frames']} frames")
         save_last_successful_render(destination)
         performance = stats.get("timings_mean_ms", {})

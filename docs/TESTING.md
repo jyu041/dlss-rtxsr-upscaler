@@ -15,7 +15,10 @@ validation.
 
 Backend validation classes:
 
-- RTX VSR: NVIDIA VFX installation and GPU smoke tests.
+- RTX VSR: run `python tools/check_rtx_vsr_readiness.py` for static API
+  inspection plus one process-isolated GPU smoke test. The child emits
+  heartbeat lines and is terminated after the hard timeout if native NVIDIA
+  code stops responding.
 - DLSS SR: native D3D12 host, approved NGX hash, and Quality self-test.
 - DLSS5: user-approved runtime, firewall check, protocol test, and signed
   Feature-18 evidence.

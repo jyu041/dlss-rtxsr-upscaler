@@ -13,7 +13,10 @@ from .base import Backend, BackendStatus
 ROOT = Path(__file__).resolve().parents[2]
 HOST = ROOT / "runtime" / "dlss-sr-host" / "dlss_sr_host.exe"
 RESULT = ROOT / "runtime" / "dlss-sr-host" / "selftest" / "result.json"
-APPROVED_DLL_SHA256 = "C85F971CE023C9F3492FC7455F0B01A24BA18EA39636407A846902C4360B0B7E"
+VALIDATED_DLSS_SR_RUNTIME_SHA256 = "3975567B8943C53ACCE397F2B72380092F84F162D00B0D2C7D08A1025C563983"
+VALIDATED_HOST_SHA256 = "E23F3CD5BEB5E70001E9950C890027D46F84CEB4439A09CEA67E343AB34A34BB"
+VALIDATED_SDK_COMMIT = "374959484E79A640FEABA44C93AC8CFB0A03F5B5"
+VALIDATED_SDK_LICENSE_SHA256 = "3027F23CA5A46DD9CB8183FBD522983A86F64D7DAAC5982912BF9F214671F294"
 
 
 def _sha256(path: Path) -> str:
@@ -45,8 +48,12 @@ class DLSSSRBackend(Backend):
         if not self.runtime.is_file():
             return BackendStatus("DLSS SR", False, "NO RUNTIME", f"NGX runtime missing: {self.runtime}")
         try:
-            if _sha256(self.runtime) != APPROVED_DLL_SHA256:
-                return BackendStatus("DLSS SR", False, "HASH MISMATCH", f"Unapproved NGX runtime: {self.runtime}")
+            host_hash = _sha256(self.host)
+            if host_hash != VALIDATED_HOST_SHA256:
+                return BackendStatus("DLSS SR", False, "HOST HASH MISMATCH", f"Unvalidated native host: {self.host}")
+            runtime_hash = _sha256(self.runtime)
+            if runtime_hash != VALIDATED_DLSS_SR_RUNTIME_SHA256:
+                return BackendStatus("DLSS SR", False, "RUNTIME HASH MISMATCH", f"Unvalidated official NGX runtime: {self.runtime}")
         except OSError as exc:
             return BackendStatus("DLSS SR", False, "NO RUNTIME", str(exc))
         data = self._read_result()
@@ -66,6 +73,7 @@ class DLSSSRBackend(Backend):
             "host_exists": self.host.is_file(),
             "runtime": str(self.runtime),
             "runtime_sha256": _sha256(self.runtime) if self.runtime.is_file() else None,
+            "host_sha256": _sha256(self.host) if self.host.is_file() else None,
             "state": status.state,
             "available": status.available,
             "reason": status.reason,
@@ -90,10 +98,10 @@ class DLSSSRBackend(Backend):
         return data
 
     def process_frame(self, *args, **kwargs):
-        raise RuntimeError("DLSS SR frame processing is not exposed until native video integration.")
+        raise RuntimeError("DLSS SR frame processing is implemented by src.video.dlss_sr.process_dlss_sr_frame; use the video pipeline entry point.")
 
     def process_video(self, *args, **kwargs):
-        raise RuntimeError("DLSS SR video processing is not implemented.")
+        raise RuntimeError("DLSS SR video processing is implemented by src.video.dlss_sr.render_dlss_sr; use the video pipeline entry point.")
 
     def close(self):
         return None

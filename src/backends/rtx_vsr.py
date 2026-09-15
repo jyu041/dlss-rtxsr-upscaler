@@ -1,16 +1,21 @@
 from .base import Backend, BackendStatus
+from src.core.rtx_vsr_readiness import inspect_api
+
 class RTXVSRBackend(Backend):
-    """Thin, optional adapter. It never falls back to a generic upscaler."""
+    """Optional NVIDIA VFX adapter; it never falls back to a generic upscaler."""
     def __init__(self):
-        self.nvvfx = None; self.reason = "nvidia-vfx is not installed"
+        self.nvvfx = None
         try:
             import nvvfx
-            self.nvvfx = nvvfx; self.reason = "nvvfx imported; GPU initialization is deferred to the job"
-        except Exception as e: self.reason = f"nvvfx unavailable: {e}"
-    def status(self): return BackendStatus("RTX VSR", bool(self.nvvfx), "AVAILABLE" if self.nvvfx else "UNAVAILABLE", self.reason)
+            self.nvvfx = nvvfx
+        except Exception:
+            pass
+        self._readiness = inspect_api(self.nvvfx) if self.nvvfx else inspect_api()
+    def status(self):
+        return BackendStatus("RTX VSR", self._readiness.available, self._readiness.state, self._readiness.reason)
     def process_frame(self, frame, output_width, output_height, quality="ULTRA"):
         """Process one HWC float/uint8 torch frame and detach DLPack storage immediately."""
-        if not self.nvvfx: raise RuntimeError("RTX VSR unavailable: " + self.reason)
+        if not self.nvvfx: raise RuntimeError("RTX VSR unavailable: " + self._readiness.reason)
         import torch
         levels = self.quality_levels()
         with self.nvvfx.VideoSuperRes(levels[quality]) as sr:
@@ -27,7 +32,7 @@ class RTXVSRBackend(Backend):
         q = self.nvvfx.VideoSuperRes.QualityLevel if self.nvvfx else None
         return {name: getattr(q, name) for name in ("LOW", "MEDIUM", "HIGH", "ULTRA")}
     def mode_quality(self, mode, quality):
-        if not self.nvvfx: raise RuntimeError("RTX VSR unavailable: " + self.reason)
+        if not self.nvvfx: raise RuntimeError("RTX VSR unavailable: " + self._readiness.reason)
         prefix = {"Super Resolution":"", "High Bitrate":"HIGHBITRATE_", "Deblur":"DEBLUR_", "Denoise":"DENOISE_"}.get(mode)
         if prefix is None: raise ValueError("Unknown RTX VSR mode")
         name = prefix + quality
@@ -35,7 +40,7 @@ class RTXVSRBackend(Backend):
         if not hasattr(level, name): raise ValueError(f"Installed nvvfx does not expose {name}")
         return getattr(level, name)
     def process(self, frames, width, height, quality="ULTRA", cancel=None, progress=None):
-        if not self.nvvfx: raise RuntimeError("RTX VSR unavailable: " + self.reason)
+        if not self.nvvfx: raise RuntimeError("RTX VSR unavailable: " + self._readiness.reason)
         for index, frame in enumerate(frames):
             if cancel and cancel.is_set(): return
             yield self.process_frame(frame, width, height, quality)

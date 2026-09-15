@@ -45,7 +45,7 @@ The backends are selected explicitly. If a required runtime is missing or unappr
 - Audio preservation through the video render pipeline
 - Saved settings and presets for each backend
 - Separate runtime checks, diagnostics, manifests, hashes, and approval gates
-- No backend fallback, silent proprietary-runtime downloads, or bundled NVIDIA binaries
+- No backend fallback, silent proprietary-runtime downloads, or unapproved NVIDIA binaries
 
 ## Architecture
 
@@ -101,7 +101,7 @@ The detailed installation guide covers NVIDIA VFX, the local DLSS SDK staging pa
 | Backend | Additional local requirement |
 | --- | --- |
 | RTX VSR | Compatible official NVIDIA VFX package |
-| DLSS SR | Locally staged NVIDIA DLSS SDK to build the host, approved `nvngx_dlss.dll`, and a passing self-test |
+| DLSS SR | Beta.2 package will include the validated host and official REL runtime under NVIDIA terms |
 | DLSS 5 | Retained protocol client, separately obtained runtime, approved manifest, exact hashes, signed Feature-18 evidence, and the required Windows Firewall outbound block |
 
 Backend availability depends on the installed GPU, driver, and exact runtime combination. RTX 30/40/50-series hardware may expose different capabilities; DLSS 5 support must not be inferred from community experiments alone. See [`docs/DLSS5_APPROVAL.md`](docs/DLSS5_APPROVAL.md) for the approval contract.

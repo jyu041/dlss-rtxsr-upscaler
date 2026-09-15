@@ -29,6 +29,25 @@ MODES = {
 PRESETS = {"Default": 0, "J": 10, "K": 11, "L": 12, "M": 13}
 
 
+class _StandaloneTemporalGuide:
+    """DLSS SR's self-contained guide; it does not depend on DLSS 5 code."""
+    def __init__(self, width: int, height: int):
+        self.width, self.height = width, height
+        self.previous = None
+
+    def process(self, frame):
+        current = np.asarray(frame, dtype=np.uint8)
+        reset = self.previous is None
+        if self.previous is not None:
+            # A large mean change is a conservative scene-cut reset. The
+            # native host still receives zero motion because this pipeline has
+            # no optical-flow/depth producer.
+            previous = self.previous.astype(np.int16)
+            reset = float(np.abs(current.astype(np.int16) - previous).mean()) > 32.0
+        self.previous = current.copy()
+        return type("GuideFrame", (), {"motion": np.zeros((self.height, self.width, 2), dtype=np.float32), "reset": reset})()
+
+
 def _target(width: int, height: int, mode: str) -> tuple[int, int]:
     if mode not in MODES:
         raise ValueError(f"Unsupported DLSS SR mode: {mode}")
@@ -45,10 +64,7 @@ def _client_root() -> None:
 
 
 def _motion_guide(width: int, height: int):
-    _client_root()
-    from dlss5.motion import TemporalGuide
-
-    return TemporalGuide(width, height, flow_width=min(640, width), enabled=True)
+    return _StandaloneTemporalGuide(width, height)
 
 
 def _read_response(stream, expected_bytes: int) -> tuple[tuple[int, ...], bytes]:

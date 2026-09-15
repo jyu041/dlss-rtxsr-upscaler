@@ -45,9 +45,11 @@ load on your Windows host, install the reputable full build with
 ## Backends
 
 RTX VSR needs the compatible official NVIDIA VFX package and an NVIDIA GPU.
-DLSS SR needs a locally staged NVIDIA DLSS SDK to build the native D3D12 host,
-an approved `nvngx_dlss.dll` beside that host, and a passing self-test. The
-recommended starting mode is DLSS Quality with the Default model preset.
+DLSS SR beta.2 is designed to ship the validated native D3D12 host and the
+official SDK REL `nvngx_dlss.dll` beside it, subject to NVIDIA notices and
+terms. Developers still need the SDK headers/libraries only to rebuild the
+host; normal users do not. The recommended starting mode is DLSS Quality with
+the Default model preset.
 
 DLSS 5 is experimental and optional. It needs the retained generic protocol
 client at `third_party/ComfyUI-DLSS5-Enhancer`, a separately obtained local

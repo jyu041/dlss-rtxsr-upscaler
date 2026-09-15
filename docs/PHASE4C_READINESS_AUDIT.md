@@ -80,10 +80,11 @@ It includes the Windows x64 NGX import libraries and official development and
 release `nvngx_dlss.dll` files. Their hashes are respectively
 `378262F4BA429E6199CE25D6F9275734F354C3B017F3F096D8CEA1AF468312FF` and
 `3975567B8943C53ACCE397F2B72380092F84F162D00B0D2C7D08A1025C563983`.
-Both are NVIDIA-signed version `310.9.1.0`, but neither matches the current
-backend approval hash `C85F...`; the separate historical research runtime
-also has the release hash `3975567B...`. Hash equality alone is not accepted
-as production provenance.
+Both are NVIDIA-signed version `310.9.1.0`; neither matched the then-staged
+historical `C85F` identity, which has since been retired. The current validated
+official REL runtime identity is
+`3975567B8943C53ACCE397F2B72380092F84F162D00B0D2C7D08A1025C563983`.
+Hash equality alone is not accepted as production provenance.
 
 The host was built successfully with Visual Studio Build Tools 17.14.40/MSVC
 19.44.35228, CMake 4.4.3, and Ninja 1.13.0. Its SHA-256 is

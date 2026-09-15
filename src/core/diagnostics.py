@@ -19,7 +19,9 @@ def collect():
     dlss = d.__dict__.copy()
     dlss.update({"runtime": "Community DLSS5 v3.0" if d.available else "unavailable", "network": "Worker outbound blocked by Windows Firewall" if d.available else "not applicable", "security": "User-approved exact runtime hashes" if d.available else "not approved"})
     sr = s.__dict__.copy()
-    sr.update({"runtime": str(sr_backend.runtime) if s.available else "unavailable", "security": "Exact approved NVIDIA 310.8 runtime hash required; no fallback permitted"})
+    sr.update({"runtime": str(sr_backend.runtime) if sr_backend.runtime.is_file() else "unavailable",
+               "validated_runtime_sha256": sr_backend.validate_runtime().get("runtime_sha256"),
+               "security": "Exact validated NVIDIA runtime hash required; no fallback permitted"})
     try:
         from src.video.dlssg import ffmpeg_executable
         ffmpeg = "AVAILABLE" if ffmpeg_executable() else "UNAVAILABLE"

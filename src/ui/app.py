@@ -66,7 +66,7 @@ def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_s
             return None, None, "DLSS-G is temporal interpolation; use Preview Clip or Render Video."
         if mode.startswith("DLSS SR"):
             backend = DLSSSRBackend(); status = backend.status()
-            if status.state not in {"EXPERIMENTAL READY"}:
+            if status.state != "READY":
                 return None, None, f"{status.name} {status.state}: {status.reason}"
             source_frame=TEMP/f"preview_source_{os.getpid()}.png"; preview_frame(path,timestamp,source_frame)
             from PIL import Image
@@ -150,7 +150,7 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
             backend = DLSSGBackend(community_runtime=dlssg_runtime, official_runtime_dir=dlssg_official_runtime)
         elif processing_mode.startswith("DLSS SR"):
             backend = DLSSSRBackend(); status = backend.status()
-            if status.state != "EXPERIMENTAL READY": raise RuntimeError(f"DLSS SR {status.state}: {status.reason}")
+            if status.state != "READY": raise RuntimeError(f"DLSS SR {status.state}: {status.reason}")
             save_last_used("dlss_sr", {"mode": sr_mode, "model_preset": sr_model})
         else:
             _save_last("dlss5" if processing_mode == "DLSS 5 only" else "rtx_vsr", {"mode": vsr_mode, "scale": float(scale_value), "quality": quality_value} if processing_mode != "DLSS 5 only" else {"scale": float(dlss_scale), "nr_preset": nrpreset, "nr_style": style, "model_preset": model, "intensity": float(intensity), "local_tone": float(tone), "local_structure": float(structure), "skin_structure": float(skin), "automatic_mask": mask == "On"})
@@ -199,7 +199,7 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
             stats["frames"] = stats["output_frames"]; stats["fps"] = stats["output_fps"]; stats["dimensions"] = (stats["width"], stats["height"])
         elif processing_mode.startswith("DLSS SR"):
             backend = DLSSSRBackend(); status = backend.status()
-            if status.state != "EXPERIMENTAL READY": raise RuntimeError(f"DLSS SR {status.state}: {status.reason}")
+            if status.state != "READY": raise RuntimeError(f"DLSS SR {status.state}: {status.reason}")
             save_last_used("dlss_sr", {"mode": sr_mode, "model_preset": sr_model})
             stats = render_dlss_sr(path, destination, backend, sr_mode, sr_model, start=float(start_timestamp), duration=float(duration), codec="H.264", cancel=job.cancel_event, progress=progress)
         elif processing_mode == "DLSS 5 only":

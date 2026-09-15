@@ -71,3 +71,37 @@ def test_worker_selftest_is_not_run_after_hash_mismatch(monkeypatch, tmp_path):
     monkeypatch.setattr(readiness.subprocess, "run", fail_if_called)
     report = readiness.assess(worker=worker)
     assert next(item for item in report["checks"] if item["layer"] == "PROJECT")["state"] == "IDENTITY MISMATCH"
+
+
+class _Result:
+    def __init__(self, code=0, stdout="", stderr=""):
+        self.returncode, self.stdout, self.stderr = code, stdout, stderr
+
+
+def test_ffmpeg_encoder_and_ffprobe_failures_are_separate(monkeypatch):
+    monkeypatch.setattr(readiness.shutil, "which", lambda name: name)
+    def run(args, **kwargs):
+        if args[0] == "ffmpeg" and args[-1] == "-encoders":
+            return _Result(stdout=" h264_nvenc ")
+        if args[0] == "ffmpeg":
+            return _Result(stdout="ffmpeg version test")
+        return _Result(code=1)
+    monkeypatch.setattr(readiness.subprocess, "run", run)
+    assert readiness._ffmpeg_check(False).state == "INCOMPLETE"
+    assert readiness._ffprobe_check(False).state == "BROKEN"
+
+
+def test_gpu_query_failure_and_identity_are_actionable(monkeypatch):
+    monkeypatch.setattr(readiness.shutil, "which", lambda name: "nvidia-smi")
+    monkeypatch.setattr(readiness.subprocess, "run", lambda args, **kwargs: _Result(stdout="NVIDIA GeForce RTX 3070 Ti, 610.62"))
+    good = readiness._gpu_check(False)
+    assert good.ok and "RTX 3070 Ti" in good.detail and "610.62" in good.detail
+    monkeypatch.setattr(readiness.subprocess, "run", lambda args, **kwargs: _Result(code=6))
+    bad = readiness._gpu_check(False)
+    assert not bad.ok and "query failed" in bad.detail
+
+
+def test_missing_ffmpeg_and_ffprobe_are_actionable(monkeypatch):
+    monkeypatch.setattr(readiness.shutil, "which", lambda name: None)
+    assert "not on PATH" in readiness._ffmpeg_check(False).detail
+    assert "not on PATH" in readiness._ffprobe_check(False).detail

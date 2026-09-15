@@ -4,7 +4,7 @@
 
 **A local Windows workbench for NVIDIA-powered video enhancement.**
 
-Preview frames, preview clips, and render complete videos through three independent GPU backends. Your media stays on your machine.
+Preview frames, preview clips, and render complete videos through four primary GPU backend families. Your media stays on your machine.
 
 [![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -28,12 +28,14 @@ The backends are selected explicitly. If a required runtime is missing or unappr
 | --- | --- | --- | --- |
 | **RTX Video Super Resolution** | Ordinary video, compression artifacts, practical cleanup | 2× · ULTRA | Runtime-dependent |
 | **DLSS Super Resolution** | Temporal super resolution through a native D3D12 host | Quality · Default model | Runtime-dependent |
+| **DLSS Frame Generation** | Temporal interpolation through the DLSS-G worker | 2× / 3× / 4× | User-supplied runtime |
 | **DLSS 5 Neural Rendering** | CGI-like or AI-generated content where reinterpretation is acceptable | 1× native · Natural | Experimental |
 
 ### What each one does
 
 - **RTX VSR** reconstructs and cleans up conventional video through NVIDIA's RTX Video SDK.
 - **DLSS SR** runs standalone NVIDIA NGX DLSS Super Resolution with DIS optical-flow guidance. It is not a game integration and does not receive engine motion vectors.
+- **DLSS-G** generates intermediate frames from consecutive decoded frames using NVIDIA Optical Flow and a user-supplied external runtime; it is frame generation, not an upscaler.
 - **DLSS 5** uses a separately supplied local Feature-18 worker. It is a neural rendering experiment, not a conventional detail-preserving upscaler; faces, materials, and lighting may be reinterpreted.
 
 ## Highlights
@@ -45,7 +47,7 @@ The backends are selected explicitly. If a required runtime is missing or unappr
 - Audio preservation through the video render pipeline
 - Saved settings and presets for each backend
 - Separate runtime checks, diagnostics, manifests, hashes, and approval gates
-- No backend fallback, silent proprietary-runtime downloads, or unapproved NVIDIA binaries
+- No backend fallback, silent runtime downloads, or unapproved proprietary binaries
 
 ## Architecture
 
@@ -56,15 +58,18 @@ flowchart LR
     C --> D{Explicit backend selection}
     D --> E[RTX VSR<br/>NVIDIA VFX]
     D --> F[DLSS SR<br/>Native D3D12 + NGX]
-    D --> G[DLSS 5<br/>Feature-18 worker]
-    E --> H[GPU processing]
-    F --> H
-    G --> H
-    H --> I[NVENC H.264 / HEVC]
-    I --> J[Output video + preserved audio]
+    D --> G[DLSS-G<br/>Frame Generation worker]
+    D --> H[DLSS 5<br/>Feature-18 worker]
+    E --> I[GPU processing]
+    F --> I
+    G --> I
+    H --> I
+    I --> J[NVENC H.264 / HEVC]
+    J --> L[Output video + preserved audio]
     K[Local runtimes<br/>user supplied and approved] -. gates .-> E
     K -. gates .-> F
     K -. gates .-> G
+    K -. gates .-> H
 ```
 
 ## Quick Start
@@ -101,7 +106,8 @@ The detailed installation guide covers NVIDIA VFX, the local DLSS SDK staging pa
 | Backend | Additional local requirement |
 | --- | --- |
 | RTX VSR | Compatible official NVIDIA VFX package |
-| DLSS SR | Beta.2 package will include the validated host and official REL runtime under NVIDIA terms |
+| DLSS SR | Beta.2 package may include the validated host and official REL runtime under NVIDIA terms |
+| DLSS-G | User-supplied official/community runtime; no community binary is bundled |
 | DLSS 5 | Retained protocol client, separately obtained runtime, approved manifest, exact hashes, signed Feature-18 evidence, and the required Windows Firewall outbound block |
 
 Backend availability depends on the installed GPU, driver, and exact runtime combination. RTX 30/40/50-series hardware may expose different capabilities; DLSS 5 support must not be inferred from community experiments alone. See [`docs/DLSS5_APPROVAL.md`](docs/DLSS5_APPROVAL.md) for the approval contract.
@@ -111,7 +117,7 @@ Backend availability depends on the installed GPU, driver, and exact runtime com
 This project is designed for local, explicit, auditable processing:
 
 - The UI binds to localhost and does not enable Gradio sharing.
-- Proprietary NVIDIA runtimes, model weights, media, and worker packages are never silently downloaded or bundled.
+- Proprietary NVIDIA runtimes, model weights, media, and worker packages are never silently downloaded. The specifically validated DLSS SR REL runtime may be bundled under NVIDIA terms; DLSS-G and DLSS5 runtimes remain user-supplied.
 - User-supplied runtimes are checked against configured provenance and hash rules where required.
 - DLSS 5 requires explicit approval and a firewall outbound block for the worker.
 - Missing, invalid, or unapproved runtimes fail closed with diagnostics.
@@ -171,7 +177,7 @@ This project uses the following software and technologies; acknowledgement does 
 - OpenCV for image and frame processing
 - PyTorch for tensor and CUDA operations
 
-This repository does not redistribute NVIDIA SDKs, runtimes, model files, or community worker binaries.
+Beta packaging may redistribute only the specifically validated DLSS SR application host and official REL runtime under the applicable NVIDIA terms. DLSS-G/community runtimes, DLSS5 runtimes, and model files remain user-supplied.
 
 ## License
 

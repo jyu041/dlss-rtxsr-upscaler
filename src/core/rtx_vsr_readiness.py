@@ -33,6 +33,22 @@ class VSRReadiness:
 
 def inspect_api(module=None) -> VSRReadiness:
     """Inspect package/API shape without invoking native GPU code."""
+    if module is None:
+        # Keep the native extension out of the WebUI process.  This bounded
+        # child performs import and enum inspection only; GPU probing remains
+        # a separate explicit operation.
+        try:
+            completed = subprocess.run([sys.executable, "-u", "-c", _STATIC_CODE], capture_output=True, text=True, timeout=15, check=False)
+            if completed.returncode:
+                return VSRReadiness("UNAVAILABLE", False, completed.stderr.strip() or "static child inspection failed")
+            data = json.loads(completed.stdout)
+            module = type("StaticModule", (), {
+                "__version__": data.get("version"),
+                "get_sdk_version": staticmethod(lambda: data.get("sdk_version")),
+                "VideoSuperRes": type("VideoSuperRes", (), {"QualityLevel": type("QualityLevel", (), {name: name for name in data.get("qualities", [])})}),
+            })
+        except (OSError, subprocess.TimeoutExpired, ValueError, json.JSONDecodeError) as exc:
+            return VSRReadiness("UNAVAILABLE", False, f"bounded static nvidia-vfx inspection failed: {exc}")
     try:
         if module is None:
             import nvvfx as module
@@ -44,12 +60,20 @@ def inspect_api(module=None) -> VSRReadiness:
         missing = [prefix + quality_name for prefix in REQUIRED_MODE_PREFIXES for quality_name in REQUIRED_QUALITIES if not hasattr(quality, prefix + quality_name)]
         if missing:
             return VSRReadiness("UNSUPPORTED API", False, "Missing quality/mode values: " + ", ".join(missing), version, sdk_version)
-        reason = "nvidia-vfx package and required VideoSuperRes API are present"
         if version != EXPECTED_VERSION or sdk_version != EXPECTED_SDK_VERSION:
-            reason += f"; package identity is {version}/{sdk_version}, not the validated identity"
+            return VSRReadiness("UNVALIDATED PACKAGE", False, f"Package identity is {version}/{sdk_version}; expected {EXPECTED_VERSION}/{EXPECTED_SDK_VERSION}", version, sdk_version)
+        reason = "nvidia-vfx package and required VideoSuperRes API are present"
         return VSRReadiness("STATICALLY READY", True, reason, version, sdk_version)
     except Exception as exc:
         return VSRReadiness("UNAVAILABLE", False, f"nvidia-vfx import/API inspection failed: {exc}")
+
+
+_STATIC_CODE = r'''
+import json
+import nvvfx
+q = nvvfx.VideoSuperRes.QualityLevel
+print(json.dumps({"version": str(getattr(nvvfx, "__version__", "unknown")), "sdk_version": str(nvvfx.get_sdk_version()) if hasattr(nvvfx, "get_sdk_version") else None, "qualities": [x for x in dir(q) if not x.startswith("_")]}, sort_keys=True))
+'''
 
 
 _PROBE_CODE = r'''

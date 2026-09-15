@@ -16,4 +16,4 @@ file. That license does not apply to any dependency listed below.
 The NVIDIA, NGX, DLSS, ReShade, RenoDX, and community worker binaries are not
 covered by the project's source-code terms. Only the specifically validated
 DLSS SR host/runtime package may be distributed, and only under its applicable
-vendor terms; community and experimental runtimes remain user-supplied.
+vendor terms; DLSS-G/community and experimental runtimes remain user-supplied.

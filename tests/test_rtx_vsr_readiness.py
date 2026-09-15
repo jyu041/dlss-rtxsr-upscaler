@@ -21,3 +21,19 @@ def test_vsr_capability_probe_reports_missing_mode():
     assert status.state == "UNSUPPORTED API"
     assert not status.available
     assert "DEBLUR_ULTRA" in status.reason
+
+
+def test_vsr_wrong_package_version_is_unvalidated():
+    module = _module()
+    module.__version__ = "9.9.9"
+    status = inspect_api(module)
+    assert status.state == "UNVALIDATED PACKAGE"
+    assert not status.available
+
+
+def test_vsr_wrong_sdk_version_is_unvalidated():
+    module = _module()
+    module.get_sdk_version = lambda: "9.9.9"
+    status = inspect_api(module)
+    assert status.state == "UNVALIDATED PACKAGE"
+    assert not status.available

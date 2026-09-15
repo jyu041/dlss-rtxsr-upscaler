@@ -108,7 +108,7 @@ This classification is conditional on packaging the host as part of the
 application, including required notices/attribution, not relicensing NVIDIA
 material as MIT, preserving downstream protections, and complying with the
 commercial-release notification and NVIDIA mark requirements in the license.
-The old `C85F...` hash remains retired and is not accepted for this package.
+The old `C85F...` hash is historical and retired; it is not accepted for this package.
 
 ## Current gate
 

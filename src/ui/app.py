@@ -33,7 +33,7 @@ def status_html():
     rtx_state = d["rtx_vsr"].get("state", "UNAVAILABLE")
     rtx = rtx_state if d["rtx_vsr"]["available"] else "Unavailable"
     dlss = "Experimental Ready" if d["dlss5"]["available"] else "Unavailable"
-    sr = "Experimental Ready" if d["dlss_sr"]["state"] == "EXPERIMENTAL READY" else "Unavailable"
+    sr = d["dlss_sr"]["state"]
     fg = "Validated 2X/3X/4X" if d["dlssg"]["available"] else "Not configured"
     ffmpeg = "Ready" if d["ffmpeg"] == "AVAILABLE" else "Unavailable"
     return f"<div class=\"app-header\"><h1>NVIDIA Video Enhancer</h1><p>RTX VSR + DLSS SR/NR + offline DLSS Frame Generation</p></div><div class=\"backend-status\"><span class=\"status-badge\">RTX VSR <b>● {rtx}</b></span><span class=\"status-badge\">DLSS SR <b>● {sr}</b></span><span class=\"status-badge\">DLSS 5 <b>● {dlss}</b></span><span class=\"status-badge\">DLSS-G 2X/3X/4X <b>● {fg}</b></span><span class=\"status-badge\">FFmpeg <b>● {ffmpeg}</b></span></div>"
@@ -123,7 +123,7 @@ def mode_visibility(selected):
 
 def available_mode_choices():
     choices = [("RTX VSR", "RTX VSR only"), ("DLSS 5", "DLSS 5 only")]
-    if DLSSSRBackend().status().state == "EXPERIMENTAL READY":
+    if DLSSSRBackend().status().state == "READY":
         choices.append(("DLSS SR", "DLSS SR only"))
     choices.append(("DLSS Frame Generation (2X)", "DLSS Frame Generation 2X"))
     return choices

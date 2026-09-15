@@ -14,6 +14,7 @@ import numpy as np
 
 from src.core.media_info import frame_total, probe
 from src.core.progress import report_progress
+from src.video.dlss_sr_motion import StandaloneDLSSMotion
 
 INPUT_MAGIC = 0x31524644
 INPUT_HEADER = struct.Struct("<7I")
@@ -27,25 +28,6 @@ MODES = {
     "Ultra Performance": 3.0,
 }
 PRESETS = {"Default": 0, "J": 10, "K": 11, "L": 12, "M": 13}
-
-
-class _StandaloneTemporalGuide:
-    """DLSS SR's self-contained guide; it does not depend on DLSS 5 code."""
-    def __init__(self, width: int, height: int):
-        self.width, self.height = width, height
-        self.previous = None
-
-    def process(self, frame):
-        current = np.asarray(frame, dtype=np.uint8)
-        reset = self.previous is None
-        if self.previous is not None:
-            # A large mean change is a conservative scene-cut reset. The
-            # native host still receives zero motion because this pipeline has
-            # no optical-flow/depth producer.
-            previous = self.previous.astype(np.int16)
-            reset = float(np.abs(current.astype(np.int16) - previous).mean()) > 32.0
-        self.previous = current.copy()
-        return type("GuideFrame", (), {"motion": np.zeros((self.height, self.width, 2), dtype=np.float32), "reset": reset})()
 
 
 def _target(width: int, height: int, mode: str) -> tuple[int, int]:
@@ -64,7 +46,7 @@ def _client_root() -> None:
 
 
 def _motion_guide(width: int, height: int):
-    return _StandaloneTemporalGuide(width, height)
+    return StandaloneDLSSMotion(width, height)
 
 
 def _read_response(stream, expected_bytes: int) -> tuple[tuple[int, ...], bytes]:
@@ -82,15 +64,16 @@ def _read_response(stream, expected_bytes: int) -> tuple[tuple[int, ...], bytes]
 
 
 def process_dlss_sr_frame(frame, backend, mode="Quality", preset="K"):
-    """Process one isolated RGBA frame with reset history and zero motion."""
+    """Process one isolated RGBA frame with a first-frame reset guide."""
     frame = np.asarray(frame, dtype=np.uint8)
+    backend.validate_identity()
     if frame.ndim != 3 or frame.shape[2] not in (3, 4):
         raise ValueError("DLSS SR frames must be HWC RGB or RGBA arrays")
     if frame.shape[2] == 3:
         frame = np.concatenate((frame, np.full((*frame.shape[:2], 1), 255, dtype=np.uint8)), axis=2)
     height, width = frame.shape[:2]
     output_width, output_height = _target(width, height, mode)
-    motion = np.zeros((height, width, 2), dtype=np.float32).tobytes()
+    motion = _motion_guide(width, height).process(frame).motion.tobytes()
     command = [str(backend.host), "stream", str(width), str(height), str(output_width), str(output_height),
                mode.lower().replace(" ", ""), preset]
     packet = INPUT_HEADER.pack(INPUT_MAGIC, 0, width, height, 1, frame.nbytes, len(motion)) + frame.tobytes() + motion
@@ -113,6 +96,7 @@ def _sha256(path: Path) -> str:
 
 def render_dlss_sr(source, destination, backend, mode="Quality", preset="K", *, start=0.0, duration=None,
                    codec="H.264", cancel=None, progress=None):
+    backend.validate_identity()
     if mode == "Ultra Quality":
         raise ValueError("Ultra Quality is not supported by the validated DLSS SR runtime")
     if preset not in PRESETS:
@@ -189,7 +173,15 @@ def render_dlss_sr(source, destination, backend, mode="Quality", preset="K", *, 
             resets += int(guide_frame.reset)
             report_progress(progress, frame_index=count, total_frames=total, phase="PROCESSING",
                             message=f"DLSS SR {mode} | frame {count}")
+        decoder.wait(timeout=30)
+        if decoder.returncode:
+            details = decoder.stderr.read().decode(errors="replace") if decoder.stderr else ""
+            raise RuntimeError(f"FFmpeg decoder stopped: {details[-2000:]}")
         report_progress(progress, frame_index=count, total_frames=total, phase="ENCODING", message="Encoding DLSS SR output")
+        host_process.stdin.close()
+        host_process.wait(timeout=120)
+        if host_process.returncode:
+            raise RuntimeError("DLSS SR host exited with code " + str(host_process.returncode))
         encoder.stdin.close()
         encoder.wait(timeout=120)
         if encoder.returncode:

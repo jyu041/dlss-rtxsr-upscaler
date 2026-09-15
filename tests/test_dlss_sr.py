@@ -20,7 +20,7 @@ def test_host_built_but_not_tested(tmp_path, monkeypatch):
     (tmp_path / "nvngx_dlss.dll").write_bytes(b"dll")
     monkeypatch.setattr("src.backends.dlss_sr._sha256", lambda path: "E23F3CD5BEB5E70001E9950C890027D46F84CEB4439A09CEA67E343AB34A34BB" if path.name == "host.exe" else "3975567B8943C53ACCE397F2B72380092F84F162D00B0D2C7D08A1025C563983")
     status = DLSSSRBackend(host, tmp_path / "result.json").status()
-    assert status.state == "HOST BUILT - NOT TESTED"
+    assert status.state == "SELFTEST REQUIRED"
 
 
 def test_failed_native_selftest(tmp_path, monkeypatch):
@@ -31,7 +31,7 @@ def test_failed_native_selftest(tmp_path, monkeypatch):
     monkeypatch.setattr("src.backends.dlss_sr._sha256", lambda path: "E23F3CD5BEB5E70001E9950C890027D46F84CEB4439A09CEA67E343AB34A34BB" if path.name == "host.exe" else "3975567B8943C53ACCE397F2B72380092F84F162D00B0D2C7D08A1025C563983")
     result.write_text(json.dumps({"status": "failed", "error": "unsupported"}), encoding="utf-8")
     status = DLSSSRBackend(host, result).status()
-    assert status.state == "FAILED SELFTEST"
+    assert status.state == "SELFTEST REQUIRED"
     assert not status.available
 
 
@@ -52,8 +52,18 @@ def test_successful_mocked_result(tmp_path, monkeypatch):
     data = DLSSSRBackend(host, result).selftest()
     assert data["status"] == "success"
     status = DLSSSRBackend(host, result).status()
-    assert status.state == "EXPERIMENTAL READY"
+    assert status.state == "READY"
     assert status.available is True
+
+
+def test_identity_gate_blocks_execution_before_subprocess(tmp_path, monkeypatch):
+    backend = DLSSSRBackend(tmp_path / "host.exe", tmp_path / "result.json")
+    called = []
+    monkeypatch.setattr("src.video.dlss_sr.subprocess.run", lambda *a, **k: called.append(a) or None)
+    with pytest.raises(RuntimeError, match="missing"):
+        __import__("src.video.dlss_sr", fromlist=["process_dlss_sr_frame"]).process_dlss_sr_frame(
+            __import__("numpy").zeros((4, 4, 4), dtype="uint8"), backend)
+    assert not called
 
 
 def test_dlss_sr_processing_remains_gated(tmp_path):

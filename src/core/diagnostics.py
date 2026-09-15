@@ -15,10 +15,7 @@ def collect():
         import torch
         cuda={"available":torch.cuda.is_available(),"version":torch.__version__}
     except Exception as e: cuda={"available":False,"reason":str(e)}
-    try:
-        import nvvfx
-        vfx_version=getattr(nvvfx,"__version__","0.1.0.1")
-    except Exception: vfx_version=None
+    vfx_version = getattr(getattr(r, "_readiness", None), "version", None)
     dlss = d.__dict__.copy()
     dlss.update({"runtime": "Community DLSS5 v3.0" if d.available else "unavailable", "network": "Worker outbound blocked by Windows Firewall" if d.available else "not applicable", "security": "User-approved exact runtime hashes" if d.available else "not approved"})
     sr = s.__dict__.copy()

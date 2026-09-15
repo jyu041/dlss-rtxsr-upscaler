@@ -32,7 +32,8 @@ def render_vsr(source, destination, backend, scale=2.0, quality="ULTRA", mode="S
         while True:
             if cancel and cancel.is_set(): raise InterruptedError("Render cancelled")
             raw = decoder.stdout.read(frame_bytes)
-            if len(raw) != frame_bytes: break
+            if not raw: break
+            if len(raw) != frame_bytes: raise RuntimeError("FFmpeg returned a truncated RGB frame")
             cpu = session.process_frame(count, np.frombuffer(raw, dtype=np.uint8).reshape(height, width, 3).copy())
             encoder.stdin.write(cpu.tobytes())
             count += 1
@@ -41,8 +42,11 @@ def render_vsr(source, destination, backend, scale=2.0, quality="ULTRA", mode="S
                 memory_samples.append({"frame": count, "gpu_memory_mib": sample.stdout.strip() if sample.returncode == 0 else "unavailable"})
             report_progress(progress, frame_index=count, total_frames=frames, phase="PROCESSING", message="Processing RTX VSR")
         teardown = session.finish()
+        decoder.wait(timeout=30)
+        if decoder.returncode:
+            raise RuntimeError(decoder.stderr.read().decode(errors="replace")[-2000:] if decoder.stderr else "FFmpeg decoder failed")
         report_progress(progress, frame_index=count, total_frames=frames, phase="ENCODING", message="Finalizing video encode")
-        encoder.stdin.close(); encoder.wait()
+        encoder.stdin.close(); encoder.wait(timeout=120)
         if encoder.returncode: raise RuntimeError(encoder.stderr.read().decode(errors="replace")[-2000:])
         report_progress(progress, frame_index=count, total_frames=frames, phase="MUXING", message="Preserving audio and metadata")
         mux = ["ffmpeg", "-y", "-v", "error", "-i", str(video_only), "-i", str(source), "-map", "0:v:0", "-map", "1:a?", "-c:v", "copy", "-c:a", "copy", "-map_metadata", "1", str(destination)]

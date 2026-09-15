@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import hashlib
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ VALIDATED_DLSS_SR_RUNTIME_SHA256 = "3975567B8943C53ACCE397F2B72380092F84F162D00B
 VALIDATED_HOST_SHA256 = "E23F3CD5BEB5E70001E9950C890027D46F84CEB4439A09CEA67E343AB34A34BB"
 VALIDATED_SDK_COMMIT = "374959484E79A640FEABA44C93AC8CFB0A03F5B5"
 VALIDATED_SDK_LICENSE_SHA256 = "3027F23CA5A46DD9CB8183FBD522983A86F64D7DAAC5982912BF9F214671F294"
+ATTESTATION_SCHEMA = "dlss-sr-attestation-v1"
 
 
 def _sha256(path: Path) -> str:
@@ -42,29 +44,63 @@ class DLSSSRBackend(Backend):
             return None
         return data if isinstance(data, dict) else None
 
+    def _identity(self) -> tuple[bool, str, str | None, str | None]:
+        if not self.host.is_file() or not self.runtime.is_file():
+            return False, "Validated host/runtime are missing", None, None
+        try:
+            host_hash, runtime_hash = _sha256(self.host), _sha256(self.runtime)
+        except OSError as exc:
+            return False, str(exc), None, None
+        if host_hash != VALIDATED_HOST_SHA256:
+            return False, "Native host identity does not match the validated host", host_hash, runtime_hash
+        if runtime_hash != VALIDATED_DLSS_SR_RUNTIME_SHA256:
+            return False, "DLSS SR runtime identity does not match the validated official REL runtime", host_hash, runtime_hash
+        return True, "validated host/runtime identity", host_hash, runtime_hash
+
+    def validate_identity(self):
+        """Fail closed before every native execution path."""
+        valid, reason, _, _ = self._identity()
+        if not valid:
+            raise RuntimeError(reason)
+        return True
+
+    def _machine_identity(self) -> tuple[str | None, str | None]:
+        try:
+            result = subprocess.run(["nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=10, check=False)
+            if result.returncode == 0 and result.stdout.strip():
+                name, _, driver = result.stdout.strip().split(",", 1)
+                return name.strip(), driver.strip()
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            pass
+        return None, None
+
+    def _read_attestation(self):
+        try:
+            data = json.loads((self.result.parent / "attestation.json").read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else None
+        except (OSError, ValueError):
+            return None
+
+    def _attestation_current(self, host_hash, runtime_hash):
+        data = self._read_attestation()
+        gpu, driver = self._machine_identity()
+        return bool(data and data.get("schema") == ATTESTATION_SCHEMA
+                    and data.get("host_sha256") == host_hash
+                    and data.get("runtime_sha256") == runtime_hash
+                    and data.get("gpu") == gpu and data.get("driver") == driver
+                    and data.get("selftest_success") is True)
+
     def status(self):
         if not self.host.is_file():
             return BackendStatus("DLSS SR", False, "NO HOST", f"Native host missing: {self.host}")
         if not self.runtime.is_file():
             return BackendStatus("DLSS SR", False, "NO RUNTIME", f"NGX runtime missing: {self.runtime}")
-        try:
-            host_hash = _sha256(self.host)
-            if host_hash != VALIDATED_HOST_SHA256:
-                return BackendStatus("DLSS SR", False, "HOST HASH MISMATCH", f"Unvalidated native host: {self.host}")
-            runtime_hash = _sha256(self.runtime)
-            if runtime_hash != VALIDATED_DLSS_SR_RUNTIME_SHA256:
-                return BackendStatus("DLSS SR", False, "RUNTIME HASH MISMATCH", f"Unvalidated official NGX runtime: {self.runtime}")
-        except OSError as exc:
-            return BackendStatus("DLSS SR", False, "NO RUNTIME", str(exc))
-        data = self._read_result()
-        if not data:
-            return BackendStatus("DLSS SR", False, "HOST BUILT - NOT TESTED", str(self.host))
-        if data.get("status") != "success" or not data.get("evaluate_succeeded"):
-            return BackendStatus("DLSS SR", False, "FAILED SELFTEST", str(data.get("error", self.reason)))
-        return BackendStatus(
-            "DLSS SR", True, "EXPERIMENTAL READY",
-            "Native Quality self-test passed",
-        )
+        valid, reason, host_hash, runtime_hash = self._identity()
+        if not valid:
+            return BackendStatus("DLSS SR", False, "IDENTITY MISMATCH", reason)
+        if self._attestation_current(host_hash, runtime_hash):
+            return BackendStatus("DLSS SR", True, "READY", "Validated native Quality self-test attestation is current")
+        return BackendStatus("DLSS SR", False, "SELFTEST REQUIRED", "Exact binaries are present; run the bounded local self-test")
 
     def validate_runtime(self):
         status = self.status()
@@ -80,8 +116,7 @@ class DLSSSRBackend(Backend):
         }
 
     def selftest(self):
-        if not self.host.is_file():
-            raise RuntimeError(f"Native DLSS SR host missing: {self.host}")
+        self.validate_identity()
         completed = subprocess.run(
             [str(self.host), "selftest", "quality"],
             capture_output=True,
@@ -95,6 +130,12 @@ class DLSSSRBackend(Backend):
         if completed.returncode or not data or data.get("status") != "success":
             detail = (completed.stderr or completed.stdout).strip()
             raise RuntimeError(f"Native DLSS SR self-test failed: {detail or data}")
+        gpu, driver = self._machine_identity()
+        attestation = self.result.parent / "attestation.json"
+        attestation.parent.mkdir(parents=True, exist_ok=True)
+        attestation.write_text(json.dumps({"schema": ATTESTATION_SCHEMA, "host_sha256": VALIDATED_HOST_SHA256,
+            "runtime_sha256": VALIDATED_DLSS_SR_RUNTIME_SHA256, "gpu": gpu, "driver": driver,
+            "selftest_success": True, "created_utc": datetime.now(timezone.utc).isoformat()}, indent=2) + "\n", encoding="utf-8")
         return data
 
     def process_frame(self, *args, **kwargs):

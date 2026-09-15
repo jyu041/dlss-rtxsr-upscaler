@@ -111,6 +111,7 @@ class RTXVSRSession:
         self._err_reader = None
         self._expected_index = 0
         self._done = False
+        self.expected_output = None
 
     @property
     def pid(self):
@@ -152,6 +153,7 @@ class RTXVSRSession:
             return message
 
     def start(self, input_width, input_height, output_width, output_height, mode, quality):
+        self.expected_output = (int(output_width), int(output_height))
         self.process = subprocess.Popen([self.python, "-u", "-m", "src.video.rtx_vsr_worker", "--worker"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
         self._start_reader()
         kind, _, _, _, payload = self._wait()
@@ -167,7 +169,9 @@ class RTXVSRSession:
         kind, returned, width, height, payload = self._wait()
         if kind == ERROR:
             raise RuntimeError(payload.decode("utf-8", errors="replace"))
-        if kind != OUTPUT or returned != index or len(payload) != width * height * 3:
+        expected_width, expected_height = self.expected_output or (0, 0)
+        if (kind != OUTPUT or returned != index or width != expected_width or height != expected_height
+                or len(payload) != expected_width * expected_height * 3):
             raise RuntimeError("Invalid or mismatched RTX VSR worker output")
         self._expected_index += 1
         return np.frombuffer(payload, dtype=np.uint8).reshape(height, width, 3).copy()
@@ -182,7 +186,9 @@ class RTXVSRSession:
         self._done = True
         try:
             self.process.wait(timeout=TEARDOWN_GRACE)
-            return "EXITED_AFTER_DONE"
+            if self.process.returncode == 0:
+                return "EXITED_AFTER_DONE"
+            raise RuntimeError(f"UNEXPECTED_WORKER_FAILURE_AFTER_DONE: exit code {self.process.returncode}")
         except subprocess.TimeoutExpired:
             self.process.kill()
             self.process.wait(timeout=5)

@@ -288,7 +288,7 @@ static int QueryCapabilityValue(NVSDK_NGX_Parameter *parameters, const char *sta
 static bool SetOptions(NVSDK_NGX_Parameter *p, ID3D12Resource *color, ID3D12Resource *depth,
     ID3D12Resource *motion, ID3D12Resource *output, ID3D12Resource *disable, bool reset,
     unsigned long long frameId, uint32_t generatedCount, uint32_t generatedIndex, NVSDK_NGX_DLSSG_Opt_Eval_Params &o, bool manifest,
-    UINT width = kWidth, UINT height = kHeight) {
+    bool diagnostic, UINT width = kWidth, UINT height = kHeight) {
     o = {}; o.multiFrameCount = generatedCount; o.multiFrameIndex = generatedIndex;
     Identity(o.cameraViewToClip); Identity(o.clipToCameraView); Identity(o.clipToLensClip);
     Identity(o.clipToPrevClip); Identity(o.prevClipToClip);
@@ -315,7 +315,7 @@ static bool SetOptions(NVSDK_NGX_Parameter *p, ID3D12Resource *color, ID3D12Reso
     unsigned int storedCount = 0, storedIndex = 0;
     const NVSDK_NGX_Result countResult = p->Get(NVSDK_NGX_DLSSG_Parameter_MultiFrameCount, &storedCount);
     const NVSDK_NGX_Result indexResult = p->Get(NVSDK_NGX_DLSSG_Parameter_MultiFrameIndex, &storedIndex);
-    RunLog("MFG_REQUEST frame=%llu count=%u index=%u countResult=0x%08X indexResult=0x%08X",
+    if (diagnostic) RunLog("MFG_REQUEST frame=%llu count=%u index=%u countResult=0x%08X indexResult=0x%08X",
         frameId, storedCount, storedIndex, countResult, indexResult);
 
 #define SET_F(key, value) NVSDK_NGX_Parameter_SetF(p, key, value)
@@ -564,7 +564,7 @@ int Run2x(const wchar_t *communityPath, const wchar_t *runtimeDir) {
 
     NVSDK_NGX_DLSSG_Opt_Eval_Params bootstrapOptions{}; if (!ResetList(allocator, list, "BOOTSTRAP")) return 51;
     RecordDisableZero(disable, list);
-    if (!SetOptions(parameters, colorA.gpu, depthA.gpu, motionA.gpu, output.gpu, disable.gpu, true, 0ULL, 1, 1, bootstrapOptions, true)) return 52;
+    if (!SetOptions(parameters, colorA.gpu, depthA.gpu, motionA.gpu, output.gpu, disable.gpu, true, 0ULL, 1, 1, bootstrapOptions, true, true)) return 52;
     RunLog("BOOTSTRAP_EVALUATE_STARTED"); const NVSDK_NGX_Result bootstrapResult = evaluate(list, feature, parameters, nullptr);
     RunLog("BOOTSTRAP_EVALUATE_RESULT=0x%08X", bootstrapResult); if (NVSDK_NGX_FAILED(bootstrapResult)) return 53;
     if (FAILED(list->Close())) return 54; queue->ExecuteCommandLists(1, commands);
@@ -573,7 +573,7 @@ int Run2x(const wchar_t *communityPath, const wchar_t *runtimeDir) {
     NVSDK_NGX_DLSSG_Opt_Eval_Params measuredOptions{}; if (!ResetList(allocator, list, "MEASURED")) return 56;
     RecordDisableZero(disable, list); RecordTextureUpload(output, list, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     RunLog("OUTPUT_SENTINEL_PREFILLED sha256=%s", kSentinelSha);
-    if (!SetOptions(parameters, colorB.gpu, depthB.gpu, motionB.gpu, output.gpu, disable.gpu, false, 1ULL, 1, 1, measuredOptions, false)) return 57;
+    if (!SetOptions(parameters, colorB.gpu, depthB.gpu, motionB.gpu, output.gpu, disable.gpu, false, 1ULL, 1, 1, measuredOptions, false, true)) return 57;
     RunLog("MEASURED_EVALUATE_STARTED"); const NVSDK_NGX_Result measuredResult = evaluate(list, feature, parameters, nullptr);
     RunLog("MEASURED_EVALUATE_RESULT=0x%08X", measuredResult); if (NVSDK_NGX_FAILED(measuredResult)) return 58;
     if (FAILED(list->Close())) return 59; queue->ExecuteCommandLists(1, commands);
@@ -799,7 +799,7 @@ public:
         NvofFlowStatistics flowStatistics{};
         const bool gpuFlow = motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow) &&
             nvof_.ForwardOnly() && gpuFlowEnabled_ && !diagnosticMode_;
-        RunLog("WORKER_PROCESS_PATH gpuFlow=%d reset=%d", gpuFlow ? 1 : 0, effectiveReset ? 1 : 0);
+        if (diagnosticMode_) RunLog("WORKER_PROCESS_PATH gpuFlow=%d reset=%d", gpuFlow ? 1 : 0, effectiveReset ? 1 : 0);
         if (motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow)) {
             if (effectiveReset) {
                 internalMotion.assign(motion_.packed.size(), 0);
@@ -813,7 +813,7 @@ public:
                 nvofHistoryValid_ = true;
             } else {
                 const bool missingPreviousColor = !nvof_.ForwardOnly() && previousColor_.size() != color_.packed.size();
-                RunLog("WORKER_NVOF_PRECONDITION frame=%llu forwardOnly=%d previousColorBytes=%llu expected=%llu missingPrevious=%d",
+                if (diagnosticMode_) RunLog("WORKER_NVOF_PRECONDITION frame=%llu forwardOnly=%d previousColorBytes=%llu expected=%llu missingPrevious=%d",
                     request.frameId, nvof_.ForwardOnly() ? 1 : 0, static_cast<unsigned long long>(previousColor_.size()),
                     static_cast<unsigned long long>(color_.packed.size()), missingPreviousColor ? 1 : 0);
                 const bool nvofFailed = nvof_.ForwardOnly()
@@ -837,12 +837,12 @@ public:
         } else if (!MapTextureUpload(color_) || !MapTextureUpload(motion_)) return Status::NativeFailure;
         if (gpuFlow && !effectiveReset) ++gpuFlowConversionCount_;
         if (!gpuFlow || effectiveReset) ++motionCpuUploadCount_;
-        RunLog("WORKER_PROCESS_UPLOAD_COMPLETE gpuFlow=%d reset=%d", gpuFlow ? 1 : 0, effectiveReset ? 1 : 0);
+        if (diagnosticMode_) RunLog("WORKER_PROCESS_UPLOAD_COMPLETE gpuFlow=%d reset=%d", gpuFlow ? 1 : 0, effectiveReset ? 1 : 0);
         const auto uploadEnd = Clock::now();
         const Status groupedStatus = ProcessGrouped(request, response, generated, totalStart, uploadStart, uploadEnd, nvofTimings, gpuFlow, effectiveReset);
         if (groupedStatus == Status::OkResetNoOutput && motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow) && !nvof_.ForwardOnly()) {
             previousColor_ = color_.packed;
-            RunLog("WORKER_NVOF_RESET_REFERENCE_STORED frame=%llu bytes=%llu", request.frameId,
+            if (diagnosticMode_) RunLog("WORKER_NVOF_RESET_REFERENCE_STORED frame=%llu bytes=%llu", request.frameId,
                 static_cast<unsigned long long>(previousColor_.size()));
         }
         return groupedStatus;
@@ -861,11 +861,11 @@ public:
         for (uint32_t index = 1; index <= count; ++index) {
             const bool reset = effectiveReset;
             if (!SetOptions(parameters_, color_.gpu, depth_.gpu, gpuFlow && !reset ? motionGpu_.gpu : motion_.gpu,
-                output_.gpu, disable_.gpu, reset, request.frameId, count, index, options, false, width_, height_)) return Status::NativeFailure;
+                output_.gpu, disable_.gpu, reset, request.frameId, count, index, options, false, diagnosticMode_, width_, height_)) return Status::NativeFailure;
             const auto evaluateStart = Clock::now(); ++evaluateSubmissionCount_;
             const NVSDK_NGX_Result result = evaluate_(list_, feature_, parameters_, nullptr);
             response.evaluateCpuMs += Milliseconds(evaluateStart, Clock::now()); ++evaluateCount_;
-            RunLog("WORKER_GROUP_EVALUATE frame=%llu reset=%d generatedCount=%u generatedIndex=%u result=0x%08X evaluateCount=%u",
+            if (diagnosticMode_) RunLog("WORKER_GROUP_EVALUATE frame=%llu reset=%d generatedCount=%u generatedIndex=%u result=0x%08X evaluateCount=%u",
                 request.frameId, reset ? 1 : 0, count, index, result, evaluateCount_);
             if (NVSDK_NGX_FAILED(result)) return Status::NativeFailure;
             RecordReadbackSlot(output_, disable_, readbackSlots_[index - 1], list_);
@@ -877,7 +877,7 @@ public:
         if (!WaitFence(queue_, fence_, ++fenceValue_, event_, device_, "WORKER_GROUP_COMPLETE")) return Status::NativeFailure;
         response.gpuWaitMs = Milliseconds(waitStart, Clock::now()); ++groupWaitCount_;
         ++totalCpuWaitCount_;
-        RunLog("WORKER_GROUP_SYNC frame=%llu generatedCount=%u commandSubmissions=1 outputCopies=%u disableCopies=%u slotsUsed=%u blockingCpuWaits=1 gpuWaitMs=%.3f",
+        if (diagnosticMode_) RunLog("WORKER_GROUP_SYNC frame=%llu generatedCount=%u commandSubmissions=1 outputCopies=%u disableCopies=%u slotsUsed=%u blockingCpuWaits=1 gpuWaitMs=%.3f",
             request.frameId, count, count, count, count, response.gpuWaitMs);
         response.uploadMs = Milliseconds(uploadStart, uploadEnd); response.nvofUploadMs = nvofTimings.uploadMs;
         response.nvofExecuteMs = nvofTimings.executeMs; response.flowConversionMs = nvofTimings.conversionMs;
@@ -885,7 +885,7 @@ public:
         for (uint32_t index = 0; index < count; ++index) {
             ++readbackSlotsUsed_;
             if (!MapReadbackSlot(output_, readbackSlots_[index], outputs[index], disables[index])) return Status::NativeFailure;
-            RunLog("WORKER_GROUP_READBACK frame=%llu generatedIndex=%u disableValue=%u", request.frameId, index + 1, disables[index]);
+            if (diagnosticMode_) RunLog("WORKER_GROUP_READBACK frame=%llu generatedIndex=%u disableValue=%u", request.frameId, index + 1, disables[index]);
             if (!effectiveReset && disables[index] != 0) return Status::InterpolationDisabled;
         }
         response.readbackMs = Milliseconds(readbackStart, Clock::now());
@@ -896,20 +896,31 @@ public:
         if (effectiveReset) {
             history_.Complete(request.frameId); nvofHistoryValid_ = false;
             response.totalProcessMs = Milliseconds(totalStart, Clock::now());
-            RunLog("WORKER_GROUP_RESET_COMPLETE frame=%llu generatedCount=%u", request.frameId, count); return Status::OkResetNoOutput;
+            if (diagnosticMode_) RunLog("WORKER_GROUP_RESET_COMPLETE frame=%llu generatedCount=%u", request.frameId, count); return Status::OkResetNoOutput;
         }
         for (uint32_t index = 0; index < count; ++index) { if (!validOutput(outputs[index])) return Status::InvalidOutput; generated.insert(generated.end(), outputs[index].begin(), outputs[index].end()); }
         response.totalProcessMs = Milliseconds(totalStart, Clock::now()); response.disableInterpolation = 0;
         response.generatedCount = count; response.outputBytes = static_cast<uint32_t>(generated.size()); history_.Complete(request.frameId);
         if (motionMode_ == static_cast<uint32_t>(dlssg::protocol::MotionMode::NvidiaOpticalFlow) && !nvof_.ForwardOnly()) previousColor_.assign(color_.packed.begin(), color_.packed.end());
-        generatedCount_ += count; RunLog("WORKER_GROUP_OUTPUT frame=%llu outputs=%u sha256=%s generatedCount=%u totalMs=%.3f",
-            request.frameId, count, Sha256(generated).c_str(), generatedCount_, response.totalProcessMs); return Status::Ok;
+        generatedCount_ += count;
+        if (diagnosticMode_) {
+            ++outputHashCount_;
+            const auto hashStart = Clock::now();
+            const std::string generatedSha = Sha256(generated);
+            outputHashMsTotal_ += Milliseconds(hashStart, Clock::now());
+            outputHashBytes_ += generated.size();
+            RunLog("WORKER_GROUP_OUTPUT frame=%llu outputs=%u sha256=%s generatedCount=%u totalMs=%.3f",
+                request.frameId, count, generatedSha.c_str(), generatedCount_, response.totalProcessMs);
+        }
+        return Status::Ok;
     }
 
     void ResetHistory() { history_.Reset(); previousColor_.clear(); nvofHistoryValid_ = false; RunLog("WORKER_HISTORY_RESET nextFrameForcedReset=1"); }
     uint32_t Width() const { return width_; }
     uint32_t Height() const { return height_; }
     uint32_t MotionMode() const { return motionMode_; }
+    uint64_t OutputHashBytes() const { return outputHashBytes_; }
+    double OutputHashMsTotal() const { return outputHashMsTotal_; }
     uint32_t InitCount() const { return initCount_; }
     uint32_t CreateCount() const { return createCount_; }
     uint32_t EvaluateCount() const { return evaluateCount_; }
@@ -928,6 +939,7 @@ public:
     uint64_t InputUploadWaitCount() const { return inputUploadWaitCount_; }
     uint64_t NvofCpuWaitCount() const { return nvofCpuWaitCount_; }
     uint64_t TotalCpuWaitCount() const { return totalCpuWaitCount_; }
+    uint64_t OutputHashCount() const { return outputHashCount_; }
 
 private:
     bool DestroyFeatureAndResources() {
@@ -985,6 +997,9 @@ private:
     uint64_t commandListSubmissionCount_ = 0, outputCopyCount_ = 0, disableCopyCount_ = 0;
     uint64_t readbackSlotsUsed_ = 0, groupFenceSignalCount_ = 0, groupWaitCount_ = 0;
     uint64_t inputUploadWaitCount_ = 0, nvofCpuWaitCount_ = 0, totalCpuWaitCount_ = 0;
+    uint64_t outputHashCount_ = 0;
+    uint64_t outputHashBytes_ = 0;
+    double outputHashMsTotal_ = 0.0;
     NvofD3D12 nvof_{}; std::vector<uint8_t> previousColor_{};
     bool nvofHistoryValid_ = false;
     bool diagnosticMode_ = false;
@@ -1081,8 +1096,9 @@ int RunServer(const wchar_t *communityPath, const wchar_t *runtimeDir) {
         } else if (command == Command::Close) {
             if (header.payloadBytes) { if (!SendResponse(output, header, Status::InvalidPayloadSize)) return 74; continue; }
             if (!SendResponse(output, header, Status::Ok)) return 74;
-            RunLog("WORKER_CLOSE initCount=%u createCount=%u evaluateCount=%u generatedCount=%u",
-                worker.InitCount(), worker.CreateCount(), worker.EvaluateCount(), worker.GeneratedCount());
+            RunLog("WORKER_CLOSE initCount=%u createCount=%u evaluateCount=%u generatedCount=%u outputHashCount=%llu outputHashBytes=%llu outputHashMsTotal=%.3f",
+                worker.InitCount(), worker.CreateCount(), worker.EvaluateCount(), worker.GeneratedCount(),
+                worker.OutputHashCount(), worker.OutputHashBytes(), worker.OutputHashMsTotal());
             RunLog("ARCH_COUNTERS flow_cpu_readback=%llu flow_cpu_conversion=%llu motion_cpu_upload=%llu gpu_flow_conversion=%llu evaluate_submissions=%llu command_list_submissions=%llu output_copies=%llu disable_copies=%llu readback_slots_used=%llu group_fence_signals=%llu group_waits=%llu input_upload_waits=%llu nvof_cpu_waits=%llu total_cpu_waits=%llu",
                 worker.FlowCpuReadbackCount(), worker.FlowCpuConversionCount(), worker.MotionCpuUploadCount(), worker.GpuFlowConversionCount(),
                 worker.EvaluateSubmissionCount(), worker.CommandListSubmissionCount(),

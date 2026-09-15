@@ -435,3 +435,57 @@ The narrow classification `DLSSG_PROTOCOL_PAYLOAD_COPY_OVERHEAD_REDUCED` is
 supported for the tested protocol path. The optimization is retained; no
 concurrency, shared memory, protocol v5, asynchronous encoder, or other
 architectural change was introduced.
+
+## Production diagnostic-hotpath removal
+
+The published protocol-v4 worker was audited at the exact production boundary.
+`ProcessGrouped()` captures `response.totalProcessMs`, appends generated
+frames, and returns to the server; the old production `WORKER_GROUP_OUTPUT`
+log then computed `Sha256(generated)` before the response was written. The
+final worker keeps that hash only inside the explicit `diagnosticMode_` branch,
+so production records `outputHashCount=0` and does not evaluate
+`Sha256(generated)`. Diagnostic mode still hashes each successful group and
+records count, bytes, and total hash time.
+
+The 60-frame diagnostic measurement hashed 59 groups / 1,468,108,800 bytes in
+647.234 ms total (10.970 ms/group). The corresponding 600-frame production
+workload has 599 groups and would have hashed 14,905,036,800 bytes; its final
+worker logs report `outputHashCount=0 outputHashBytes=0 outputHashMsTotal=0.000`.
+
+High-frequency successful-path logs gated to diagnostics are `MFG_REQUEST`,
+`WORKER_PROCESS_PATH`, `WORKER_PROCESS_UPLOAD_COMPLETE`,
+`WORKER_NVOF_PRECONDITION`, `WORKER_NVOF_RESET_REFERENCE_STORED`,
+`WORKER_GROUP_EVALUATE`, `WORKER_GROUP_SYNC`, `WORKER_GROUP_READBACK`,
+`WORKER_GROUP_RESET_COMPLETE`, and `WORKER_GROUP_OUTPUT`. Startup, counters,
+failure, error, and device-removal logs remain available in production.
+
+The recovered no-encode control used `--no-encode-control`; it is not an
+encoded end-to-end result. Three-run medians were:
+
+| Workload / side | Wall (s) | Main loop (s) | Worker pair (ms) | Native total (ms) | RPC gap (ms) | Header wait (ms) |
+|---|---:|---:|---:|---:|---:|---:|
+| 60 old | 14.012 | 7.831 | 94.867 | 65.653 | 29.214 | 78.327 |
+| 60 candidate | 13.368 | 7.125 | 83.025 | 66.169 | 16.856 | 67.466 |
+| 600 old | 78.204 | 72.543 | 99.347 | 72.212 | 27.134 | 84.694 |
+| 600 candidate | 66.503 | 61.478 | 80.564 | 64.897 | 15.667 | 66.046 |
+
+The no-encode wall improvement is 4.60% at 60 frames and 14.96% at 600
+frames. All old/candidate no-encode output sink hashes match exactly for each
+workload. The encoded production comparison, using normal H.264 NVENC output
+and audio preservation, measured 5.55% improvement at 60 frames and 11.09% at
+600 frames: encoder/decode overhead dilutes but does not erase the worker gain.
+Encoded medians were 11.788 s old vs 11.134 s candidate at 60 frames, and
+73.451 s old vs 65.302 s candidate at 600 frames. Every encoded artifact passed
+its expected frame count, audio/color checks, and zero disabled normal groups;
+the candidate remained byte-identical at the raw generated-output sink.
+
+The resumable runner in `tools/run_dlssg_ab.ps1` is authoritative per run:
+PASS JSON plus child exit status determines completion, existing PASS artifacts
+are skipped, progress emits START/HEARTBEAT/PASS, and each child has a 240 s
+hard timeout with process-tree termination and preserved failure evidence. The
+earlier wrapper's artifacts show all 12 no-encode runs had already completed;
+the stale session remained blocked only after `new600c`'s clean close and
+before its final sentinel became visible.
+
+The final candidate worker hash is
+`460F37E889F9AA5B45B8289F1E13A9D4AE0C39E52376CCC516921EF875480978`.

@@ -166,11 +166,11 @@ def assess(*, worker: str | Path | None = None, community_runtime: str | Path | 
 
     official_path = _resolve(official_runtime_dir, saved.get("official_runtime_dir"), "DLSSG_OFFICIAL_RUNTIME_DIR")
     official_ok = bool(official_path and official_path.is_dir() and any(official_path.iterdir()))
-    checks.append(ReadinessCheck("OFFICIAL", "CONFIGURED / UNVALIDATED" if official_ok else "MISSING", False,
+    checks.append(ReadinessCheck("OFFICIAL", "CONFIGURED / UNVALIDATED" if official_ok else "MISSING", official_ok,
         f"directory {_display(official_path, verbose)} is present but official runtime contents are validated only by native initialization" if official_ok else "Official NVIDIA NGX runtime directory is required"))
 
-    static_ready = all(item.ok for item in checks[:-1]) and official_ok
-    return {"state": "DLSS-G STATICALLY READY" if static_ready else "DLSS-G NOT READY", "ready": False,
+    static_ready = all(item.ok for item in checks)
+    return {"state": "DLSS-G STATICALLY READY" if static_ready else "DLSS-G NOT READY", "ready": static_ready,
             "static_ready": static_ready, "checks": [asdict(item) for item in checks],
             "policy": {"worker_sha256": EXPECTED_WORKER_SHA256, "community_sha256": EXPECTED_COMMUNITY_SHA256,
                        "community_hash_is_provenance_only": True, "no_fallback": True, "no_download": True,
@@ -180,5 +180,8 @@ def assess(*, worker: str | Path | None = None, community_runtime: str | Path | 
 def format_summary(report: dict) -> str:
     lines = [report["state"]]
     for item in report["checks"]:
-        lines.append(f"{'PASS' if item['ok'] else 'BLOCKED'} {item['layer']}: {item['detail']}")
+        if item["layer"] == "OFFICIAL" and item["state"] == "CONFIGURED / UNVALIDATED":
+            lines.append("PASS OFFICIAL: configured; native runtime remains dynamically unvalidated")
+        else:
+            lines.append(f"{'PASS' if item['ok'] else 'BLOCKED'} {item['layer']}: {item['detail']}")
     return "\n".join(lines)

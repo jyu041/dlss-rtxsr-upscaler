@@ -91,7 +91,7 @@ python tools\check_dlssg_readiness.py
 ```
 
 It reports separate SYSTEM, PROJECT, COMMUNITY, and OFFICIAL checks and exits
-non-zero unless all statically checkable prerequisites pass. The result is
+zero when all statically checkable prerequisites pass. The result is
 `DLSS-G STATICALLY READY` when the external runtime directory is configured,
 but that directory remains `CONFIGURED / UNVALIDATED` until native
 initialization succeeds; a production render is the full validation gate. The project worker must be the

@@ -580,10 +580,102 @@ unchanged. NVOF capability probing also confirmed input formats
 `R16G16_SINT` (38) and `R16G16_UINT` (36), and successful BOTH prediction;
 `R8G8B8A8_UNORM` is not in the advertised input list.
 
-This audit does not justify source sharing, asynchronous submission, concurrent
-NVOF/DLSS-G execution, or a protocol change. The exact next optimization target
-is **Candidate D — DLSS-G Evaluate GPU execution characterization**, limited to
-non-concurrent per-group work and beginning with the temporal-state/resource
-hazards around the three Evaluate regions. No implementation was made in this
-measurement milestone. The public change is documentation-only; the private
-resources repository and published worker SHA remain unchanged.
+This audit did not justify source sharing, asynchronous submission, concurrent
+NVOF/DLSS-G execution, or a protocol change. Its proposed next step was the
+characterization completed in the following section. No implementation was
+made in that measurement milestone.
+
+## DLSS-G Evaluate characterization: bounded probe result
+
+The follow-up probe was compiled only in a separate ignored runtime directory
+and never replaced the published worker. It used one persistent timestamp query
+heap, one persistent default-heap staging buffer, one persistent readback
+buffer, and a single sampled normal group (steady-state frame 5, or frame 21
+when the run was long enough). Query data was resolved into staging during the
+sampled command list, copied to readback once at close after the existing final
+group fence, and mapped once. There was no per-group CPU map, no new normal-group
+wait, no verbose hot-path output, and no concurrent work.
+
+The previous all-group probe had a 27.1% 600-frame perturbation. The bounded
+probe measured 18.995 s timestamp-OFF versus 19.885 s timestamp-ON on the same
+8-group 1080p 4X control, or 4.7%. This narrowly meets the hard 5% ceiling but
+not the preferred 2% target. A second staging-buffer experiment still varied
+to 29.988 s on the same nominal control, so the driver/runtime is too noisy for
+absolute timing claims from this method. The following values are therefore
+stage attribution only; every new matrix cell has sample count 1, so its
+min/median/p90/p95/max are identical and not distribution estimates.
+
+| Resolution | Multiplier | E1 ms | E2 ms | E3 ms | Evaluate total ms | Output copies ms | Color upload ms | Full group ms | Samples |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 256x256 | 2X | 4.030 | — | — | 4.030 | 0.041 | 0.089 | 4.300 | 1 |
+| 256x256 | 3X | 2.789 | 1.997 | — | 4.786 | 0.081 | 0.092 | 5.145 | 1 |
+| 256x256 | 4X | 5.867 | 3.263 | 3.885 | 13.015 | 0.253 | 0.089 | 13.588 | 1 |
+| 1280x720 | 2X | 19.310 | — | — | 19.310 | 1.076 | 2.077 | 27.401 | 1 |
+| 1280x720 | 3X | 25.265 | 14.780 | — | 40.045 | 2.166 | 1.126 | 44.526 | 1 |
+| 1280x720 | 4X | 24.374 | 13.180 | 12.667 | 50.221 | 5.946 | 3.005 | 61.511 | 1 |
+| 1920x1080 | 2X | 38.855 | — | — | 38.855 | 2.449 | 2.522 | 46.386 | 1 |
+| 1920x1080 | 3X | 36.355 | 14.973 | — | 51.328 | 6.090 | 4.695 | 66.010 | 1 |
+| 1920x1080 | 4X | 34.447 | 14.829 | 14.644 | 63.920 | 11.481 | 2.518 | 80.556 | 1 |
+
+The 4X table does not support a fitted fixed-plus-increment model: index 1 is
+not stable across these single samples, and index 2/3 values move materially
+with the same resolution. The earlier higher-sample, high-perturbation 600-run
+probe remains the only stronger indication: Evaluate 1 ~= 10.690 ms and
+Evaluate 2/3 ~= 5.021/5.025 ms, or a 20.736 ms total. That observation is
+consistent with a persistent first-index cost, but the low-perturbation probe
+did not validate its absolute magnitude or goodness-of-fit.
+
+At 1080p, the sampled E1 values were 38.855/36.355/34.447 ms for 2X/3X/4X;
+at 720p they were 19.310/25.265/24.374 ms; and at 256p they were
+4.030/2.789/5.867 ms. These do not scale monotonically enough to separate
+fixed setup from pixel-proportional execution. Per-megapixel comparisons are
+therefore withheld. Reset and early-group samples were also unstable: the
+perturbed 1080p 4X reset sample had E1 90.187 ms, while early normal samples
+ranged from 12.773 to 42.493 ms and a later sampled group was 34.447 ms. This
+does not establish warm-up; it does establish that the probe/driver variance
+must be solved before claiming a temporal-position effect.
+
+## Evaluate input delta and hazard classification
+
+For one normal real-frame group, the NGX parameter/resource audit is:
+
+| Input | Index 1 vs 2/3 | Evidence |
+|---|---|---|
+| MultiFrameCount | Equal | Set once to the requested 1/2/3 count for every index |
+| MultiFrameIndex | Different | 1, then 2, then 3 |
+| Backbuffer frame ID | Equal within group | Same real-frame ID for all generated indices |
+| Reset | Equal within group | Same effective reset value for all indices |
+| Color, depth, motion | Equal resource pointers | `SetOptions` reuses the same allocations |
+| Output | Equal resource pointer | Same output allocation, copied into distinct readback slots afterward |
+| Disable output | Equal resource pointer | Same disable allocation |
+| Camera/matrix/jitter values | Equal | Reinitialized to the same fixed identity/default values |
+| Resource states | Equal sequence | One direct command list records upload, Evaluate, copy, and transitions in order |
+
+Thus `MultiFrameIndex` is the only intentional per-index semantic delta in a
+normal group. This is not a concurrency contract: the persistent feature
+handle, reused parameter object, frame ordering, history manager, shared
+resources, output reuse, command-list reuse, readback-slot lifetime, and NVOF
+history all remain ordered and synchronously fenced.
+
+The current sequence timestamps each output copy after its preceding Evaluate
+and records the next Evaluate afterward. That establishes same-command-list
+ordering, not permission to overlap. The stronger prior estimate remains
+Evaluate total ~=20.736 ms versus output-copy total ~=3.708 ms per 4X group.
+The three proposed concurrency classes are consequently classified as:
+
+| Prospective overlap | Classification | Reason |
+|---|---|---|
+| A. Indices within one group | UNSAFE / CONTRACT VIOLATION | One feature/parameter state and one output resource are reused in index order |
+| B. Output copy with next index | UNSAFE / CONTRACT VIOLATION | The next Evaluate reuses the output allocation whose prior contents are being copied |
+| C. Consecutive real-frame groups | UNSAFE / CONTRACT VIOLATION | DLSS-G temporal history and NVOF forward history cross group boundaries |
+
+No overlap is safe by the existing contract. The trusted production 600-frame
+encoded result remains wall 54.264 s, worker pair 56.721 ms, native total
+43.374 ms, GPU wait 31.552 ms, and readback 6.763 ms. The high-perturbation
+group estimate of 27.105 ms left 4.45 ms relative to that GPU wait, but that
+remainder cannot be assigned purely to NVOF. Since the low-perturbation probe
+did not achieve stable multi-sample distributions, the exact next target is
+**Candidate B — output-copy architecture audit**, documentation/proof only,
+with no copy-queue, resource-ring, overlap, or production scheduling change in
+this milestone. The first-Evaluate optimization remains unapproved because its
+cause is not yet isolated.

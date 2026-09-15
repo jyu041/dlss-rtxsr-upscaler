@@ -57,10 +57,18 @@ def main() -> int:
     parser.add_argument("--warmup", type=int, default=3)
     parser.add_argument("--motion-provider", choices=("nvof", "external"), default="nvof")
     parser.add_argument("--diagnostics", action="store_true")
+    parser.add_argument("--worker-log", type=Path)
     parser.add_argument("--json-output", type=Path, required=True)
     args = parser.parse_args()
     motion_mode = MOTION_MODE_NVIDIA_OPTICAL_FLOW if args.motion_provider == "nvof" else MOTION_MODE_EXTERNAL_R16G16_FLOAT
-    callback = (lambda line: print(line, file=sys.stderr, flush=True)) if args.diagnostics else None
+    worker_log = args.worker_log.open("w", encoding="utf-8") if args.worker_log else None
+    def _worker_line(line: str) -> None:
+        if args.diagnostics:
+            print(line, file=sys.stderr, flush=True)
+        if worker_log:
+            worker_log.write(line + "\n")
+            worker_log.flush()
+    callback = _worker_line if args.diagnostics or worker_log else None
     worker = DlssgWorker(args.worker.resolve(), args.community_runtime.resolve(), args.official_runtime_dir.resolve(), diagnostic_callback=callback, diagnostic_mode=args.diagnostics)
     samples: list[dict[str, float]] = []
     motion = struct.pack("<ee", -4.0, 0.0) * (args.width * args.height)
@@ -86,6 +94,8 @@ def main() -> int:
                 })
     finally:
         worker.close()
+        if worker_log:
+            worker_log.close()
     summary: dict[str, object] = {
         "schema_version": 1,
         "timestamp": time.time(),

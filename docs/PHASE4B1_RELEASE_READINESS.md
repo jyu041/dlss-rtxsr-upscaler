@@ -19,6 +19,7 @@ scene-cut behavior.
 | Python/Conda | Documented manual | `setup.bat` creates/updates the dedicated environment; Conda is not bundled. |
 | Python dependencies | Automatic after approval | `environment.yml` uses declared NVIDIA and PyTorch indexes; package terms remain applicable. |
 | FFmpeg/FFprobe | Documented manual | Full Gyan build on PATH; setup verifies both NVENC encoders. |
+| Microsoft VC++ runtime | Documented manual | C55 `/MD` imports MSVCP140/VCRUNTIME140/VCRUNTIME140_1 plus UCRT API sets; install the Microsoft x64 redistributable separately. |
 | Project worker | Blocked for a clean public checkout | Native source/build instructions exist, but the validated C55 worker is not in Git. |
 | Community runtime | Documented manual / user-supplied | Not downloaded or bundled; exact known identity is hash-gated. |
 | Official NVIDIA runtime | Documented manual / user-supplied | Not downloaded or bundled; licensing and acquisition remain vendor-controlled. |

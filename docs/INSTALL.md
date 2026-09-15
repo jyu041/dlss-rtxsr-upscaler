@@ -1,11 +1,28 @@
 # Installation
 
+## Beta package user
+
+Download the official project beta ZIP, optionally verify its published
+SHA-256, extract it to a normal directory, and run `setup.bat` from the
+extracted directory. Then run `start.bat`. The archive includes the validated
+project worker but never includes community or official NVIDIA runtime DLLs.
+
 Use Windows 10 or 11 x64 with a compatible NVIDIA driver, Miniconda or
 Anaconda, and FFmpeg/FFprobe available on `PATH` (the full Gyan build is
-recommended for NVENC). Run `setup.bat` from the
-repository root, then run `start.bat`. The scripts use only the dedicated
+recommended for NVENC). The scripts use only the dedicated
 `dlss-rtxsr-upscaler` Conda environment and do not modify system Python,
 ComfyUI, or another application environment.
+
+The packaged C55 worker uses the Microsoft Visual C++ runtime (`/MD`). Install
+the Microsoft Visual C++ 2015-2022 Redistributable x64 separately if it is not
+already present. It is not bundled by this project. The readiness check reports
+missing runtime DLLs explicitly.
+
+## Developer checkout
+
+Developers may clone the repository and run the same scripts from the
+repository root. Native builds require separately staged NVIDIA SDK headers
+and libraries; those are not needed by a beta user after package extraction.
 
 The environment installs Python 3.11, Gradio, PyTorch CUDA 12.8, the official
 `nvidia-vfx` package, and the other pinned Python dependencies. NVIDIA and
@@ -66,7 +83,10 @@ python tools\check_dlssg_readiness.py
 ```
 
 It reports separate SYSTEM, PROJECT, COMMUNITY, and OFFICIAL checks and exits
-non-zero unless the result is `DLSS-G READY`. The project worker must be the
+non-zero unless all statically checkable prerequisites pass. The result is
+`DLSS-G STATICALLY READY` when the external runtime directory is configured,
+but that directory remains `CONFIGURED / UNVALIDATED` until native
+initialization succeeds; a production render is the full validation gate. The project worker must be the
 validated Phase 4A identity; the community `version.dll` must match the
 documented hash; the official NVIDIA NGX directory and the driver-provided
 `C:\Windows\System32\nvofapi64.dll` must be supplied by the user. The command

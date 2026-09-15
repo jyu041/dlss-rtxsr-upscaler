@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import defaultdict, deque
 import heapq
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import threading
@@ -19,6 +20,9 @@ from src.core.progress import report_progress
 
 
 def ffmpeg_executable() -> str:
+    injected = os.environ.get("DLSSG_FFMPEG")
+    if injected:
+        return injected
     from src.core.process_utils import tool
 
     found = tool("ffmpeg")
@@ -318,7 +322,10 @@ def render_dlssg(
     manifest_path = destination_path.with_suffix(".dlssg-manifest.json")
     artifacts = Path(artifact_dir).resolve() if artifact_dir else destination_path.parent / f"{destination_path.stem}_frames"
     decoder = encoder = None
-    worker_lines: list[str] = []
+    worker_lines: deque[str] = deque(maxlen=2048)
+    worker_log_stream = log_path.open("w", encoding="utf-8")
+    worker_nvof_initializations = worker_create_features = worker_evaluates = 0
+    worker_device_removals: set[str] = set()
     timings: dict[str, list[float]] = defaultdict(list)
     hashes: list[str] = []
     comparisons: list[dict[str, object]] = []
@@ -328,7 +335,7 @@ def render_dlssg(
     interpolation_disabled_ids: list[int] = []
     previous_generated_digest: str | None = None
     decode_seconds = encode_seconds = 0.0
-    lifecycle: dict[str, float] = {}
+    lifecycle: dict[str, object] = {}
     write_latencies: list[float] = []
     write_group_latencies: list[float] = []
     sink_hash = hashlib.sha256()
@@ -342,7 +349,17 @@ def render_dlssg(
     peak_vram: int | None = None
 
     def on_diagnostic_line(line: str) -> None:
+        nonlocal worker_nvof_initializations, worker_create_features, worker_evaluates
         worker_lines.append(line)
+        worker_log_stream.write(line + "\n")
+        if line == "NVOF_INSTANCE_CREATED":
+            worker_nvof_initializations += 1
+        if line.startswith("WORKER_CREATE_COMPLETE"):
+            worker_create_features += 1
+        if line.startswith("WORKER_EVALUATE "):
+            worker_evaluates += 1
+        if "DEVICE_REMOVED_REASON=" in line:
+            worker_device_removals.add(line.rsplit("=", 1)[-1])
         if diagnostic_callback:
             diagnostic_callback(line)
 
@@ -351,7 +368,14 @@ def render_dlssg(
         write_start = time.perf_counter()
         if encode_output:
             assert encoder is not None and encoder.stdin is not None
-            encoder.stdin.write(frame)
+            try:
+                encoder.stdin.write(frame)
+            except OSError as exc:
+                encoder_code = encoder.poll()
+                if encoder_code is not None:
+                    lifecycle["encoder_exit_code"] = encoder_code
+                    raise RuntimeError(f"FFmpeg encoder exited with code {encoder_code}") from exc
+                raise
         else:
             sink_hash.update(frame)
             sink_bytes += len(frame)
@@ -531,12 +555,15 @@ def render_dlssg(
             encoder.stdin.close(); lifecycle["encoder_stdin_close_seconds"] = time.perf_counter() - close_start
             drain_start = time.perf_counter(); encoder.wait(timeout=300)
             lifecycle["encoder_drain_seconds"] = time.perf_counter() - drain_start
+            lifecycle["encoder_exit_code"] = encoder.returncode
         else:
             lifecycle["encoder_stdin_close_seconds"] = 0.0
             lifecycle["encoder_drain_seconds"] = 0.0
+            lifecycle["encoder_exit_code"] = None
         if encode_output and encoder is not None and encoder.returncode:
             raise RuntimeError((encoder.stderr.read() if encoder.stderr else b"").decode(errors="replace")[-4000:])
         decoder_drain_start = time.perf_counter(); decoder_returncode = decoder.wait(timeout=60); lifecycle["decoder_drain_seconds"] = time.perf_counter() - decoder_drain_start
+        lifecycle["decoder_exit_code"] = decoder_returncode
         if decoder_returncode:
             raise RuntimeError((decoder.stderr.read() if decoder.stderr else b"").decode(errors="replace")[-4000:])
         remux_start = time.perf_counter()
@@ -596,13 +623,12 @@ def render_dlssg(
         } if comparisons else {}
         lifecycle.update({
             "worker_process_count": 1,
-            "nvof_initialization_count": sum(line == "NVOF_INSTANCE_CREATED" for line in worker_lines),
-            "dlssg_create_feature_count": sum(line.startswith("WORKER_CREATE_COMPLETE") for line in worker_lines),
-            "evaluate_count": sum(line.startswith("WORKER_EVALUATE ") for line in worker_lines),
+            "nvof_initialization_count": worker_nvof_initializations,
+            "dlssg_create_feature_count": worker_create_features,
+            "evaluate_count": worker_evaluates,
             "worker_restarts": 0,
-            "device_removal_results": sorted({
-                line.rsplit("=", 1)[-1] for line in worker_lines if "DEVICE_REMOVED_REASON=" in line
-            }),
+            "device_removal_results": sorted(worker_device_removals),
+            "worker_exit_code": client.last_exit_code,
         })
         native_process_ms = summary.get("total_process_ms", 0.0)
         worker_pair_ms = worker_seconds * 1000 / max(input_count - 1 - scene_cut_holds, 1)
@@ -680,7 +706,7 @@ def render_dlssg(
             "worker_diagnostics": str(log_path),
         }
         manifest["manifest_finalize_ms"] = (time.perf_counter() - manifest_started) * 1000.0
-        log_path.write_text("\n".join(worker_lines) + "\n", encoding="utf-8")
+        worker_log_stream.flush()
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         lifecycle["manifest_log_finalization_seconds"] = time.perf_counter() - manifest_started
         lifecycle["accounted_wall_seconds"] += lifecycle["manifest_log_finalization_seconds"]
@@ -691,8 +717,8 @@ def render_dlssg(
     finally:
         if peak_vram is None:
             vram_sampler.stop()
-        if worker_lines:
-            log_path.write_text("\n".join(worker_lines) + "\n", encoding="utf-8")
+        worker_log_stream.flush()
+        worker_log_stream.close()
         for process in (decoder, encoder):
             if process and process.poll() is None:
                 process.terminate()

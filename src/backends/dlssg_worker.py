@@ -7,6 +7,7 @@ dependencies. This module never downloads or redistributes them.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections import deque
 import hashlib
 import math
 import os
@@ -213,8 +214,9 @@ class DlssgWorker:
         self.diagnostic_callback = diagnostic_callback
         self.diagnostic_mode = diagnostic_mode
         self._process: subprocess.Popen[bytes] | None = None
+        self.last_exit_code: int | None = None
         self._request_id = 0
-        self._diagnostics: list[str] = []
+        self._diagnostics: deque[str] = deque(maxlen=2048)
         self.last_exchange_metrics: dict[str, float | int] = {}
         self._stderr_thread: threading.Thread | None = None
         self.width: int | None = None
@@ -468,6 +470,7 @@ class DlssgWorker:
                         process.kill()
                         process.wait(timeout=2)
         finally:
+            self.last_exit_code = process.poll()
             for stream in (process.stdin, process.stdout, process.stderr):
                 if stream:
                     stream.close()

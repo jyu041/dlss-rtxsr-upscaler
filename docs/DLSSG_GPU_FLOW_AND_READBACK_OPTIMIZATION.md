@@ -679,3 +679,144 @@ did not achieve stable multi-sample distributions, the exact next target is
 with no copy-queue, resource-ring, overlap, or production scheduling change in
 this milestone. The first-Evaluate optimization remains unapproved because its
 cause is not yet isolated.
+
+## Output-copy architecture audit
+
+This is an architecture and contract audit only. The production worker,
+protocol v4, queue topology, output ordering, and worker SHA are unchanged.
+
+### Current output lifetime
+
+For each normal 4X group, `SetOptions` assigns
+`OutputInterpolated = output_.gpu`, then `EvaluateFeature` records the DLSS-G
+work. The shared output texture is transitioned from UAV to COPY_SOURCE;
+`CopyTextureRegion` copies it into the index-specific READBACK buffer; and the
+texture is transitioned back to UAV before the next Evaluate overwrites it.
+After the group fence, the CPU maps each readback slot and
+`MapReadbackSlotInto()` packs rows directly into final generated protocol
+storage.
+
+The DLSS-G write is logically necessary. The per-index output copy and UAV
+restore are necessary because one output allocation is reused before the next
+Evaluate. The readback buffer and CPU row packing are necessary because the
+current consumer is CPU-visible RGBA sent through the synchronous Python /
+FFmpeg stdin path. The final fence is necessary before CPU access; the existing
+per-slot maps do not synchronize with the GPU themselves.
+
+### Direct-to-readback legality
+
+The installed Windows SDK defines READBACK as heap type 3 and
+`ALLOW_UNORDERED_ACCESS` as a resource flag, but the D3D12 contract is more
+restrictive than those enum declarations. Microsoft guidance states that
+READBACK resources must start in and remain in COPY_DEST, and that a READBACK
+resource is always a buffer, not a 2D texture. Therefore:
+
+| Question | Classification | Result |
+|---|---|---|
+| READBACK 2D `R8G8B8A8_UNORM` texture | UNSUPPORTED BY D3D12 | READBACK heaps are buffer-only |
+| READBACK resource with `ALLOW_UNORDERED_ACCESS` | UNSUPPORTED BY D3D12 | UAV-capable resource flags conflict with fixed READBACK state |
+| READBACK resource in UAV state | UNSUPPORTED BY D3D12 | READBACK remains COPY_DEST |
+| NGX `OutputInterpolated` pointing to READBACK texture | UNSUPPORTED BY D3D12 | The required resource cannot legally exist |
+| CPU-visible custom-heap UAV texture on this discrete RTX 3070 Ti | ARCHITECTURALLY POSSIBLE BUT UNPROVEN | No suitable performant provider contract was established |
+| DLSS-G direct write into mappable host memory | UNSUPPORTED AS A SUPPORTED PATH | No legal READBACK texture exists; custom/provider acceptance needs a separate experiment |
+
+No unsupported resource creation was attempted. A custom heap is not an
+automatic escape hatch: on a discrete adapter, CPU-visible memory is distinct
+from GPU-local memory, and the pinned provider checkout does not document
+acceptance of a CPU-visible UAV texture.
+
+### One output versus multiple output UAVs
+
+The wrapper calls `SetOptions` for every Evaluate and sets
+`OutputInterpolated` on the shared parameter object each time. The pinned
+community checkout at `5f62ff44` contains only the binary `version.dll` at this
+path and no source-level output-resource contract. There is no evidence that
+the provider caches the output resource at Create, nor evidence that it
+requires stable output identity; equally, there is no evidence that it accepts
+three changing UAV allocations or that output N is not consumed internally by
+index N+1. Existing correctness tests exercise only the stable single-output
+contract. The final classification is **UNPROVEN**.
+
+The same conclusion applies to `OutputDisableInterpolation`: the current code
+uses one 4-byte UAV and copies it immediately after each Evaluate. A per-index
+disable allocation is not established by provider evidence, and the tiny copy
+is not an optimization target. Immediate preservation remains necessary for a
+CPU/protocol result even if distinct image outputs were later proven safe.
+
+### Same-queue multi-output model
+
+If a future contract experiment proved three output UAVs legal, the serial
+direct-queue sequence would be Evaluate 1 → output0, Evaluate 2 → output1,
+Evaluate 3 → output2, followed by transitions of output0/1/2 to COPY_SOURCE,
+three `CopyTextureRegion` operations into the existing readback destinations,
+and transitions back if the resources were reused. Logical extra VRAM for two
+additional `R8G8B8A8` UAV textures is:
+
+| Resolution | One output | Two additional outputs | Approx. extra VRAM |
+|---|---:|---:|---:|
+| 256x256 | 262,144 B / 0.25 MiB | 524,288 B | 0.50 MiB |
+| 1280x720 | 3,686,400 B / 3.52 MiB | 7,372,800 B | 7.03 MiB |
+| 1920x1080 | 8,294,400 B / 7.91 MiB | 16,588,800 B | 15.82 MiB |
+| 3840x2160 | 33,177,600 B / 31.64 MiB | 66,355,200 B | 63.28 MiB |
+
+Actual committed allocations may be larger after driver alignment. Total GPU
+copy bytes do not change: three full RGBA frames per 4X group remain
+24,883,200 bytes per 1080p group. Moving the same copies later on the same
+serial queue cannot remove that bandwidth cost; any gain would require
+unproven cache, transition, or provider effects.
+
+### Copy-queue and readback-layout feasibility
+
+`CopyTextureRegion` can technically execute on a COPY queue for copy-compatible
+resources, but a real design would require direct-queue completion fencing,
+resource state/COMMON handoff, copy-queue ownership, and a final fence covering
+all three readbacks. With distinct output textures, a copy queue could read
+output N while direct work writes output N+1 only if all resource and temporal
+dependencies were separate. The classification is **PLAUSIBLE BUT UNPROVEN**
+for the copy operation and **UNSAFE** for this product’s current temporal/
+resource contract. No queue was created.
+
+One larger READBACK buffer with three placed footprints is legal as a buffer
+layout. Each destination offset must satisfy the 512-byte
+`D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT`; each row pitch must satisfy the
+256-byte pitch alignment. The tested RGBA sizes are already aligned, so three
+1080p destinations still consume 24,883,200 bytes. This simplifies bookkeeping
+but should not produce meaningful GPU bandwidth or copy-time savings.
+
+Persistent mapping of READBACK buffers is legal and could avoid repeated
+Map/Unmap calls, but it cannot make data available before the existing fence.
+CPU reads still require completed GPU copies and an appropriate read range;
+persistent mapping does not change GPU copy cost. It is a possible small
+CPU-side refinement to the current approximately 6.763 ms readback stage, not
+output-copy elimination.
+
+### GPU-encoder lower bound and theoretical ceiling
+
+The current Python/FFmpeg stdin design accepts CPU-visible RGBA bytes, not a
+D3D12 resource. A future native path would need GPU video conversion where
+required, NVENC input registration or FFmpeg hardware frames, native packet
+drain, and a replacement for the Python byte-stream boundary. That could
+potentially remove all three image readbacks, but is outside this phase.
+
+Using the trusted 600-frame result and the earlier approximate 3.708 ms output
+copy cost per normal 4X group across 590 normal groups gives 2.187 s of serial
+copy time:
+
+| Hypothetical copy reduction | Time removed | Arithmetic wall ceiling from 54.264 s |
+|---|---:|---:|
+| 25% | 0.547 s | 53.717 s / 1.01% |
+| 50% | 1.094 s | 53.170 s / 2.02% |
+| 100% | 2.187 s | 52.077 s / 4.03% |
+
+These are unattainable ceilings, not forecasts. The current CPU encoder path
+still requires at least one GPU-to-host image readback per generated frame.
+
+### Decision
+
+The output-resource identity contract is unproven, direct-to-readback is
+forbidden by D3D12, same-queue multi-output would not remove copy bandwidth,
+and the theoretical complete-copy ceiling is only about 4.03% of trusted wall
+time. The single recommendation is **KEEP CURRENT OUTPUT ARCHITECTURE**. A
+future GPU-encoder redesign is separate scope; no output rings, copy queue,
+overlapping Evaluates, or production resource changes are justified by this
+audit.

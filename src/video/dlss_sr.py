@@ -28,6 +28,8 @@ MODES = {
     "Ultra Performance": 3.0,
 }
 PRESETS = {"Default": 0, "J": 10, "K": 11, "L": 12, "M": 13}
+HOST_EXIT_GRACE_SECONDS = 8.0
+HOST_TERMINATE_GRACE_SECONDS = 5.0
 
 
 def _target(width: int, height: int, mode: str) -> tuple[int, int]:
@@ -61,6 +63,24 @@ def _read_response(stream, expected_bytes: int) -> tuple[tuple[int, ...], bytes]
     if len(payload) != payload_size:
         raise RuntimeError("DLSS SR host returned a truncated frame")
     return values, payload
+
+
+def _finish_host_process(host_process, *, grace_seconds: float = HOST_EXIT_GRACE_SECONDS) -> str:
+    """Close a fully-drained host and contain only the known EOF teardown hang."""
+    host_process.stdin.close()
+    try:
+        host_process.wait(timeout=grace_seconds)
+    except subprocess.TimeoutExpired:
+        host_process.terminate()
+        try:
+            host_process.wait(timeout=HOST_TERMINATE_GRACE_SECONDS)
+        except subprocess.TimeoutExpired:
+            host_process.kill()
+            host_process.wait(timeout=HOST_TERMINATE_GRACE_SECONDS)
+        return "EXPECTED_TEARDOWN_TIMEOUT_AFTER_COMPLETE"
+    if host_process.returncode:
+        raise RuntimeError("DLSS SR host exited with code " + str(host_process.returncode))
+    return "HOST_EXITED_CLEANLY"
 
 
 def process_dlss_sr_frame(frame, backend, mode="Quality", preset="K"):
@@ -178,10 +198,7 @@ def render_dlss_sr(source, destination, backend, mode="Quality", preset="K", *, 
             details = decoder.stderr.read().decode(errors="replace") if decoder.stderr else ""
             raise RuntimeError(f"FFmpeg decoder stopped: {details[-2000:]}")
         report_progress(progress, frame_index=count, total_frames=total, phase="ENCODING", message="Encoding DLSS SR output")
-        host_process.stdin.close()
-        host_process.wait(timeout=120)
-        if host_process.returncode:
-            raise RuntimeError("DLSS SR host exited with code " + str(host_process.returncode))
+        host_completion = _finish_host_process(host_process)
         encoder.stdin.close()
         encoder.wait(timeout=120)
         if encoder.returncode:
@@ -201,6 +218,7 @@ def render_dlss_sr(source, destination, backend, mode="Quality", preset="K", *, 
         return {"frames": count, "fps": count / max(0.001, time.perf_counter() - started),
                 "dimensions": (output_width, output_height), "audio_preserved": info["audio_codec"] != "none",
                 "scene_resets": resets, "encoder": encoder_name, "frames_estimated": estimated,
+                "host_completion": host_completion,
                 "runtime_sha256": _sha256(host.parent / "nvngx_dlss.dll")}
     finally:
         for process in (decoder, encoder, host_process):

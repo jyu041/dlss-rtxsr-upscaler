@@ -6,7 +6,8 @@ import pytest
 from src.backends.dlss_sr import (ATTESTATION_SCHEMA, DLSSSRBackend,
                                    VALIDATED_DLSS_SR_RUNTIME_SHA256,
                                    VALIDATED_HOST_SHA256)
-from src.video.dlss_sr import INPUT_HEADER, INPUT_MAGIC, OUTPUT_HEADER, _read_response, _target
+from src.video.dlss_sr import (INPUT_HEADER, INPUT_MAGIC, OUTPUT_HEADER, _finish_host_process,
+                                _read_response, _target)
 from src.ui.tooltips import DLSS_SR_TOOLTIPS
 
 
@@ -160,3 +161,61 @@ def test_stream_response_rejects_malformed_payload():
     malformed = OUTPUT_HEADER.pack(INPUT_MAGIC, 0, 1, 1, 0, 8)
     with pytest.raises(RuntimeError, match="Invalid"):
         _read_response(io.BytesIO(malformed), 4)
+
+
+class _FakeStdin:
+    def __init__(self):
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+class _FakeHost:
+    def __init__(self, *, returncode=0, timeout=False):
+        self.stdin = _FakeStdin()
+        self.returncode = returncode
+        self.timeout = timeout
+        self.terminated = False
+        self.killed = False
+
+    def wait(self, timeout=None):
+        if self.timeout and not self.terminated and not self.killed:
+            raise __import__("subprocess").TimeoutExpired("host", timeout)
+        return self.returncode
+
+    def terminate(self):
+        self.terminated = True
+        self.returncode = -15
+
+    def kill(self):
+        self.killed = True
+        self.returncode = -9
+
+
+def test_complete_host_exit_is_reported_cleanly():
+    host = _FakeHost()
+    assert _finish_host_process(host, grace_seconds=0.01) == "HOST_EXITED_CLEANLY"
+    assert host.stdin.closed
+    assert not host.terminated
+
+
+def test_complete_host_timeout_is_contained_after_eof():
+    host = _FakeHost(timeout=True)
+    assert _finish_host_process(host, grace_seconds=0.01) == "EXPECTED_TEARDOWN_TIMEOUT_AFTER_COMPLETE"
+    assert host.stdin.closed
+    assert host.terminated
+    assert not host.killed
+
+
+def test_nonzero_host_exit_is_failure_not_teardown_timeout():
+    host = _FakeHost(returncode=7)
+    with pytest.raises(RuntimeError, match="code 7"):
+        _finish_host_process(host, grace_seconds=0.01)
+
+
+def test_missing_final_response_is_not_teardown_tolerated():
+    import io
+
+    with pytest.raises(RuntimeError, match="closed"):
+        _read_response(io.BytesIO(), 4)

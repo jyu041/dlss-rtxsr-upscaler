@@ -51,8 +51,25 @@ The application is local-only and binds its UI to localhost. For security
 requirements and provenance rules, see `docs/SECURITY_AUDIT.md` and
 `docs/DLSS5_APPROVAL.md`.
 
-DLSS Frame Generation 2X runtime selections are saved locally after a field
+DLSS Frame Generation runtime selections are saved locally after a field
 changes and before Preview Clip or Render Video. They are stored in the
-ignored `config/settings.local.json`; existing `DLSSG_COMMUNITY_RUNTIME` and
-`DLSSG_OFFICIAL_RUNTIME_DIR` environment variables remain valid bootstrap
-fallbacks. Missing files do not clear saved paths.
+ignored `config/settings.local.json`; environment variables are optional
+bootstrap fallbacks, not required user configuration. Missing files do not
+clear saved paths.
+
+## DLSS-G readiness
+
+Run this non-mutating check before the first render:
+
+```powershell
+python tools\check_dlssg_readiness.py
+```
+
+It reports separate SYSTEM, PROJECT, COMMUNITY, and OFFICIAL checks and exits
+non-zero unless the result is `DLSS-G READY`. The project worker must be the
+validated Phase 4A identity; the community `version.dll` must match the
+documented hash; the official NVIDIA NGX directory and the driver-provided
+`C:\Windows\System32\nvofapi64.dll` must be supplied by the user. The command
+never downloads, copies, loads, or substitutes runtimes. Use `--json` for
+automation and `--verbose` only when local paths and observed hashes are
+appropriate to disclose.

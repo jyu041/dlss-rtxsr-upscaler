@@ -3,6 +3,7 @@ from pathlib import Path
 from src.core.media_info import probe, format_info
 from src.core.config import load_settings, save_settings, load_presets
 from src.core.diagnostics import collect
+from src.core.dlssg_readiness import assess, format_summary
 from src.backends.rtx_vsr import RTXVSRBackend
 from src.backends.dlss5 import DLSS5Backend
 from src.backends.dlss_sr import DLSSSRBackend
@@ -46,6 +47,8 @@ def _save_last(backend, values):
 def save_dlssg_settings(community_runtime, official_runtime_dir, motion_provider, depth_mode, multiplier=2):
     _save_last("dlssg", {"community_runtime": community_runtime or "", "official_runtime_dir": official_runtime_dir or "", "motion_provider": motion_provider, "depth_mode": depth_mode, "multiplier": int(multiplier)})
     return "Runtime configuration saved locally."
+def check_dlssg_readiness(community_runtime, official_runtime_dir):
+    return "```text\n" + format_summary(assess(community_runtime=community_runtime, official_runtime_dir=official_runtime_dir)) + "\n```"
 def inspect(path):
     if not path: return "<span class=\"muted\">No video selected.</span>", "No video selected."
     try:
@@ -291,6 +294,9 @@ def build():
                     dlssg_multiplier = gr.Dropdown([("2X Frame Generation", 2), ("3X Multi Frame Generation", 3), ("4X Multi Frame Generation", 4)], value=dlssg_multiplier_default, label="Frame multiplier")
                     dlssg_runtime = gr.Textbox(value=dlssg_runtime_default, label="Community runtime (absolute version.dll path)")
                     dlssg_official_runtime = gr.Textbox(value=dlssg_official_default, label="Official NGX runtime directory")
+                    with gr.Row():
+                        dlssg_check = gr.Button("Check DLSS-G readiness")
+                    dlssg_readiness = gr.Markdown("Readiness has not been checked.")
                     dlssg_motion = gr.Dropdown(["NVIDIA Optical Flow"], value=dlssglast.get("motion_provider", "NVIDIA Optical Flow"), label="Motion provider")
                     dlssg_depth = gr.Dropdown(["Constant 0.5"], value=dlssglast.get("depth_mode", "Constant 0.5"), label="Depth mode")
                     dlssg_saved = gr.Markdown()
@@ -344,6 +350,7 @@ def build():
         dlssg_inputs = [dlssg_runtime, dlssg_official_runtime, dlssg_motion, dlssg_depth, dlssg_multiplier]
         for control in dlssg_inputs:
             control.change(save_dlssg_settings, dlssg_inputs, dlssg_saved, show_progress="hidden")
+        dlssg_check.click(check_dlssg_readiness, [dlssg_runtime, dlssg_official_runtime], dlssg_readiness, show_progress="hidden")
         frame.click(do_frame, [inp, timestamp, state, vsr_mode, scale, quality, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [before, after, job])
         clip.click(preview_clip, [inp, state, vsr_mode, scale, quality, container, timestamp, preview_duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [before_clip, result_video, job])
         render.click(render_video, [inp, state, vsr_mode, scale, quality, container, codec, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [result_video, job])

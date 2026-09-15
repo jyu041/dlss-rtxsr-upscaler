@@ -17,6 +17,9 @@ For isolated developer or validation runs only, set `NVE_CONDA_ENV` to a
 temporary Conda environment name before running `setup.bat` and `start.bat`.
 The default remains `dlss-rtxsr-upscaler`; the override is not required for
 normal users and accepts only letters, numbers, underscore, period, and hyphen.
+If a host cannot resolve a custom named environment with `conda run -n`, set
+`NVE_CONDA_PREFIX` to the exact existing environment prefix; this selects the
+same environment without changing the default behavior.
 
 The packaged C55 worker uses the Microsoft Visual C++ runtime (`/MD`). Install
 the Microsoft Visual C++ 2015-2022 Redistributable x64 separately if it is not

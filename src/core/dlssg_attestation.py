@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .dlssg_profiles import C55_WORKER_SHA256, profile
+from .dlssg_official_runtime import policy_satisfied
 from .paths import ROOT
 from src.runtime_manager.core import sha256_file
 
@@ -62,7 +63,9 @@ def is_current(data: dict[str, object], expected: dict[str, object]) -> bool:
     keys = ("schema", "app_version", "implementation", "candidate_version", "candidate_source_commit", "worker_sha256", "candidate_runtime_sha256", "candidate_ini_sha256", "official_runtime_identity", "gpu_uuid", "gpu", "driver", "os")
     return (all(data.get(key) == expected.get(key) for key in keys)
             and data.get("worker_sha256") == C55_WORKER_SHA256
+            and policy_satisfied(str(data.get("official_runtime_identity", "")))
             and data.get("test_result") == "PASS"
+            and data.get("motion_paths") == {"external": "PASS", "nvof": "PASS"}
             and data.get("tested_multipliers") == [2, 3, 4])
 
 

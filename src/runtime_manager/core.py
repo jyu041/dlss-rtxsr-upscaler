@@ -65,6 +65,8 @@ class RuntimeSpec:
     redistributable: bool = False
     direct_user_download: bool = False
     files: tuple[RuntimeFile, ...] = ()
+    archive_members: tuple[str, ...] = ()
+    extract_map: tuple[tuple[str, str], ...] = ()
 
     @classmethod
     def from_dict(cls, data: dict) -> "RuntimeSpec":
@@ -103,7 +105,13 @@ class RuntimeSpec:
         digest = data.get("sha256")
         if digest is not None and (not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdefABCDEF" for char in digest)):
             raise ValueError("sha256 must be a 64-character hexadecimal digest")
-        return cls(id=str(data["id"]), name=str(data["name"]), backend=str(data["backend"]), version=str(data["version"]), source=str(data["source"]), source_url=source_url, artifact_url=str(artifact_url) if artifact_url is not None else None, sha256=digest.upper() if digest else None, size_bytes=size, archive_type=str(data["archive_type"]), allowlist=allowlist, destination=destination, policy=policy, required=bool(data.get("required", False)), constraints=dict(data.get("constraints", {})), notice_url=str(data["notice_url"]) if data.get("notice_url") else None, channel=str(data.get("channel", "candidate")), license_name=str(data["license_name"]) if data.get("license_name") else None, redistributable=bool(data.get("redistributable", False)), direct_user_download=bool(data.get("direct_user_download", False)), files=tuple(file_specs))
+        archive_members = tuple(str(path) for path in data.get("archive_members", []))
+        if archive_members and (len(archive_members) != len(allowlist) or any(not _safe_relative_path(path) for path in archive_members)):
+            raise ValueError("archive_members must contain safe relative paths matching the allowlist")
+        extract_map = tuple((str(source), str(target)) for source, target in dict(data.get("extract_map", {})).items())
+        if extract_map and (set(source for source, _ in extract_map) != set(archive_members) or any(not _safe_relative_path(source) or not _safe_relative_path(target) for source, target in extract_map)):
+            raise ValueError("extract_map must map every safe archive member to a safe destination")
+        return cls(id=str(data["id"]), name=str(data["name"]), backend=str(data["backend"]), version=str(data["version"]), source=str(data["source"]), source_url=source_url, artifact_url=str(artifact_url) if artifact_url is not None else None, sha256=digest.upper() if digest else None, size_bytes=size, archive_type=str(data["archive_type"]), allowlist=allowlist, destination=destination, policy=policy, required=bool(data.get("required", False)), constraints=dict(data.get("constraints", {})), notice_url=str(data["notice_url"]) if data.get("notice_url") else None, channel=str(data.get("channel", "candidate")), license_name=str(data["license_name"]) if data.get("license_name") else None, redistributable=bool(data.get("redistributable", False)), direct_user_download=bool(data.get("direct_user_download", False)), files=tuple(file_specs), archive_members=archive_members, extract_map=extract_map)
 
 
 def _safe_relative_path(value: str) -> bool:
@@ -193,6 +201,23 @@ class RuntimeManager:
         data = json.loads(self.state_path.read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
 
+    def _candidate_attestation_current(self, destination: Path) -> bool:
+        """Derive candidate readiness from files plus the current machine attestation."""
+        if not destination.is_dir():
+            return False
+        try:
+            from src.core.dlssg_attestation import current, is_current, load
+            from src.core.dlssg_official_runtime import identity
+            from src.core.dlssg_profiles import profile
+            runtime = destination / "version.dll"
+            ini = destination / "dlssg_sm86.ini"
+            official = Path(os.environ.get("DLSSG_OFFICIAL_RUNTIME_DIR", str(self.install_root / "dlssg" / "official"))).expanduser().resolve()
+            worker = Path(os.environ.get("DLSSG_WORKER_EXE", str(Path(__file__).resolve().parents[2] / "native" / "dlssg_sm86_offline" / "bin" / "dlssg_sm86_offline.exe"))).expanduser().resolve()
+            expected = current(runtime_path=runtime, ini_path=ini, official_identity=identity(official), worker_path=worker)
+            return bool(load()) and is_current(load() or {}, expected)
+        except (OSError, ValueError, TypeError):
+            return False
+
     def inspect(self, runtime_id: str) -> tuple[RuntimeSpec, RuntimeState]:
         spec = self.specs[runtime_id]
         record = self.state().get(runtime_id)
@@ -207,8 +232,8 @@ class RuntimeManager:
             return spec, RuntimeState.UPDATE_AVAILABLE
         if spec.constraints.get("static_only"):
             return spec, RuntimeState.STATIC_ONLY
-        if spec.constraints.get("compatibility_test_required") and not record.get("backend_ready", False):
-            return spec, RuntimeState.VALIDATION_REQUIRED
+        if spec.constraints.get("compatibility_test_required"):
+            return spec, RuntimeState.READY if self._candidate_attestation_current(destination) else RuntimeState.VALIDATION_REQUIRED
         return spec, RuntimeState.INSTALLED
 
     def inventory(self) -> list[dict[str, object]]:
@@ -255,12 +280,13 @@ class RuntimeManager:
             result["ok"] = False
             result["detail"] = f"managed file integrity check failed: {exc}"
             return result
-        if selftest is None and spec.constraints.get("compatibility_test_required"):
+        if spec.constraints.get("compatibility_test_required"):
+            ready = self._candidate_attestation_current(destination)
             result["files_verified"] = True
-            result["backend_ready"] = False
+            result["backend_ready"] = ready
             result["ok"] = True
-            result["state"] = RuntimeState.VALIDATION_REQUIRED.value
-            result["detail"] = "managed files verified; explicit compatibility validation is required"
+            result["state"] = RuntimeState.READY.value if ready else RuntimeState.VALIDATION_REQUIRED.value
+            result["detail"] = "managed files and current compatibility attestation verified" if ready else "managed files verified; current compatibility attestation is required"
             return result
         if selftest is None and not self.specs[runtime_id].constraints.get("compatibility_test_required"):
             selftest = __import__("src.runtime_manager.selftests", fromlist=["selftest_for"]).selftest_for(runtime_id)
@@ -374,7 +400,17 @@ class RuntimeManager:
         staging_parent = Path(tempfile.mkdtemp(prefix=f"{spec.id}-", dir=self.install_root))
         staging = staging_parent / "payload"
         try:
-            extract_safe_zip(Path(archive), staging, spec.allowlist, selective=spec.archive_type == "selective-zip")
+            extract_safe_zip(Path(archive), staging, spec.archive_members or spec.allowlist, selective=spec.archive_type in {"selective-zip", "provider-zip"})
+            for source, target in spec.extract_map:
+                source_path = staging / Path(source)
+                target_path = staging / Path(target)
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(source_path, target_path)
+            if spec.extract_map:
+                for source, _ in spec.extract_map:
+                    source_path = staging / Path(source)
+                    if source_path.exists():
+                        source_path.unlink()
             return self._activate_directory(runtime_id, staging, selftest=selftest, staging_parent=staging_parent)
         except Exception:
             shutil.rmtree(staging_parent, ignore_errors=True)
@@ -392,6 +428,7 @@ class RuntimeManager:
             staging = managed_staging
         try:
             destination = self.install_root / spec.destination
+            destination.parent.mkdir(parents=True, exist_ok=True)
             backup = destination.with_name(destination.name + ".previous")
             if backup.exists():
                 shutil.rmtree(backup)
@@ -428,12 +465,13 @@ class RuntimeManager:
         if not destination.is_dir():
             raise ValueError("runtime destination is not a directory")
         actual: list[dict[str, object]] = []
-        for path in sorted(destination.rglob("*")):
+        for path in destination.rglob("*"):
             if not path.is_file() or path.is_symlink():
                 continue
             relative = path.relative_to(destination).as_posix()
             actual.append({"path": relative, "sha256": sha256_file(path), "size_bytes": path.stat().st_size})
-        expected = sorted(str(PurePosixPath(path.replace("\\", "/"))) for path in spec.allowlist)
+        actual.sort(key=lambda item: str(item["path"]).casefold())
+        expected = sorted((str(PurePosixPath(path.replace("\\", "/"))) for path in spec.allowlist), key=str.casefold)
         names = [str(item["path"]) for item in actual]
         if names != expected:
             raise ValueError(f"managed file set differs from allowlist: {names}")

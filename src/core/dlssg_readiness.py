@@ -16,7 +16,7 @@ from .process_utils import tool
 from .user_presets import load_last_used
 from .dlssg_profiles import C55_WORKER_SHA256, LEGACY_RUNTIME_SHA256, profile
 from .dlssg_attestation import ATTESTATION_PATH, current as current_attestation, is_current, load as load_attestation
-from .dlssg_official_runtime import identity as official_runtime_identity
+from .dlssg_official_runtime import identity as official_runtime_identity, policy_satisfied
 
 EXPECTED_WORKER_SHA256 = C55_WORKER_SHA256
 EXPECTED_COMMUNITY_SHA256 = LEGACY_RUNTIME_SHA256
@@ -190,7 +190,7 @@ def assess(*, worker: str | Path | None = None, community_runtime: str | Path | 
         f"profile={selected_profile.name}; version.dll {_display(community_path, verbose)}; exact identity verified" if community_path else "Managed runtime is required", community_hash if verbose else None))
 
     directory_ok = bool(official_path and official_path.is_dir() and any(official_path.iterdir()))
-    official_identity_ok = official_identity != "missing" and not official_identity.startswith("missing:")
+    official_identity_ok = policy_satisfied(official_identity)
     official_ok = directory_ok if selected_profile.name == "legacy" else official_identity_ok
     official_state = ("IDENTITY VERIFIED" if official_identity_ok else "CONFIGURED / UNVALIDATED") if directory_ok else "MISSING"
     checks.append(ReadinessCheck("OFFICIAL", official_state, official_ok,

@@ -148,6 +148,14 @@ def test_manifest_loads_pinned_multifile_candidate():
     assert spec.direct_user_download is True and spec.redistributable is False
 
 
+def test_manifest_loads_exact_official_provider_extraction_policy():
+    manager = RuntimeManager(Path("src/runtime_manager/manifest.json"), Path("runtime"))
+    provider = manager.specs["dlssg-official-provider-310.9.1"]
+    assert provider.sha256 == "92C4D954631A1710DA86CA3FA8D5034F2B9503838C95FC4AE977AE149319781B"
+    assert provider.archive_members == ("bin/x64/nvngx_dlssg.dll", "bin/x64/nvngx_dlss.license.txt")
+    assert provider.extract_map[0] == ("bin/x64/nvngx_dlssg.dll", "nvngx_dlssg.dll")
+
+
 def test_inventory_exposes_expected_and_current_identity(tmp_path):
     manifest = tmp_path / "manifest.json"
     demo = spec(policy="USER_SUPPLIED")

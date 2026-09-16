@@ -11,6 +11,8 @@ from src.runtime_manager.core import sha256_file
 # identity narrow and deterministic: unrelated driver files must not silently
 # change an attestation.
 REQUIRED_FILES = ("nvngx_dlssg.dll",)
+EXPECTED_PROVIDER_SHA256 = "FF6E90EB78B827927DFF5B4ECC6B1C870C2E9BCA29ED9F48C7D348CC9E170B82"
+EXPECTED_PROVIDER_SIZE = 7460976
 
 
 def identity(directory: str | Path | None) -> str:
@@ -24,3 +26,7 @@ def identity(directory: str | Path | None) -> str:
             return "missing:" + name
         entries.append(f"{name}:{candidate.stat().st_size}:{sha256_file(candidate)}")
     return "|".join(entries)
+
+
+def policy_satisfied(value: str) -> bool:
+    return value == f"nvngx_dlssg.dll:{EXPECTED_PROVIDER_SIZE}:{EXPECTED_PROVIDER_SHA256}"

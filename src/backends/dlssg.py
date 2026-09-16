@@ -9,7 +9,7 @@ from pathlib import Path
 from .base import Backend, BackendStatus
 from src.core.dlssg_profiles import profile as get_profile
 from src.core.dlssg_attestation import current as current_attestation, is_current, load as load_attestation
-from src.core.dlssg_official_runtime import identity as official_runtime_identity
+from src.core.dlssg_official_runtime import identity as official_runtime_identity, policy_satisfied
 from src.core.dlssg_readiness import sha256_file
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -66,11 +66,17 @@ class DLSSGBackend(Backend):
         actual = sha256_file(config.community_runtime)
         if actual != config.expected_runtime_sha256:
             return BackendStatus("DLSS-G 2X/3X/4X", False, "IDENTITY MISMATCH", f"{config.runtime_profile} runtime SHA-256 mismatch")
+        if config.runtime_profile == "candidate-0.3.1":
+            ini = config.community_runtime.with_name("dlssg_sm86.ini")
+            if sha256_file(ini) != get_profile(config.runtime_profile).ini_sha256:
+                return BackendStatus("DLSS-G 2X/3X/4X", False, "IDENTITY MISMATCH", "candidate INI SHA-256 mismatch")
         worker_hash = sha256_file(config.worker)
         if worker_hash != "C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916":
             return BackendStatus("DLSS-G 2X/3X/4X", False, "IDENTITY MISMATCH", "worker SHA-256 is not the verified C55 identity")
         if config.runtime_profile == "candidate-0.3.1":
             official_identity = official_runtime_identity(config.official_runtime_dir)
+            if not policy_satisfied(official_identity):
+                return BackendStatus("DLSS-G 2X/3X/4X", False, "COMPATIBILITY TEST REQUIRED", "official provider is absent or does not match the pinned NVIDIA 310.9.1 policy")
             expected = current_attestation(runtime_path=config.community_runtime, ini_path=config.community_runtime.with_name("dlssg_sm86.ini"), official_identity=official_identity, worker_path=config.worker)
             attestation = load_attestation()
             if not attestation or not is_current(attestation, expected):

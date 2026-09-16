@@ -57,13 +57,21 @@ class RuntimeSpec:
         allowlist = tuple(str(path) for path in data["allowlist"])
         if not allowlist or any(not _safe_relative_path(path) for path in allowlist):
             raise ValueError("allowlist must contain safe relative paths")
+        if len(set(allowlist)) != len(allowlist):
+            raise ValueError("allowlist contains duplicate paths")
+        destination = str(data["destination"])
+        if not _safe_relative_path(destination):
+            raise ValueError("destination must be a safe relative path")
+        policy = str(data["policy"])
+        if policy not in {"PROJECT_BUNDLED", "UPSTREAM_DOWNLOAD", "USER_SUPPLIED", "SYSTEM_COMPONENT"}:
+            raise ValueError(f"unknown runtime policy: {policy}")
         size = data.get("size_bytes")
         if size is not None and (not isinstance(size, int) or size < 0):
             raise ValueError("size_bytes must be a non-negative integer")
         digest = data.get("sha256")
         if digest is not None and (not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdefABCDEF" for char in digest)):
             raise ValueError("sha256 must be a 64-character hexadecimal digest")
-        return cls(id=str(data["id"]), name=str(data["name"]), backend=str(data["backend"]), version=str(data["version"]), source=source_url, source_url=source_url, artifact_url=str(artifact_url) if artifact_url is not None else None, sha256=digest.upper() if digest else None, size_bytes=size, archive_type=str(data["archive_type"]), allowlist=allowlist, destination=str(data["destination"]), policy=str(data["policy"]), required=bool(data.get("required", False)), constraints=dict(data.get("constraints", {})), notice_url=str(data["notice_url"]) if data.get("notice_url") else None, channel=str(data.get("channel", "candidate")), license_name=str(data["license_name"]) if data.get("license_name") else None, redistributable=bool(data.get("redistributable", False)), direct_user_download=bool(data.get("direct_user_download", False)))
+        return cls(id=str(data["id"]), name=str(data["name"]), backend=str(data["backend"]), version=str(data["version"]), source=source_url, source_url=source_url, artifact_url=str(artifact_url) if artifact_url is not None else None, sha256=digest.upper() if digest else None, size_bytes=size, archive_type=str(data["archive_type"]), allowlist=allowlist, destination=destination, policy=policy, required=bool(data.get("required", False)), constraints=dict(data.get("constraints", {})), notice_url=str(data["notice_url"]) if data.get("notice_url") else None, channel=str(data.get("channel", "candidate")), license_name=str(data["license_name"]) if data.get("license_name") else None, redistributable=bool(data.get("redistributable", False)), direct_user_download=bool(data.get("direct_user_download", False)))
 
 
 def _safe_relative_path(value: str) -> bool:
@@ -174,6 +182,21 @@ class RuntimeManager:
                 "source": spec.source_url,
             })
         return items
+
+    def verify(self, runtime_id: str, selftest: Callable[[Path], None] | None = None) -> dict[str, object]:
+        """Verify managed state and optionally run the component's explicit self-test."""
+        spec, state = self.inspect(runtime_id)
+        destination = (self.install_root / spec.destination).resolve()
+        result: dict[str, object] = {"id": spec.id, "state": state.value, "version": spec.version, "destination": str(destination)}
+        if state != RuntimeState.INSTALLED:
+            result["ok"] = False
+            result["detail"] = f"runtime is {state.value}"
+            return result
+        if selftest:
+            selftest(destination)
+        result["ok"] = True
+        result["detail"] = "managed files present and self-test passed" if selftest else "managed files present; self-test not requested"
+        return result
 
     def download(self, runtime_id: str, target: Path, progress: Callable[[int, int | None], None] | None = None) -> Path:
         spec = self.specs[runtime_id]

@@ -24,6 +24,10 @@ def test_manifest_rejects_non_https_and_unsafe_allowlist():
         RuntimeSpec.from_dict({"id": "x", "name": "x", "backend": "x", "version": "1", "source": "http://x", "source_url": "http://x", "archive_type": "zip", "allowlist": ["x"], "destination": "x", "policy": "UPSTREAM_DOWNLOAD"})
     with pytest.raises(ValueError, match="safe relative"):
         RuntimeSpec.from_dict({**spec(allowlist=("../payload.bin",)).__dict__})
+    with pytest.raises(ValueError, match="destination"):
+        RuntimeSpec.from_dict({**spec(destination="../outside").__dict__})
+    with pytest.raises(ValueError, match="unknown runtime policy"):
+        RuntimeSpec.from_dict({**spec(policy="SILENT").__dict__})
 
 
 def test_artifact_hash_and_size_are_verified(tmp_path):
@@ -88,6 +92,20 @@ def test_import_and_remove_are_manifest_scoped(tmp_path):
     manager.remove("demo")
     assert not destination.exists()
     assert manager.inspect("demo")[1].value == "NOT_INSTALLED"
+
+
+def test_verify_reports_state_and_runs_optional_selftest(tmp_path):
+    manifest = tmp_path / "manifest.json"
+    demo = spec(allowlist=("payload.bin",), policy="USER_SUPPLIED")
+    manifest.write_text(json.dumps({"runtimes": [demo.__dict__]}), encoding="utf-8")
+    archive = tmp_path / "demo.zip"
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.writestr("payload.bin", b"ok")
+    manager = RuntimeManager(manifest, tmp_path / "install")
+    manager.import_zip("demo", archive)
+    called = []
+    result = manager.verify("demo", selftest=lambda path: called.append(path))
+    assert result["ok"] is True and called
 
 
 def test_activation_runs_selftest_before_recording_state_and_rolls_back(tmp_path):

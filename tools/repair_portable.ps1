@@ -40,9 +40,9 @@ if ($missing.Count -eq 0) {
     $python = Join-Path $rootPath 'runtime\python\python.exe'
     if (Test-Path -LiteralPath (Join-Path $rootPath 'tools\check_portable_runtime.py')) {
         & $python (Join-Path $rootPath 'tools\check_portable_runtime.py') --root $rootPath --full
-        exit $LASTEXITCODE
+        if ($LASTEXITCODE -eq 0) { exit 0 }
+        Write-Host 'Full verification failed; reconstructing the runtime from the pinned lock.'
     }
-    exit 0
 }
 Write-Host 'Portable runtime requires repair.'
 Write-Host 'This repair script only uses pinned HTTPS artifacts and never substitutes system Python, Conda, or FFmpeg.'

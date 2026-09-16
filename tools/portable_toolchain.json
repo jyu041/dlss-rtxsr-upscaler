@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "python": {
+    "provider": "Python Software Foundation",
+    "version": "3.11.9",
+    "architecture": "win-amd64",
+    "archive": "python-3.11.9-embed-amd64.zip",
+    "url": "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip",
+    "size_bytes": 11249023,
+    "sha256": "009D6BF7E3B2DDCA3D784FA09F90FE54336D5B60F0E0F305C37F400BF83CFD3B",
+    "license": "PSF-2.0"
+  },
+  "ffmpeg": {
+    "provider": "GyanD",
+    "version": "9.0.1-full_build",
+    "source": "local WinGet installation; exact upstream archive URL not recovered",
+    "license": "GPL-3.0-or-later",
+    "files": {
+      "ffmpeg.exe": {
+        "size_bytes": 222229504,
+        "sha256": "57C56E369D5B4873B4D93FC1A1D833CB7CD8BC9325C14B05C34CE60B22842D8A"
+      },
+      "ffprobe.exe": {
+        "size_bytes": 222026240,
+        "sha256": "AFE05347CAAABE479B3C4EAE71992B6EC1E11C57266A1D665DEB0F9FE9847208"
+      }
+    }
+  }
+}

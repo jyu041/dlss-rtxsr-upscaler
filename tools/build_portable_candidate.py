@@ -68,7 +68,7 @@ def _copy_notice(source: Path | None, destination: Path, label: str) -> dict[str
     return {"path": destination.relative_to(destination.parents[1]).as_posix(), "sha256": sha256(destination), "size_bytes": len(payload)}
 
 
-def build(output: Path, source_root: Path, python_runtime: Path | None = None, ffmpeg_runtime: Path | None = None, python_notice: Path | None = None, ffmpeg_notice: Path | None = None) -> dict[str, object]:
+def build(output: Path, source_root: Path, python_runtime: Path | None = None, ffmpeg_runtime: Path | None = None, python_notice: Path | None = None, ffmpeg_notice: Path | None = None, toolchain: Path | None = None) -> dict[str, object]:
     os.chdir(source_root)
     ensure_clean()
     commit = git("rev-parse", "HEAD")
@@ -98,6 +98,7 @@ def build(output: Path, source_root: Path, python_runtime: Path | None = None, f
             "python": _copy_notice(python_notice, stage / "licenses" / "PORTABLE_PYTHON_NOTICE.txt", "Python"),
             "ffmpeg": _copy_notice(ffmpeg_notice, stage / "licenses" / "FFMPEG_NOTICE.txt", "FFmpeg"),
         }
+        toolchain_data = json.loads(toolchain.read_text(encoding="utf-8")) if toolchain else None
         manifest = {
             "schema": 1,
             "source_commit": commit,
@@ -107,11 +108,13 @@ def build(output: Path, source_root: Path, python_runtime: Path | None = None, f
             "binary_policy": "source-only; proprietary and unclear third-party runtimes remain external",
             "external_runtime_files": external,
             "external_runtime_notices": notices,
+            "toolchain": toolchain_data,
         }
         (stage / "build-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
         files = sorted(path for path in stage.rglob("*") if path.is_file())
         sums = "\n".join(f"{sha256(path)}  {path.relative_to(stage).as_posix()}" for path in files) + "\n"
         (stage / "SHA256SUMS").write_text(sums, encoding="utf-8", newline="\n")
+        (stage / "SHA256SUMS.txt").write_text(sums, encoding="utf-8", newline="\n")
         files = sorted(path for path in stage.rglob("*") if path.is_file())
         with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as handle:
             for path in files:
@@ -131,9 +134,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ffmpeg-runtime", type=Path, help="explicit portable FFmpeg directory containing ffmpeg.exe and ffprobe.exe")
     parser.add_argument("--python-notice", type=Path, help="license notice for the supplied portable Python runtime")
     parser.add_argument("--ffmpeg-notice", type=Path, help="license notice for the supplied portable FFmpeg runtime")
+    parser.add_argument("--toolchain", type=Path, help="pinned portable toolchain metadata JSON")
     args = parser.parse_args(argv)
     try:
-        print(json.dumps(build(args.output, args.source_root.resolve(), args.python_runtime.resolve() if args.python_runtime else None, args.ffmpeg_runtime.resolve() if args.ffmpeg_runtime else None, args.python_notice.resolve() if args.python_notice else None, args.ffmpeg_notice.resolve() if args.ffmpeg_notice else None), indent=2))
+        print(json.dumps(build(args.output, args.source_root.resolve(), args.python_runtime.resolve() if args.python_runtime else None, args.ffmpeg_runtime.resolve() if args.ffmpeg_runtime else None, args.python_notice.resolve() if args.python_notice else None, args.ffmpeg_notice.resolve() if args.ffmpeg_notice else None, args.toolchain.resolve() if args.toolchain else None), indent=2))
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
         print(f"portable candidate failed: {exc}", file=sys.stderr)
         return 1

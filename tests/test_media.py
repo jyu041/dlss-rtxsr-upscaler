@@ -28,6 +28,7 @@ def test_probe_decodes_utf8_json_for_unicode_path(tmp_path, monkeypatch):
         return subprocess.CompletedProcess(args, 0, json.dumps(payload, ensure_ascii=False), "")
 
     monkeypatch.setattr(media_info, "run", fake_run)
+    monkeypatch.setattr(media_info, "tool", lambda name: "ffprobe")
     result = media_info.probe(source)
     assert result["filename"] == source.name
     assert result["path"] == str(source.resolve())

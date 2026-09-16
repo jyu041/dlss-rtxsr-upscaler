@@ -25,3 +25,8 @@ falls back to a machine-wide Python or FFmpeg.
 
 No runtime binaries, archives, generated media, or validation output are source
 tracked. They remain local release inputs or ignored evidence.
+
+Ordinary CI uses `requirements-ci.txt`, which retains the real UI/media import
+surface while excluding optional CUDA/VFX packages that are lazily imported and
+validated in hardware-specific gates. The complete portable runtime still
+bundles the validated CUDA/VFX packages when those features are selected.

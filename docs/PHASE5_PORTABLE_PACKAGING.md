@@ -20,3 +20,15 @@ Example:
 ```powershell
 python tools/build_portable_candidate.py --output artifacts/NVE-phase5.zip
 ```
+
+An explicitly supplied, separately licensed portable runtime can be staged
+without changing the source tree:
+
+```powershell
+python tools/build_portable_candidate.py --output artifacts/NVE-phase5-portable.zip `
+  --python-runtime <python-runtime-directory> `
+  --ffmpeg-runtime <ffmpeg-directory>
+```
+
+The builder requires `python.exe`, `ffmpeg.exe`, and `ffprobe.exe`, records
+hashes for staged external files, and never downloads or infers these inputs.

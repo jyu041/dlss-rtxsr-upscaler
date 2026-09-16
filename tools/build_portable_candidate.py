@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -40,7 +41,20 @@ def sha256(path: Path) -> str:
     return digest.hexdigest().upper()
 
 
-def build(output: Path, source_root: Path) -> dict[str, object]:
+def _copy_external_runtime(source: Path | None, destination: Path, required: tuple[str, ...], label: str) -> list[dict[str, object]]:
+    if source is None:
+        return []
+    source = source.resolve()
+    if not source.is_dir():
+        raise RuntimeError(f"{label} runtime directory does not exist: {source}")
+    missing = [name for name in required if not (source / name).is_file()]
+    if missing:
+        raise RuntimeError(f"{label} runtime is missing: {', '.join(missing)}")
+    shutil.copytree(source, destination)
+    return [{"path": path.relative_to(destination).as_posix(), "sha256": sha256(path), "size_bytes": path.stat().st_size} for path in sorted(destination.rglob("*")) if path.is_file()]
+
+
+def build(output: Path, source_root: Path, python_runtime: Path | None = None, ffmpeg_runtime: Path | None = None) -> dict[str, object]:
     os.chdir(source_root)
     ensure_clean()
     commit = git("rev-parse", "HEAD")
@@ -58,6 +72,10 @@ def build(output: Path, source_root: Path) -> dict[str, object]:
         for path in stage.rglob("*"):
             if path.is_file() and path.suffix.lower() in FORBIDDEN_SUFFIXES:
                 raise RuntimeError(f"refusing to package binary-like tracked file: {path.relative_to(stage)}")
+        external = {
+            "python": _copy_external_runtime(python_runtime, stage / "runtime" / "python", ("python.exe",), "Python") if python_runtime else [],
+            "ffmpeg": _copy_external_runtime(ffmpeg_runtime, stage / "runtime" / "tools" / "ffmpeg", ("ffmpeg.exe", "ffprobe.exe"), "FFmpeg") if ffmpeg_runtime else [],
+        }
         manifest = {
             "schema": 1,
             "source_commit": commit,
@@ -65,6 +83,7 @@ def build(output: Path, source_root: Path) -> dict[str, object]:
             "platform": platform.platform(),
             "source_date_epoch": epoch,
             "binary_policy": "source-only; proprietary and unclear third-party runtimes remain external",
+            "external_runtime_files": external,
         }
         (stage / "build-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
         files = sorted(path for path in stage.rglob("*") if path.is_file())
@@ -85,9 +104,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--source-root", type=Path, default=Path.cwd())
+    parser.add_argument("--python-runtime", type=Path, help="explicit portable Python directory containing python.exe")
+    parser.add_argument("--ffmpeg-runtime", type=Path, help="explicit portable FFmpeg directory containing ffmpeg.exe and ffprobe.exe")
     args = parser.parse_args(argv)
     try:
-        print(json.dumps(build(args.output, args.source_root.resolve()), indent=2))
+        print(json.dumps(build(args.output, args.source_root.resolve(), args.python_runtime.resolve() if args.python_runtime else None, args.ffmpeg_runtime.resolve() if args.ffmpeg_runtime else None), indent=2))
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
         print(f"portable candidate failed: {exc}", file=sys.stderr)
         return 1

@@ -146,7 +146,8 @@ def main(argv: list[str] | None = None) -> int:
             toolchain = json.loads((args.toolchain or args.source_root / 'tools' / 'portable_toolchain.json').resolve().read_text(encoding='utf-8'))
             with tempfile.TemporaryDirectory(prefix='nve-assemble-') as td:
                 assembled = Path(td)
-                subprocess.run([sys.executable, str(args.source_root / 'tools' / 'assemble_portable_runtime.py'), '--root', str(assembled), '--python-archive', str(cache / toolchain['python']['archive']), '--ffmpeg-archive', str(cache / toolchain['ffmpeg']['archive']), '--wheel-dir', str(cache / 'wheels'), '--lock', str(args.lock.resolve())], check=True)
+                wheel_cache = cache / 'wheels' if (cache / 'wheels').is_dir() else cache / 'phase5i-wheels'
+                subprocess.run([sys.executable, str(args.source_root / 'tools' / 'assemble_portable_runtime.py'), '--root', str(assembled), '--python-archive', str(cache / toolchain['python']['archive']), '--ffmpeg-archive', str(cache / toolchain['ffmpeg']['archive']), '--wheel-dir', str(wheel_cache), '--lock', str(args.lock.resolve())], check=True)
                 py_notice = assembled / 'runtime' / 'python' / 'LICENSE.txt'
                 print(json.dumps(build(args.output, args.source_root.resolve(), assembled / 'runtime' / 'python', assembled / 'runtime' / 'tools' / 'ffmpeg', py_notice, args.source_root / 'BINARY_DISTRIBUTION_NOTICES.md', (args.toolchain or args.source_root / 'tools' / 'portable_toolchain.json').resolve()), indent=2))
         else:

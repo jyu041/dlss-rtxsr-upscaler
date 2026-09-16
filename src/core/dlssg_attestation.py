@@ -14,7 +14,8 @@ from .paths import ROOT
 from src.runtime_manager.core import sha256_file
 
 
-SCHEMA = "dlssg-compatibility-attestation-v1"
+SCHEMA = "dlssg-compatibility-attestation-v2"
+IMPLEMENTATION = "phase5c-dlssg-candidate-compatibility-v1"
 ATTESTATION_PATH = ROOT / "runtime" / "dlssg" / "compatibility-attestation.json"
 
 
@@ -42,13 +43,14 @@ def current(*, runtime_path: Path, ini_path: Path, official_identity: str = "unk
     candidate = profile("candidate-0.3.1")
     return {
         "schema": SCHEMA,
-        "app_version": "phase5b",
+        "app_version": IMPLEMENTATION,
         "worker_sha256": sha256_file(worker_path) if worker_path and worker_path.is_file() else C55_WORKER_SHA256,
         "candidate_version": candidate.name,
         "candidate_source_commit": candidate.source_commit,
         "candidate_runtime_sha256": sha256_file(runtime_path) if runtime_path.is_file() else None,
         "candidate_ini_sha256": sha256_file(ini_path) if ini_path.is_file() else None,
         "official_runtime_identity": official_identity,
+        "implementation": IMPLEMENTATION,
         "tested_multipliers": [],
         "test_result": "NOT_RUN",
         "validated_at": None,
@@ -57,7 +59,7 @@ def current(*, runtime_path: Path, ini_path: Path, official_identity: str = "unk
 
 
 def is_current(data: dict[str, object], expected: dict[str, object]) -> bool:
-    keys = ("schema", "app_version", "worker_sha256", "candidate_runtime_sha256", "candidate_ini_sha256", "official_runtime_identity", "gpu_uuid", "gpu", "driver", "os")
+    keys = ("schema", "app_version", "implementation", "candidate_version", "candidate_source_commit", "worker_sha256", "candidate_runtime_sha256", "candidate_ini_sha256", "official_runtime_identity", "gpu_uuid", "gpu", "driver", "os")
     return (all(data.get(key) == expected.get(key) for key in keys)
             and data.get("worker_sha256") == C55_WORKER_SHA256
             and data.get("test_result") == "PASS"

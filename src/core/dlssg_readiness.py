@@ -16,6 +16,7 @@ from .process_utils import tool
 from .user_presets import load_last_used
 from .dlssg_profiles import C55_WORKER_SHA256, LEGACY_RUNTIME_SHA256, profile
 from .dlssg_attestation import ATTESTATION_PATH, current as current_attestation, is_current, load as load_attestation
+from .dlssg_official_runtime import identity as official_runtime_identity
 
 EXPECTED_WORKER_SHA256 = C55_WORKER_SHA256
 EXPECTED_COMMUNITY_SHA256 = LEGACY_RUNTIME_SHA256
@@ -177,21 +178,31 @@ def assess(*, worker: str | Path | None = None, community_runtime: str | Path | 
     community_hash = sha256_file(community_path) if community_path else None
     expected_hash = EXPECTED_COMMUNITY_SHA256 if selected_profile.name == "legacy" else selected_profile.runtime_sha256
     community_ok = community_hash == expected_hash
-    candidate_blocked = selected_profile.compatibility_required
+    official_path = _resolve(official_runtime_dir, saved.get("official_runtime_dir"), "DLSSG_OFFICIAL_RUNTIME_DIR")
+    official_identity = official_runtime_identity(official_path)
+    candidate_attested = False
+    if selected_profile.compatibility_required and community_path:
+        expected = current_attestation(runtime_path=community_path, ini_path=community_path.with_name("dlssg_sm86.ini"), official_identity=official_identity, worker_path=worker_path)
+        candidate_attested = bool(load_attestation()) and is_current(load_attestation() or {}, expected)
+    candidate_blocked = selected_profile.compatibility_required and not candidate_attested
     community_state = "READY" if community_ok and not candidate_blocked else "COMPATIBILITY TEST REQUIRED" if community_ok else "MISSING" if not community_path or not community_path.is_file() else "IDENTITY MISMATCH"
     checks.append(ReadinessCheck("COMMUNITY", community_state, community_ok and not candidate_blocked,
         f"profile={selected_profile.name}; version.dll {_display(community_path, verbose)}; exact identity verified" if community_path else "Managed runtime is required", community_hash if verbose else None))
 
-    official_path = _resolve(official_runtime_dir, saved.get("official_runtime_dir"), "DLSSG_OFFICIAL_RUNTIME_DIR")
-    official_ok = bool(official_path and official_path.is_dir() and any(official_path.iterdir()))
-    checks.append(ReadinessCheck("OFFICIAL", "CONFIGURED / UNVALIDATED" if official_ok else "MISSING", official_ok,
-        f"directory {_display(official_path, verbose)} is present but official runtime contents are validated only by native initialization" if official_ok else "Official NVIDIA NGX runtime directory is required"))
+    directory_ok = bool(official_path and official_path.is_dir() and any(official_path.iterdir()))
+    official_identity_ok = official_identity != "missing" and not official_identity.startswith("missing:")
+    official_ok = directory_ok if selected_profile.name == "legacy" else official_identity_ok
+    official_state = ("IDENTITY VERIFIED" if official_identity_ok else "CONFIGURED / UNVALIDATED") if directory_ok else "MISSING"
+    checks.append(ReadinessCheck("OFFICIAL", official_state, official_ok,
+        f"directory {_display(official_path, verbose)} has the required pinned provider identity" if official_identity_ok else f"directory {_display(official_path, verbose)} is present but provider identity is validated only for the candidate profile" if directory_ok else "Official NVIDIA NGX runtime directory is required", official_identity if verbose else None))
 
     static_ready = all(item.ok for item in checks)
-    return {"state": "DLSS-G STATICALLY READY" if static_ready else "DLSS-G NOT READY", "ready": static_ready,
+    backend_ready = static_ready and (not selected_profile.compatibility_required or candidate_attested)
+    state = "DLSS-G STATICALLY READY" if backend_ready and selected_profile.name == "legacy" else "DLSS-G READY" if backend_ready else "DLSS-G VALIDATION REQUIRED" if static_ready else "DLSS-G NOT READY"
+    return {"state": state, "ready": backend_ready,
             "static_ready": static_ready, "checks": [asdict(item) for item in checks],
             "policy": {"worker_sha256": EXPECTED_WORKER_SHA256, "community_sha256": expected_hash,
-                       "community_hash_is_provenance_only": True, "runtime_profile": selected_profile.name, "candidate_requires_compatibility_attestation": candidate_blocked, "no_fallback": True, "no_download": True,
+                       "community_hash_is_provenance_only": True, "runtime_profile": selected_profile.name, "candidate_requires_compatibility_attestation": selected_profile.compatibility_required, "candidate_attestation_current": candidate_attested, "no_fallback": True, "no_download": True,
                        "official_runtime_static_validation": "not attestable without loading native runtime"}}
 
 

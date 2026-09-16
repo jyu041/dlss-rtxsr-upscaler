@@ -3,7 +3,7 @@ from html import escape
 from pathlib import Path
 from src.core.media_info import probe, format_info
 from src.core.config import load_settings, save_settings, load_presets
-from src.core.diagnostics import collect
+from src.core.diagnostics import collect, runtime_inventory
 from src.core.dlssg_readiness import assess, format_summary
 from src.backends.rtx_vsr import RTXVSRBackend
 from src.backends.dlss5 import DLSS5Backend, DLSS5_OUTPUT_SCALES
@@ -45,6 +45,17 @@ def status_html():
     )
     runtime_card = f"<div class=\"runtime-status\"><b>Optional runtimes</b>: {runtime_text or 'none listed'}</div>"
     return f"<div class=\"app-header\"><h1>NVIDIA Video Enhancer</h1><p>RTX VSR + DLSS SR/NR + offline DLSS Frame Generation</p></div><div class=\"backend-status\"><span class=\"status-badge\">RTX VSR <b>● {rtx}</b></span><span class=\"status-badge\">DLSS SR <b>● {sr}</b></span><span class=\"status-badge\">DLSS 5 <b>● {dlss}</b></span><span class=\"status-badge\">DLSS-G 2X/3X/4X <b>● {fg}</b></span><span class=\"status-badge\">FFmpeg <b>● {ffmpeg}</b></span></div>{runtime_card}"
+
+
+def runtime_cards_markdown() -> str:
+    lines = ["### Managed runtime inventory", "| Component | State | Action | Version | Policy |", "|---|---|---|---|---|"]
+    for item in runtime_inventory():
+        lines.append(
+            f"| {item.get('name', item.get('id', 'runtime'))} | {item.get('state', 'INVALID')} | "
+            f"{item.get('action', 'REVIEW')} | {item.get('version', 'unknown')} | {item.get('policy', 'unknown')} |"
+        )
+    lines.append("\nInstall actions are explicit and validate the pinned source before activation; user-supplied components require configuration.")
+    return "\n".join(lines)
 
 def _tip(mapping, key, label):
     return gr.HTML(setting_label(label, mapping[key]), show_label=False, elem_classes="setting-label")
@@ -264,6 +275,9 @@ def build():
     sr_validation_enabled = sr_initial_status.state in {"SELFTEST REQUIRED", "READY"}
     with gr.Blocks(title="NVIDIA Video Enhancer", analytics_enabled=False) as ui:
         status = gr.HTML(status_html(), elem_classes="status-header")
+        with gr.Accordion("Runtime Manager", open=False):
+            runtime_cards = gr.Markdown(runtime_cards_markdown())
+            runtime_refresh = gr.Button("Refresh runtime inventory")
         gr.HTML('<details class="advanced-diagnostics"><summary>Advanced diagnostics</summary><div>DLSS SR uses a separate native D3D12 NGX host with optical-flow motion guidance. Video mode is SDR, has no renderer depth or jitter, and requires the approved local NVIDIA runtime.</div></details>')
         metrics = gr.HTML(metrics_html())
         progress_panel = gr.HTML(progress_html(CONTROLLER.snapshot()))
@@ -388,6 +402,7 @@ def build():
             control.change(save_dlssg_settings, dlssg_inputs, dlssg_saved, show_progress="hidden")
         dlssg_check.click(check_dlssg_readiness, [dlssg_runtime, dlssg_official_runtime], dlssg_readiness, show_progress="hidden")
         sr_validate.click(validate_dlss_sr, outputs=[status, sr_readiness, mode], show_progress="full")
+        runtime_refresh.click(runtime_cards_markdown, outputs=runtime_cards, show_progress="hidden")
         frame.click(do_frame, [inp, timestamp, state, vsr_mode, scale, quality, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [before, after, job])
         clip.click(preview_clip, [inp, state, vsr_mode, scale, quality, container, timestamp, preview_duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [before_clip, result_video, job])
         render.click(render_video, [inp, state, vsr_mode, scale, quality, container, codec, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [result_video, job])

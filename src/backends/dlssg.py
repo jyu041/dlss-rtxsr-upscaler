@@ -10,6 +10,8 @@ from .base import Backend, BackendStatus
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WORKER = ROOT / "native" / "dlssg_sm86_offline" / "bin" / "dlssg_sm86_offline.exe"
+MANAGED_COMMUNITY_RUNTIME = ROOT / "runtime" / "dlssg" / "legacy" / "version.dll"
+MANAGED_OFFICIAL_RUNTIME_DIR = ROOT / "runtime" / "dlssg" / "official"
 
 
 @dataclass(frozen=True)
@@ -30,8 +32,8 @@ class DLSSGBackend(Backend):
     ):
         self.configuration = DlssgConfiguration(
             Path(worker or os.environ.get("DLSSG_WORKER_EXE", DEFAULT_WORKER)).expanduser().resolve(),
-            Path(community_runtime or os.environ.get("DLSSG_COMMUNITY_RUNTIME", "version.dll")).expanduser().resolve(),
-            Path(official_runtime_dir or os.environ.get("DLSSG_OFFICIAL_RUNTIME_DIR", "runtime/dlssg")).expanduser().resolve(),
+            Path(community_runtime or os.environ.get("DLSSG_COMMUNITY_RUNTIME", MANAGED_COMMUNITY_RUNTIME)).expanduser().resolve(),
+            Path(official_runtime_dir or os.environ.get("DLSSG_OFFICIAL_RUNTIME_DIR", MANAGED_OFFICIAL_RUNTIME_DIR)).expanduser().resolve(),
         )
 
     def status(self) -> BackendStatus:

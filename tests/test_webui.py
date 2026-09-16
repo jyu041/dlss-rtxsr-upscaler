@@ -171,6 +171,17 @@ def test_dlssg_startup_precedence_saved_then_environment_then_default(tmp_path, 
     assert fields["Official NGX runtime directory"] == ""
 
 
+def test_dlssg_backend_discovers_managed_runtime_when_no_override(tmp_path, monkeypatch):
+    from src.backends import dlssg
+    monkeypatch.delenv("DLSSG_COMMUNITY_RUNTIME", raising=False)
+    monkeypatch.delenv("DLSSG_OFFICIAL_RUNTIME_DIR", raising=False)
+    monkeypatch.setattr(dlssg, "MANAGED_COMMUNITY_RUNTIME", tmp_path / "legacy" / "version.dll")
+    monkeypatch.setattr(dlssg, "MANAGED_OFFICIAL_RUNTIME_DIR", tmp_path / "official")
+    backend = dlssg.DLSSGBackend()
+    assert backend.configuration.community_runtime == (tmp_path / "legacy" / "version.dll").resolve()
+    assert backend.configuration.official_runtime_dir == (tmp_path / "official").resolve()
+
+
 def test_ui_has_no_redundant_processing_or_sr_workflow():
     source = open("src/ui/app.py", encoding="utf-8").read()
     assert 'label="Processing order"' not in source

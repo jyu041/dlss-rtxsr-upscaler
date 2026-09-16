@@ -19,11 +19,11 @@ def test_developer_launcher_keeps_conda_workflow_separate():
 def test_toolchain_metadata_pins_providers():
     import json
     metadata = json.loads((ROOT / "tools" / "portable_toolchain.json").read_text(encoding="utf-8"))
-    assert metadata["python"]["sha256"] == "009D6BF7E3B2DDCA3D784FA09F90FE54336D5B60F0E0F305C37F400BF83CFD3B"
+    assert metadata["python"]["sha256"] == "4BA90A4AB8990891033D37FF04D2047FDAE8948D0D2729A68D3A6A17C585B681"
     assert metadata["ffmpeg"]["files"]["ffmpeg.exe"]["size_bytes"] > 0
 
 
 def test_repair_script_is_fail_closed():
-    source = (ROOT / "tools" / "repair_portable.py").read_text(encoding="utf-8")
-    assert "never downloads" in source
-    assert "incomplete candidate" in source
+    source = (ROOT / "tools" / "repair_portable.ps1").read_text(encoding="utf-8")
+    assert "https://*" in source
+    assert "Portable runtime requires repair" in source

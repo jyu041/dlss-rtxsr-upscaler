@@ -8,6 +8,6 @@ if not exist "%~dp0runtime\tools\ffmpeg\ffmpeg.exe" (echo Portable FFmpeg is mis
 if not exist "%~dp0runtime\tools\ffmpeg\ffprobe.exe" (echo Portable FFprobe is missing. Run repair.bat or build a complete candidate.& exit /b 1)
 set "NVE_FFMPEG_PATH=%~dp0runtime\tools\ffmpeg\ffmpeg.exe"
 set "NVE_FFPROBE_PATH=%~dp0runtime\tools\ffmpeg\ffprobe.exe"
-call "%~dp0runtime\python\python.exe" "%~dp0tools\check_portable_runtime.py" --root "%~dp0" || (echo Portable runtime manifest or file identities are invalid. Rebuild from a clean candidate.& exit /b 1)
+call "%~dp0runtime\python\python.exe" "%~dp0tools\check_portable_runtime.py" --root "%~dp0" || (echo Portable runtime requires repair. Run repair.bat.& exit /b 1)
 call "%~dp0runtime\python\python.exe" "%~dp0app.py"
 exit /b %errorlevel%

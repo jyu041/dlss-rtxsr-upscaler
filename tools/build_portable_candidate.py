@@ -102,10 +102,11 @@ def build(output: Path, source_root: Path, python_runtime: Path | None = None, f
         manifest = {
             "schema": 1,
             "source_commit": commit,
-            "python": platform.python_version(),
+            "builder_python": platform.python_version(),
+            "portable_python": (toolchain_data or {}).get("python", {}).get("version") if toolchain_data else None,
             "platform": platform.platform(),
             "source_date_epoch": epoch,
-            "binary_policy": "source-only; proprietary and unclear third-party runtimes remain external",
+            "binary_policy": "approved base runtime binaries are bundled; optional or unapproved feature runtimes remain external" if (python_runtime or ffmpeg_runtime) else "source-only; runtime binaries remain external",
             "external_runtime_files": external,
             "external_runtime_notices": notices,
             "toolchain": toolchain_data,

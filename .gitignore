@@ -62,6 +62,7 @@ native/dlssg_ampere_reference/runtime/
 .pytest_cache/
 tools/downloads/*
 !tools/downloads/.gitkeep
+.cache/portable/
 third_party/local/*
 !third_party/local/.gitkeep
 third_party/local/nvidia-dlss-sdk/*

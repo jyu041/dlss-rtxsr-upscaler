@@ -4,16 +4,20 @@
     "provider": "Python Software Foundation",
     "version": "3.11.9",
     "architecture": "win-amd64",
-    "archive": "python-3.11.9-embed-amd64.zip",
-    "url": "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip",
-    "size_bytes": 11249023,
-    "sha256": "009D6BF7E3B2DDCA3D784FA09F90FE54336D5B60F0E0F305C37F400BF83CFD3B",
-    "license": "PSF-2.0"
+    "archive": "python-3.11.9-amd64.zip",
+    "url": "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.zip",
+    "size_bytes": 32991581,
+    "sha256": "4BA90A4AB8990891033D37FF04D2047FDAE8948D0D2729A68D3A6A17C585B681",
+    "license": "PSF-2.0",
+    "layout": "PythonCore x64 archive with Lib and DLLs; site-packages added by locked assembly"
   },
   "ffmpeg": {
     "provider": "GyanD",
     "version": "9.0.1-full_build",
-    "source": "local WinGet installation; exact upstream archive URL not recovered",
+    "archive": "ffmpeg-9.0.1-full_build.zip",
+    "url": "https://github.com/GyanD/codexffmpeg/releases/download/9.0.1/ffmpeg-9.0.1-full_build.zip",
+    "size_bytes": 251427729,
+    "sha256": "2E8E28AF97C2AE338CCEF92E36DA9B2A4CD21D0CAD9DDE093545606CB07F5B00",
     "license": "GPL-3.0-or-later",
     "files": {
       "ffmpeg.exe": {

@@ -12,6 +12,7 @@ import subprocess
 from typing import Iterable
 
 from .paths import ROOT
+from .process_utils import tool
 from .user_presets import load_last_used
 
 EXPECTED_WORKER_SHA256 = "C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916"
@@ -66,7 +67,7 @@ def _find_worker(value: str | Path | None) -> Path:
 
 
 def _tool_launch(name: str, args: list[str], verbose: bool) -> tuple[bool, str | None, str]:
-    executable = shutil.which(name)
+    executable = tool(name)
     if not executable:
         return False, None, f"{name} is not on PATH"
     try:
@@ -84,7 +85,7 @@ def _ffmpeg_check(verbose: bool) -> ReadinessCheck:
     ok, identity, detail = _tool_launch("ffmpeg", ["-hide_banner", "-version"], verbose)
     if not ok:
         return ReadinessCheck("FFMPEG", "MISSING" if "not on PATH" in detail else "BROKEN", False, detail, identity)
-    executable = shutil.which("ffmpeg")
+    executable = tool("ffmpeg")
     try:
         result = subprocess.run([executable, "-hide_banner", "-encoders"], capture_output=True, text=True, timeout=5, check=False)
     except (OSError, subprocess.TimeoutExpired):

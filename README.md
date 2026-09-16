@@ -79,7 +79,7 @@ flowchart LR
 - Windows 10 or 11 x64
 - NVIDIA GPU with a compatible NVIDIA driver
 - Miniconda or Anaconda
-- FFmpeg and FFprobe available on `PATH`
+- FFmpeg and FFprobe available either in `runtime/tools/ffmpeg/` or on `PATH`
 
 ### 2. Clone and create the environment
 

@@ -13,11 +13,13 @@ call conda env update %NVE_CONDA_TARGET% -f environment.yml --prune || exit /b 1
 echo [3/5] Checking Python packages
 call conda run --no-capture-output %NVE_CONDA_TARGET% python -m pip check || exit /b 1
 echo [4/5] Checking FFmpeg/NVENC
-where ffmpeg >nul 2>nul || (echo FFmpeg was not found on PATH. Install Gyan.FFmpeg with: winget install --id Gyan.FFmpeg --source winget.& exit /b 1)
-where ffprobe >nul 2>nul || (echo FFprobe was not found on PATH. Install Gyan.FFmpeg with winget.& exit /b 1)
-ffmpeg -version >nul 2>nul || (echo FFmpeg cannot launch. Restart the shell after installing Gyan.FFmpeg and rerun setup.bat.& exit /b 1)
-ffprobe -version >nul 2>nul || (echo FFprobe cannot launch. Restart the shell after installing Gyan.FFmpeg and rerun setup.bat.& exit /b 1)
-ffmpeg -hide_banner -encoders 2>nul | findstr /r /c:"h264_nvenc" /c:"hevc_nvenc" >nul || (echo FFmpeg lacks h264_nvenc/hevc_nvenc. Install Gyan.FFmpeg full build with winget.& exit /b 1)
+set "NVE_FFMPEG=%~dp0runtime\tools\ffmpeg\ffmpeg.exe"
+if not exist "%NVE_FFMPEG%" set "NVE_FFMPEG=ffmpeg"
+set "NVE_FFPROBE=%~dp0runtime\tools\ffmpeg\ffprobe.exe"
+if not exist "%NVE_FFPROBE%" set "NVE_FFPROBE=ffprobe"
+"%NVE_FFMPEG%" -version >nul 2>nul || (echo FFmpeg was not found in runtime\tools\ffmpeg or on PATH. Install a compatible build or provide the bundled runtime.& exit /b 1)
+"%NVE_FFPROBE%" -version >nul 2>nul || (echo FFprobe was not found in runtime\tools\ffmpeg or on PATH. Install a compatible build or provide the bundled runtime.& exit /b 1)
+"%NVE_FFMPEG%" -hide_banner -encoders 2>nul | findstr /r /c:"h264_nvenc" /c:"hevc_nvenc" >nul || (echo FFmpeg lacks h264_nvenc/hevc_nvenc. Provide a full compatible build.& exit /b 1)
 echo [5/5] Running diagnostics
 call conda run --no-capture-output %NVE_CONDA_TARGET% python -m src.core.diagnostics || exit /b 1
 echo Environment ready: %NVE_CONDA_ENV%

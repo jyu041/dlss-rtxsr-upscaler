@@ -62,3 +62,12 @@ execution, the project must define the exact DLL boundary, D3D12/CUDA
 interoperability path, process/network boundary, required file allowlist, and
 synthetic RTX 3070 Ti self-test. Until those gates pass, the supported project
 path remains the preserved legacy v3 implementation.
+
+The reusable static gate is:
+
+```powershell
+python tools/inspect_dlss5_candidate.py <candidate.zip> --sha256 F531426E0B6C935C2ECC6299121F910E3921FC6CBD589C9A3B95A78A1D589D71
+```
+
+It validates the archive digest and member paths, reports binary/license
+inventory, and explicitly performs no extraction or execution.

@@ -46,7 +46,23 @@ if ($missing.Count -eq 0) {
 Write-Host 'Portable runtime requires repair.'
 Write-Host 'This repair script only uses pinned HTTPS artifacts and never substitutes system Python, Conda, or FFmpeg.'
 Write-Host ('Missing: ' + ($missing -join ', '))
-Write-Host ('Pinned Python: ' + $metadata.python.archive)
-Write-Host ('Pinned FFmpeg: ' + $metadata.ffmpeg.archive)
-Write-Host 'A complete dependency lock and licensed runtime staging input are required before automatic reconstruction is enabled.'
-exit 2
+if ($env:NVE_REPAIR_APPROVED -ne '1') {
+    $answer = Read-Host 'Download and reconstruct from the pinned artifacts now? [y/N]'
+    if ($answer -notmatch '^(y|yes)$') { Write-Host 'Repair cancelled before download.'; exit 3 }
+}
+$pyArchive = Get-Verified $metadata.python.url $metadata.python.archive ([Int64]$metadata.python.size_bytes) $metadata.python.sha256
+$ffArchive = Get-Verified $metadata.ffmpeg.url $metadata.ffmpeg.archive ([Int64]$metadata.ffmpeg.size_bytes) $metadata.ffmpeg.sha256
+$lock = Join-Path $rootPath 'tools\portable_runtime_lock.json'
+$assembler = Join-Path $rootPath 'tools\assemble_portable_runtime.py'
+if (-not (Test-Path -LiteralPath $lock -PathType Leaf) -or -not (Test-Path -LiteralPath $assembler -PathType Leaf)) { throw 'Portable artifact lock or assembler is missing.' }
+$wheelDir = Join-Path $cache 'wheels'
+$bootstrap = Join-Path $rootPath 'runtime\python'
+New-Item -ItemType Directory -Force -Path $bootstrap | Out-Null
+if (-not (Test-Path -LiteralPath (Join-Path $bootstrap 'python.exe'))) {
+    Expand-Archive -LiteralPath $pyArchive -DestinationPath $bootstrap -Force
+}
+$mode = if ($missing.Count -eq 1 -and $missing[0].ToLowerInvariant().Contains('ffmpeg')) { '--ffmpeg-only' } else { '' }
+$args = @($assembler, '--root', $rootPath, '--python-archive', $pyArchive, '--ffmpeg-archive', $ffArchive, '--wheel-dir', $wheelDir, '--lock', $lock)
+if ($mode) { $args += $mode }
+& (Join-Path $bootstrap 'python.exe') @args
+exit $LASTEXITCODE

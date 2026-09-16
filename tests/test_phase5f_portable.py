@@ -9,6 +9,7 @@ def test_release_launcher_is_portable_only():
     assert "conda" not in source.lower()
     assert "set \"NVE_FFMPEG_PATH=%~dp0runtime\\tools\\ffmpeg\\ffmpeg.exe\"" in source
     assert "check_portable_runtime.py" in source
+    assert '--root "%~dp0."' in source
 
 
 def test_developer_launcher_keeps_conda_workflow_separate():

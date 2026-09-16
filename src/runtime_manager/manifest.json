@@ -15,6 +15,10 @@
       "allowlist": ["version.dll", "dlssg_sm86.ini"],
       "destination": "dlssg/legacy",
       "policy": "USER_SUPPLIED",
+      "channel": "validated",
+      "license_name": "NVIDIA/third-party terms; direct user supplied",
+      "redistributable": false,
+      "direct_user_download": false,
       "required": false,
       "constraints": {"multipliers": [2, 3, 4]}
     },
@@ -32,6 +36,10 @@
       "allowlist": ["dlss5/session.py", "dlss5/settings.py", "dlss5/protocol.py", "dlss5/diagnostics.py"],
       "destination": "dlss5/legacy",
       "policy": "USER_SUPPLIED",
+      "channel": "validated",
+      "license_name": "NVIDIA/third-party terms; direct user supplied",
+      "redistributable": false,
+      "direct_user_download": false,
       "required": false,
       "constraints": {"gpu_generation": 30, "output_scale": 1.0}
     }

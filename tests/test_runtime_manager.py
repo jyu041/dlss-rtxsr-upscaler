@@ -88,3 +88,21 @@ def test_import_and_remove_are_manifest_scoped(tmp_path):
     manager.remove("demo")
     assert not destination.exists()
     assert manager.inspect("demo")[1].value == "NOT_INSTALLED"
+
+
+def test_activation_runs_selftest_before_recording_state_and_rolls_back(tmp_path):
+    manifest = tmp_path / "manifest.json"
+    demo = spec(allowlist=("payload.bin",), policy="USER_SUPPLIED")
+    manifest.write_text(json.dumps({"runtimes": [demo.__dict__]}), encoding="utf-8")
+    archive = tmp_path / "demo.zip"
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.writestr("payload.bin", b"new")
+    manager = RuntimeManager(manifest, tmp_path / "install")
+    manager.import_zip("demo", archive)
+    old = (tmp_path / "install" / "demo" / "payload.bin").read_bytes()
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.writestr("payload.bin", b"replacement")
+    with pytest.raises(RuntimeError, match="self-test"):
+        manager.activate_zip("demo", archive, selftest=lambda _path: (_ for _ in ()).throw(RuntimeError("self-test failed")))
+    assert (tmp_path / "install" / "demo" / "payload.bin").read_bytes() == old
+    assert manager.inspect("demo")[1].value == "INSTALLED"

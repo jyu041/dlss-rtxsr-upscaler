@@ -38,6 +38,10 @@ class RuntimeSpec:
     required: bool = False
     constraints: dict[str, object] = field(default_factory=dict)
     notice_url: str | None = None
+    channel: str = "candidate"
+    license_name: str | None = None
+    redistributable: bool = False
+    direct_user_download: bool = False
 
     @classmethod
     def from_dict(cls, data: dict) -> "RuntimeSpec":
@@ -59,7 +63,7 @@ class RuntimeSpec:
         digest = data.get("sha256")
         if digest is not None and (not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdefABCDEF" for char in digest)):
             raise ValueError("sha256 must be a 64-character hexadecimal digest")
-        return cls(id=str(data["id"]), name=str(data["name"]), backend=str(data["backend"]), version=str(data["version"]), source=source_url, source_url=source_url, artifact_url=str(artifact_url) if artifact_url is not None else None, sha256=digest.upper() if digest else None, size_bytes=size, archive_type=str(data["archive_type"]), allowlist=allowlist, destination=str(data["destination"]), policy=str(data["policy"]), required=bool(data.get("required", False)), constraints=dict(data.get("constraints", {})), notice_url=str(data["notice_url"]) if data.get("notice_url") else None)
+        return cls(id=str(data["id"]), name=str(data["name"]), backend=str(data["backend"]), version=str(data["version"]), source=source_url, source_url=source_url, artifact_url=str(artifact_url) if artifact_url is not None else None, sha256=digest.upper() if digest else None, size_bytes=size, archive_type=str(data["archive_type"]), allowlist=allowlist, destination=str(data["destination"]), policy=str(data["policy"]), required=bool(data.get("required", False)), constraints=dict(data.get("constraints", {})), notice_url=str(data["notice_url"]) if data.get("notice_url") else None, channel=str(data.get("channel", "candidate")), license_name=str(data["license_name"]) if data.get("license_name") else None, redistributable=bool(data.get("redistributable", False)), direct_user_download=bool(data.get("direct_user_download", False)))
 
 
 def _safe_relative_path(value: str) -> bool:
@@ -162,6 +166,10 @@ class RuntimeManager:
                 "version": spec.version,
                 "state": state.value,
                 "policy": spec.policy,
+                "channel": spec.channel,
+                "license_name": spec.license_name,
+                "redistributable": spec.redistributable,
+                "direct_user_download": spec.direct_user_download,
                 "action": "INSTALL" if spec.policy == "UPSTREAM_DOWNLOAD" else "CONFIGURE",
                 "source": spec.source_url,
             })
@@ -198,7 +206,7 @@ class RuntimeManager:
             temporary.unlink(missing_ok=True)
             raise
 
-    def activate_zip(self, runtime_id: str, archive: Path, *, verified: bool = False) -> Path:
+    def activate_zip(self, runtime_id: str, archive: Path, *, verified: bool = False, selftest: Callable[[Path], None] | None = None) -> Path:
         spec = self.specs[runtime_id]
         if not verified:
             verify_artifact(Path(archive), spec)
@@ -216,6 +224,8 @@ class RuntimeManager:
                 os.replace(destination, backup)
             try:
                 os.replace(staging, destination)
+                if selftest:
+                    selftest(destination)
                 records = self.state()
                 records[spec.id] = {"version": spec.version, "sha256": spec.sha256, "destination": spec.destination}
                 temporary = self.state_path.with_suffix(self.state_path.suffix + ".tmp")

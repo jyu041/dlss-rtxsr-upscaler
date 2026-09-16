@@ -25,3 +25,10 @@ def test_verify_command_reports_missing_runtime_without_download(tmp_path, capsy
     _manifest(manifest)
     assert main(["--manifest", str(manifest), "--root", str(tmp_path / "runtime"), "verify", "demo"]) == 1
     assert json.loads(capsys.readouterr().out)["detail"] == "runtime is NOT_INSTALLED"
+
+
+def test_unknown_runtime_is_a_concise_cli_error(tmp_path, capsys):
+    manifest = tmp_path / "manifest.json"
+    _manifest(manifest)
+    assert main(["--manifest", str(manifest), "--root", str(tmp_path / "runtime"), "verify", "missing"]) == 1
+    assert "runtime command failed:" in capsys.readouterr().err

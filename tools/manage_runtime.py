@@ -43,18 +43,22 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    manager = _manager(args)
-    if args.command == "inventory":
-        print(json.dumps(manager.inventory(), indent=2))
+    try:
+        manager = _manager(args)
+        if args.command == "inventory":
+            print(json.dumps(manager.inventory(), indent=2))
+            return 0
+        if args.command == "verify":
+            result = manager.verify(args.runtime_id)
+            print(json.dumps(result, indent=2))
+            return 0 if result["ok"] else 1
+        method = getattr(manager, args.command)
+        destination = method(args.runtime_id, target=args.archive_target, progress=_progress)
+        print(f"{args.command}: {destination}")
         return 0
-    if args.command == "verify":
-        result = manager.verify(args.runtime_id)
-        print(json.dumps(result, indent=2))
-        return 0 if result["ok"] else 1
-    method = getattr(manager, args.command)
-    destination = method(args.runtime_id, target=args.archive_target, progress=_progress)
-    print(f"{args.command}: {destination}")
-    return 0
+    except (OSError, ValueError, KeyError, RuntimeError) as exc:
+        print(f"runtime command failed: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

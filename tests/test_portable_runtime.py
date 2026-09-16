@@ -27,3 +27,15 @@ def test_portable_runtime_requires_all_launcher_tools(tmp_path):
 def test_portable_launcher_check_fails_closed_without_manifest(tmp_path, capsys):
     assert check_main(["--root", str(tmp_path)]) == 1
     assert "NOT_CONFIGURED" in capsys.readouterr().out
+
+
+def test_portable_runtime_detects_tampered_notice(tmp_path):
+    notice = tmp_path / "licenses" / "runtime.txt"; notice.parent.mkdir(); notice.write_text("terms", encoding="utf-8")
+    import hashlib
+    entries = [{"path": "licenses/runtime.txt", "sha256": hashlib.sha256(b"terms").hexdigest(), "size_bytes": 5}]
+    (tmp_path / "build-manifest.json").write_text(json.dumps({"external_runtime_files": {}, "external_runtime_notices": {"python": {"path": "licenses/runtime.txt", "sha256": entries[0]["sha256"], "size_bytes": 5}}}), encoding="utf-8")
+    for relative, payload in (("runtime/python/python.exe", b"python"), ("runtime/tools/ffmpeg/ffmpeg.exe", b"ffmpeg"), ("runtime/tools/ffmpeg/ffprobe.exe", b"ffprobe")):
+        path = tmp_path / relative; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(payload)
+    notice.write_text("changed", encoding="utf-8")
+    assert inspect(tmp_path)["state"] == "BROKEN"
+    assert "notice identity mismatch" in inspect(tmp_path)["detail"]

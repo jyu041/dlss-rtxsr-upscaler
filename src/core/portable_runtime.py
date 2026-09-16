@@ -23,10 +23,13 @@ def inspect(root: str | Path) -> dict[str, object]:
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         expected = manifest.get("external_runtime_files", {})
+        notices = manifest.get("external_runtime_notices", {})
     except (OSError, ValueError):
         return {"state": "BROKEN", "detail": "Portable build manifest is unreadable", "files": []}
     if not isinstance(expected, dict):
         return {"state": "BROKEN", "detail": "Portable build manifest has invalid runtime metadata", "files": []}
+    if notices is not None and not isinstance(notices, dict):
+        return {"state": "BROKEN", "detail": "Portable build manifest has invalid notice metadata", "files": []}
     checked = []
     for category, entries in expected.items():
         if not isinstance(entries, list):
@@ -42,6 +45,21 @@ def inspect(root: str | Path) -> dict[str, object]:
             checked.append({"category": category, "path": relative, "sha256": actual, "size_bytes": path.stat().st_size})
             if actual != expected_hash or path.stat().st_size != expected_size:
                 return {"state": "BROKEN", "detail": f"Portable runtime identity mismatch: {relative}", "files": checked}
+    for category, entry in (notices or {}).items():
+        if entry is None:
+            continue
+        if not isinstance(entry, dict):
+            return {"state": "BROKEN", "detail": f"Invalid {category} notice metadata", "files": checked}
+        relative = str(entry.get("path", ""))
+        path = (root / relative).resolve()
+        if root not in path.parents or not path.is_file():
+            return {"state": "BROKEN", "detail": f"Missing portable runtime notice: {relative}", "files": checked}
+        actual = _sha256(path)
+        expected_hash = str(entry.get("sha256", "")).upper()
+        expected_size = entry.get("size_bytes")
+        checked.append({"category": f"notice:{category}", "path": relative, "sha256": actual, "size_bytes": path.stat().st_size})
+        if actual != expected_hash or path.stat().st_size != expected_size:
+            return {"state": "BROKEN", "detail": f"Portable runtime notice identity mismatch: {relative}", "files": checked}
     required = (root / "runtime" / "python" / "python.exe", root / "runtime" / "tools" / "ffmpeg" / "ffmpeg.exe", root / "runtime" / "tools" / "ffmpeg" / "ffprobe.exe")
     if not all(path.is_file() for path in required):
         return {"state": "INCOMPLETE", "detail": "Portable runtime manifest is valid but required launcher tools are absent", "files": checked}

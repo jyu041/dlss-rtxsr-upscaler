@@ -61,6 +61,23 @@ def test_safe_zip_extracts_only_complete_allowlist(tmp_path):
     assert (staging / "payload.bin").read_bytes() == b"ok"
 
 
+def test_selective_zip_rejects_case_collisions_and_extracts_only_allowlist(tmp_path):
+    archive = tmp_path / "selective.zip"
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.writestr("A.dll", b"ignored")
+        handle.writestr("a.dll", b"collision")
+    with pytest.raises(ValueError, match="Unsafe or duplicate"):
+        extract_safe_zip(archive, tmp_path / "stage", ("A.dll",), selective=True)
+
+    archive = tmp_path / "selective-safe.zip"
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.writestr("payload.bin", b"ok")
+        handle.writestr("unrelated.txt", b"ignored")
+    staging = tmp_path / "stage-safe"
+    extract_safe_zip(archive, staging, ("payload.bin",), selective=True)
+    assert (staging / "payload.bin").read_bytes() == b"ok"
+
+
 def test_manager_manifest_and_state_detection(tmp_path):
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps({"runtimes": [spec().__dict__]}), encoding="utf-8")
@@ -127,7 +144,7 @@ def test_manifest_loads_pinned_multifile_candidate():
     manager = RuntimeManager(Path("src/runtime_manager/manifest.json"), Path("runtime"))
     spec = manager.specs["dlssg-sm86-0.3.1-candidate"]
     assert spec.policy == "UPSTREAM_DOWNLOAD"
-    assert [item.path for item in spec.files] == ["version.dll", "dlssg_sm86.ini"]
+    assert [item.path for item in spec.files] == ["version.dll", "dlssg_sm86.ini", "THIRD_PARTY_NOTICES.txt"]
     assert spec.direct_user_download is True and spec.redistributable is False
 
 

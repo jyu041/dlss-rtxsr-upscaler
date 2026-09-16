@@ -53,12 +53,26 @@ compatible with this project.
 - Defender scanning was not used as a release or execution gate in this
   audit, and no file from the archive was executed.
 
+## Required-file and ABI audit
+
+The release layout contains separate `dlssnr`, `dlssg`, and `rtx_video` runtime
+families. The three `dlssnr` files currently identified by the static inspector
+are not sufficient evidence for execution: the archive also contains other
+neural/runtime DLLs, an embedded Python application, FFmpeg/FFprobe, mpv,
+configuration, and NVIDIA license material. A complete dependency graph for a
+standalone project adapter has not been established. D3D12, CUDA/NVAPI/NGX,
+driver, model/resource, loader-search-path, and environment assumptions remain
+unvalidated. No v9 file has been executed.
+
 ## Integration decision
 
-The v9 archive is a separately staged **DLSS5 Neuroframe candidate**. It does
-not replace the validated Phase 4D legacy v3 runtime, and it is not included
-in the project runtime manifest or portable candidate package yet. Before any
-execution, the project must define the exact DLL boundary, D3D12/CUDA
+The v9 archive is represented in the runtime manifest as a separately staged
+**selective-extraction, static-only DLSS5 Neuroframe candidate**. The complete
+archive hash is required, the entire member namespace is checked for traversal,
+absolute-path, and case-insensitive collision hazards, and only the explicit
+allowlist is extracted. Ignored archive members are never executed. It does
+not replace the validated Phase 4D legacy v3 runtime and is not redistributable.
+Before any execution, the project must define the exact DLL boundary, D3D12/CUDA
 interoperability path, process/network boundary, required file allowlist, and
 synthetic RTX 3070 Ti self-test. Until those gates pass, the supported project
 path remains the preserved legacy v3 implementation.
@@ -71,3 +85,17 @@ python tools/inspect_dlss5_candidate.py <candidate.zip> --sha256 F531426E0B6C935
 
 It validates the archive digest and member paths, reports binary/license
 inventory, and explicitly performs no extraction or execution.
+
+## Control coverage
+
+This is a v9 candidate mapping, not a native-validation claim:
+
+| Control | Status |
+|---|---|
+| Source/100%, 75%, 50%, 25% processing resolution | STATICALLY MAPPED; native behavior unvalidated |
+| NR Style, NR Intensity, Local Tone, Local Structure, Skin Structure | STATICALLY MAPPED from project controls; not proven to be v9-native |
+| Automatic Mask, Tone Preservation, Face/Skin Protection | NOT ESTABLISHED for v9 |
+| Color Strength, Grain Preservation, Multi Pass, Shimmer Suppression, Custom Mask | NOT IMPLEMENTED / no v9 ABI evidence |
+
+The legacy Phase 4D v3 controls remain separate. The existing `67%` control is
+legacy recomposition behavior and is not presented as a v9 processing choice.

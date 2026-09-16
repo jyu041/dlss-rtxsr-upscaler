@@ -38,6 +38,14 @@ def build_parser() -> argparse.ArgumentParser:
         action = commands.add_parser(name, help=f"explicitly {name} a pinned upstream runtime")
         action.add_argument("runtime_id")
         action.add_argument("--archive-target", type=Path, help="temporary archive path for archive-based runtimes")
+    update = commands.add_parser("update", help="explicitly update a pinned upstream runtime")
+    update.add_argument("runtime_id")
+    update.add_argument("--archive-target", type=Path)
+    remove = commands.add_parser("remove", help="remove only a manifest-scoped managed runtime")
+    remove.add_argument("runtime_id")
+    imported = commands.add_parser("import", help="import a user-supplied archive through its manifest allowlist")
+    imported.add_argument("runtime_id")
+    imported.add_argument("archive", type=Path)
     return parser
 
 
@@ -52,6 +60,19 @@ def main(argv: list[str] | None = None) -> int:
             result = manager.verify(args.runtime_id)
             print(json.dumps(result, indent=2))
             return 0 if result["ok"] else 1
+        if args.command == "remove":
+            spec = manager.specs[args.runtime_id]
+            print(f"remove: managed component {spec.id} at {manager.install_root / spec.destination}")
+            manager.remove(args.runtime_id)
+            return 0
+        if args.command == "import":
+            destination = manager.import_zip(args.runtime_id, args.archive)
+            print(f"import: {destination}")
+            return 0
+        if args.command == "update":
+            destination = manager.repair(args.runtime_id, target=args.archive_target, progress=_progress)
+            print(f"update: {destination}")
+            return 0
         method = getattr(manager, args.command)
         destination = method(args.runtime_id, target=args.archive_target, progress=_progress)
         print(f"{args.command}: {destination}")

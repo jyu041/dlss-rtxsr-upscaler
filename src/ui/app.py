@@ -26,9 +26,38 @@ from src.video.rtx_vsr_worker import RTXVSRSession
 from src.video.dlss5 import render_dlss5
 from src.video.dlss_sr import process_dlss_sr_frame, render_dlss_sr
 from src.video.dlssg import ffmpeg_executable, render_dlssg
+from src.runtime_manager import RuntimeManager
 
 os.environ.setdefault("GRADIO_ANALYTICS_ENABLED","False")
 CONTROLLER = JobController()
+RUNTIME_MANIFEST = Path(__file__).resolve().parents[1] / "runtime_manager" / "manifest.json"
+RUNTIME_ROOT = Path(__file__).resolve().parents[2] / "runtime"
+
+
+def runtime_action(runtime_id: str, action: str, archive_path: str | None = None) -> str:
+    """Handle one explicit, user-triggered managed-runtime action."""
+    manager = RuntimeManager(RUNTIME_MANIFEST, RUNTIME_ROOT)
+    spec = manager.specs[runtime_id]
+    if action in {"INSTALL", "UPDATE", "REPAIR"}:
+        if spec.policy != "UPSTREAM_DOWNLOAD":
+            return f"{action} blocked: {spec.policy} requires user-supplied configuration."
+        if action in {"INSTALL", "UPDATE", "REPAIR"}:
+            print(f"Explicit runtime download: {spec.source_url}", flush=True)
+        method = "repair" if action in {"UPDATE", "REPAIR"} else "install"
+        destination = getattr(manager, method)(runtime_id, target=Path(archive_path) if archive_path else None, progress=lambda done, total: print(f"runtime {done}/{total or '?'}", flush=True))
+        return f"{action} complete: {destination}"
+    if action == "VERIFY":
+        result = manager.verify(runtime_id)
+        return f"VERIFY {runtime_id}: {result.get('detail', result)}"
+    if action == "REMOVE":
+        manager.remove(runtime_id)
+        return f"REMOVE complete: {spec.id}"
+    if action == "IMPORT":
+        if not archive_path:
+            return "IMPORT requires a local archive path."
+        destination = manager.import_zip(runtime_id, Path(archive_path))
+        return f"IMPORT complete: {destination}"
+    return f"Unknown runtime action: {action}"
 def status_html():
     d = collect()
     rtx_state = d["rtx_vsr"].get("state", "UNAVAILABLE")
@@ -280,6 +309,11 @@ def build():
         with gr.Accordion("Runtime Manager", open=False):
             runtime_cards = gr.Markdown(runtime_cards_markdown())
             runtime_refresh = gr.Button("Refresh runtime inventory")
+            runtime_ids = gr.Dropdown(choices=sorted(RuntimeManager(RUNTIME_MANIFEST, RUNTIME_ROOT).specs), label="Managed component")
+            runtime_action_choice = gr.Dropdown(["INSTALL", "UPDATE", "VERIFY", "REPAIR", "REMOVE", "IMPORT"], value="VERIFY", label="Explicit action")
+            runtime_archive = gr.Textbox(label="Local archive path (Import or archive-based repair)", visible=True)
+            runtime_action_button = gr.Button("Run selected runtime action")
+            runtime_action_result = gr.Markdown("No runtime action has been requested.")
         gr.HTML('<details class="advanced-diagnostics"><summary>Advanced diagnostics</summary><div>DLSS SR uses a separate native D3D12 NGX host with optical-flow motion guidance. Video mode is SDR, has no renderer depth or jitter, and requires the approved local NVIDIA runtime.</div></details>')
         metrics = gr.HTML(metrics_html())
         progress_panel = gr.HTML(progress_html(CONTROLLER.snapshot()))
@@ -342,7 +376,7 @@ def build():
                     sr_model = gr.Dropdown(["Default", "J", "K", "L", "M"], value=srlast.get("model_preset", "Default"), show_label=False)
                 with gr.Group(visible=False, elem_classes="backend-group") as dlssg_group:
                     gr.Markdown("### DLSS Frame Generation")
-                    gr.Markdown("Offline frame interpolation. The community runtime is external and is never downloaded or redistributed by this app.")
+                    gr.Markdown("Offline frame interpolation. The community runtime is external and is never downloaded silently; an explicit Runtime Manager Install may fetch the exact pinned file from upstream. It is not redistributed by this app.")
                     dlssg_multiplier = gr.Dropdown([("2X Frame Generation", 2), ("3X Multi Frame Generation", 3), ("4X Multi Frame Generation", 4)], value=dlssg_multiplier_default, label="Frame multiplier")
                     dlssg_profile = gr.Dropdown([("Legacy validated runtime", "legacy"), ("SM86 0.3.1 candidate", "candidate-0.3.1")], value=dlssg_profile_default, label="Runtime profile")
                     dlssg_runtime = gr.Textbox(value=dlssg_runtime_default, label="Community runtime (absolute version.dll path)")
@@ -406,6 +440,7 @@ def build():
         dlssg_check.click(check_dlssg_readiness, [dlssg_runtime, dlssg_official_runtime, dlssg_profile], dlssg_readiness, show_progress="hidden")
         sr_validate.click(validate_dlss_sr, outputs=[status, sr_readiness, mode], show_progress="full")
         runtime_refresh.click(runtime_cards_markdown, outputs=runtime_cards, show_progress="hidden")
+        runtime_action_button.click(runtime_action, [runtime_ids, runtime_action_choice, runtime_archive], runtime_action_result, show_progress="full")
         frame.click(do_frame, [inp, timestamp, state, vsr_mode, scale, quality, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [before, after, job])
         clip.click(preview_clip, [inp, state, vsr_mode, scale, quality, container, timestamp, preview_duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [before_clip, result_video, job])
         render.click(render_video, [inp, state, vsr_mode, scale, quality, container, codec, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [result_video, job])

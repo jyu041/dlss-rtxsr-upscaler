@@ -13,6 +13,16 @@ from pathlib import Path, PurePosixPath
 from typing import Callable, Iterable
 
 
+def _https_urlopen(request, timeout: int = 60):
+    """Open a pinned URL while refusing HTTPS-to-HTTP downgrade redirects."""
+    response = urllib.request.urlopen(request, timeout=timeout)
+    final_url = str(response.geturl() if hasattr(response, "geturl") else request.full_url)
+    if not final_url.lower().startswith("https://"):
+        response.close()
+        raise ValueError(f"HTTPS runtime download redirected to non-HTTPS URL: {final_url}")
+    return response
+
+
 class RuntimeState(StrEnum):
     NOT_INSTALLED = "NOT_INSTALLED"
     INSTALLED = "INSTALLED"
@@ -89,7 +99,7 @@ class RuntimeSpec:
         digest = data.get("sha256")
         if digest is not None and (not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdefABCDEF" for char in digest)):
             raise ValueError("sha256 must be a 64-character hexadecimal digest")
-        return cls(id=str(data["id"]), name=str(data["name"]), backend=str(data["backend"]), version=str(data["version"]), source=source_url, source_url=source_url, artifact_url=str(artifact_url) if artifact_url is not None else None, sha256=digest.upper() if digest else None, size_bytes=size, archive_type=str(data["archive_type"]), allowlist=allowlist, destination=destination, policy=policy, required=bool(data.get("required", False)), constraints=dict(data.get("constraints", {})), notice_url=str(data["notice_url"]) if data.get("notice_url") else None, channel=str(data.get("channel", "candidate")), license_name=str(data["license_name"]) if data.get("license_name") else None, redistributable=bool(data.get("redistributable", False)), direct_user_download=bool(data.get("direct_user_download", False)), files=tuple(file_specs))
+        return cls(id=str(data["id"]), name=str(data["name"]), backend=str(data["backend"]), version=str(data["version"]), source=str(data["source"]), source_url=source_url, artifact_url=str(artifact_url) if artifact_url is not None else None, sha256=digest.upper() if digest else None, size_bytes=size, archive_type=str(data["archive_type"]), allowlist=allowlist, destination=destination, policy=policy, required=bool(data.get("required", False)), constraints=dict(data.get("constraints", {})), notice_url=str(data["notice_url"]) if data.get("notice_url") else None, channel=str(data.get("channel", "candidate")), license_name=str(data["license_name"]) if data.get("license_name") else None, redistributable=bool(data.get("redistributable", False)), direct_user_download=bool(data.get("direct_user_download", False)), files=tuple(file_specs))
 
 
 def _safe_relative_path(value: str) -> bool:
@@ -114,8 +124,9 @@ def verify_artifact(path: Path, spec: RuntimeSpec) -> None:
             raise ValueError(f"Artifact SHA-256 mismatch: {actual} != {spec.sha256}")
 
 
-def safe_zip_members(archive: Path, allowlist: Iterable[str]) -> list[str]:
+def safe_zip_members(archive: Path, allowlist: Iterable[str], *, selective: bool = False) -> list[str]:
     allowed = {str(PurePosixPath(path.replace("\\", "/"))) for path in allowlist}
+    allowed_folded = {item.casefold() for item in allowed}
     seen: set[str] = set()
     with zipfile.ZipFile(archive) as handle:
         for info in handle.infolist():
@@ -123,19 +134,19 @@ def safe_zip_members(archive: Path, allowlist: Iterable[str]) -> list[str]:
             normalized = str(PurePosixPath(name))
             if info.is_dir():
                 continue
-            if not _safe_relative_path(name) or normalized in seen:
+            if not _safe_relative_path(name) or normalized.casefold() in {item.casefold() for item in seen}:
                 raise ValueError(f"Unsafe or duplicate archive member: {name}")
-            if normalized not in allowed:
+            if not selective and normalized.casefold() not in allowed_folded:
                 raise ValueError(f"Unexpected archive member: {name}")
             seen.add(normalized)
     missing = allowed - seen
     if missing:
         raise ValueError(f"Archive is missing required members: {', '.join(sorted(missing))}")
-    return sorted(seen)
+    return sorted(item for item in seen if not selective or item.casefold() in allowed_folded)
 
 
-def extract_safe_zip(archive: Path, staging: Path, allowlist: Iterable[str]) -> None:
-    members = safe_zip_members(archive, allowlist)
+def extract_safe_zip(archive: Path, staging: Path, allowlist: Iterable[str], *, selective: bool = False) -> None:
+    members = safe_zip_members(archive, allowlist, selective=selective)
     staging.mkdir(parents=True, exist_ok=False)
     with zipfile.ZipFile(archive) as handle:
         for member in members:
@@ -177,6 +188,8 @@ class RuntimeManager:
         if not record and not destination.exists():
             return spec, RuntimeState.NOT_INSTALLED
         if not record or not destination.is_dir():
+            return spec, RuntimeState.INVALID
+        if record.get("integrity") == "INVALID":
             return spec, RuntimeState.INVALID
         if record.get("version") != spec.version:
             return spec, RuntimeState.UPDATE_AVAILABLE
@@ -226,8 +239,16 @@ class RuntimeManager:
             result["ok"] = False
             result["detail"] = f"managed file integrity check failed: {exc}"
             return result
+        selftest = selftest or __import__("src.runtime_manager.selftests", fromlist=["selftest_for"]).selftest_for(runtime_id)
         if selftest:
-            selftest(destination)
+            try:
+                selftest(destination)
+            except Exception as exc:
+                result["ok"] = False
+                result["backend_ready"] = False
+                result["detail"] = f"files verified; backend self-test failed: {exc}"
+                return result
+        result["backend_ready"] = True
         result["ok"] = True
         result["detail"] = "managed files present and self-test passed" if selftest else "managed files present; self-test not requested"
         return result
@@ -245,7 +266,7 @@ class RuntimeManager:
         temporary = Path(temporary_name)
         request = urllib.request.Request(spec.artifact_url, headers={"User-Agent": "NVIDIA-Video-Enhancer-runtime-manager"})
         try:
-            with urllib.request.urlopen(request, timeout=60) as response, temporary.open("wb") as output:
+            with _https_urlopen(request, timeout=60) as response, temporary.open("wb") as output:
                 total = int(response.headers.get("Content-Length", "0")) or None
                 copied = 0
                 while True:
@@ -265,6 +286,7 @@ class RuntimeManager:
 
     def install(self, runtime_id: str, *, target: Path | None = None, progress: Callable[[int, int | None], None] | None = None, selftest: Callable[[Path], None] | None = None) -> Path:
         """Perform one explicit installation using only the manifest's pinned source."""
+        selftest = selftest or __import__("src.runtime_manager.selftests", fromlist=["selftest_for"]).selftest_for(runtime_id)
         spec = self.specs[runtime_id]
         if spec.files:
             return self.install_files(runtime_id, progress=progress, selftest=selftest)
@@ -282,6 +304,7 @@ class RuntimeManager:
         for archive-based runtimes; multi-file runtimes stage their downloads
         under the managed root and do not need one.
         """
+        selftest = selftest or __import__("src.runtime_manager.selftests", fromlist=["selftest_for"]).selftest_for(runtime_id)
         spec = self.specs[runtime_id]
         if spec.policy != "UPSTREAM_DOWNLOAD":
             raise ValueError("Only explicit upstream-download components can be repaired")
@@ -302,7 +325,7 @@ class RuntimeManager:
                 target = downloaded / item.path
                 target.parent.mkdir(parents=True, exist_ok=True)
                 request = urllib.request.Request(item.url, headers={"User-Agent": "NVIDIA-Video-Enhancer-runtime-manager"})
-                with urllib.request.urlopen(request, timeout=60) as response, target.open("wb") as output:
+                with _https_urlopen(request, timeout=60) as response, target.open("wb") as output:
                     while True:
                         block = response.read(1024 * 1024)
                         if not block:
@@ -323,7 +346,7 @@ class RuntimeManager:
         staging_parent = Path(tempfile.mkdtemp(prefix=f"{spec.id}-", dir=self.install_root))
         staging = staging_parent / "payload"
         try:
-            extract_safe_zip(Path(archive), staging, spec.allowlist)
+            extract_safe_zip(Path(archive), staging, spec.allowlist, selective=spec.archive_type == "selective-zip")
             return self._activate_directory(runtime_id, staging, selftest=selftest, staging_parent=staging_parent)
         except Exception:
             shutil.rmtree(staging_parent, ignore_errors=True)

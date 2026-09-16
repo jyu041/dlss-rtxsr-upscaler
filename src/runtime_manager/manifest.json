@@ -12,7 +12,7 @@
       "sha256": null,
       "size_bytes": null,
       "archive_type": "files",
-      "allowlist": ["version.dll", "dlssg_sm86.ini"],
+      "allowlist": ["version.dll", "dlssg_sm86.ini", "THIRD_PARTY_NOTICES.txt"],
       "destination": "dlssg/candidate-0.3.1",
       "policy": "UPSTREAM_DOWNLOAD",
       "channel": "candidate",
@@ -20,8 +20,9 @@
       "redistributable": false,
       "direct_user_download": true,
       "files": [
-        {"path": "version.dll", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/117faf5c70333b34160f5d21d01c222261cc5af1/version.dll", "sha256": "C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2", "size_bytes": 15667520},
-        {"path": "dlssg_sm86.ini", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/117faf5c70333b34160f5d21d01c222261cc5af1/dlssg_sm86.ini", "sha256": "FD7F0722194E6E8D8C085327D9826EFFB411925A69A5E7549D70EFF26A9F18B5", "size_bytes": 581}
+        {"path": "version.dll", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/117faf5c70333b34160f5d21d01c222261cc5af1/version.dll", "sha256": "3D4C7D537A6E71E3A9D41FFC6487E054B26C56D27B7C0825D39EAA7EF0C7E86D", "size_bytes": 29676832},
+        {"path": "dlssg_sm86.ini", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/117faf5c70333b34160f5d21d01c222261cc5af1/dlssg_sm86.ini", "sha256": "231574047C4989D292E592802102D2437FC636B56E535E8D70D403F20D4CCAFC", "size_bytes": 2727},
+        {"path": "THIRD_PARTY_NOTICES.txt", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/117faf5c70333b34160f5d21d01c222261cc5af1/THIRD_PARTY_NOTICES.txt", "sha256": "AC3B44AB30A4235EDD18FECA1AB4F802D57C8D3D0EE4878DC77B81A6B127155F", "size_bytes": 3349}
       ],
       "constraints": {"multipliers": [2, 3, 4], "status": "candidate; C55 compatibility not independently exercised"}
     },
@@ -47,25 +48,24 @@
       "constraints": {"multipliers": [2, 3, 4]}
     },
     {
-      "id": "dlss5-legacy-reference",
-      "name": "DLSS 5 legacy Feature-18 reference",
-      "backend": "dlss5",
-      "version": "v3-legacy",
-      "source": "https://github.com/Blueforcer/ComfyUI-DLSS5-Enhancer",
-      "source_url": "https://github.com/Blueforcer/ComfyUI-DLSS5-Enhancer",
-      "artifact_url": null,
-      "sha256": null,
-      "size_bytes": null,
-      "archive_type": "user-supplied",
-      "allowlist": ["dlss5/session.py", "dlss5/settings.py", "dlss5/protocol.py", "dlss5/diagnostics.py"],
-      "destination": "dlss5/legacy",
-      "policy": "USER_SUPPLIED",
-      "channel": "validated",
-      "license_name": "NVIDIA/third-party terms; direct user supplied",
+      "id": "dlss5-neuroframe-v9-static-candidate",
+      "name": "DLSS5 Neuroframe v9 static candidate",
+      "backend": "dlss5-neuroframe",
+      "version": "v9.0-c95c050e",
+      "source": "https://github.com/Merserk/dlss5-visual-enhancer",
+      "source_url": "https://github.com/Merserk/dlss5-visual-enhancer/commit/c95c050ead79b9409f140e0b2a66a7b91cffb258",
+      "artifact_url": "https://github.com/Merserk/dlss5-visual-enhancer/releases/download/v9.0/DLSS.5.Visual.Enhancer.v9.0.zip",
+      "sha256": "F531426E0B6C935C2ECC6299121F910E3921FC6CBD589C9A3B95A78A1D589D71",
+      "size_bytes": 509001461,
+      "archive_type": "selective-zip",
+      "allowlist": ["bin/runtime/dlssnr/nvngx_dlssnr.dll", "bin/runtime/dlssnr/neuroframe_engine.dll", "bin/runtime/dlssnr/neuroframe_caller.dll"],
+      "destination": "dlss5/neuroframe-v9-candidate",
+      "policy": "UPSTREAM_DOWNLOAD",
+      "channel": "candidate-static-only",
+      "license_name": "Merserk MIT source; NVIDIA and other archive materials under respective terms",
       "redistributable": false,
-      "direct_user_download": false,
-      "required": false,
-      "constraints": {"gpu_generation": 30, "output_scale": 1.0}
+      "direct_user_download": true,
+      "constraints": {"status": "static-only; native adapter and RTX30 compatibility test required", "output_scales": [1.0, 0.75, 0.5, 0.25]}
     }
   ]
 }

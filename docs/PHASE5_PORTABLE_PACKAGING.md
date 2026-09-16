@@ -9,6 +9,12 @@ community DLLs, or other binary material. Those components remain governed by
 their own runtime-manager policies and are supplied or installed only through
 an explicit, validated path.
 
+`start.bat` now prefers a future validated embedded interpreter at
+`runtime/python/python.exe`; when that directory is absent it retains the
+Conda development fallback. The current source-only candidate therefore
+remains a developer artifact until a separately licensed, reproducible Python
+runtime is staged.
+
 Example:
 
 ```powershell

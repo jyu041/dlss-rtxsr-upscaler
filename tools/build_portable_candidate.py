@@ -8,7 +8,6 @@ import json
 import os
 from pathlib import Path
 import platform
-import shutil
 import subprocess
 import sys
 import tarfile
@@ -27,7 +26,9 @@ def git(*args: str) -> str:
 
 
 def ensure_clean() -> None:
-    if git("diff", "--quiet") != "" or git("diff", "--cached", "--quiet") != "":
+    working = subprocess.run(["git", "diff", "--quiet"], check=False)
+    staged = subprocess.run(["git", "diff", "--cached", "--quiet"], check=False)
+    if working.returncode or staged.returncode:
         raise RuntimeError("source worktree must be clean; build from a committed revision")
 
 

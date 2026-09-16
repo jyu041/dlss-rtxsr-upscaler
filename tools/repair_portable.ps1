@@ -34,6 +34,7 @@ $missing = @(
     (Join-Path $rootPath 'runtime\tools\ffmpeg\ffmpeg.exe'),
     (Join-Path $rootPath 'runtime\tools\ffmpeg\ffprobe.exe')
 ) | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }
+$missing = @($missing)
 if ($missing.Count -eq 0) {
     Write-Host 'Portable base files are present. Running full verification.'
     $python = Join-Path $rootPath 'runtime\python\python.exe'
@@ -61,7 +62,7 @@ New-Item -ItemType Directory -Force -Path $bootstrap | Out-Null
 if (-not (Test-Path -LiteralPath (Join-Path $bootstrap 'python.exe'))) {
     Expand-Archive -LiteralPath $pyArchive -DestinationPath $bootstrap -Force
 }
-$mode = if ($missing.Count -eq 1 -and $missing[0].ToLowerInvariant().Contains('ffmpeg')) { '--ffmpeg-only' } else { '' }
+$mode = if ($missing.Count -eq 1 -and ([string]$missing[0]).ToLowerInvariant().Contains('ffmpeg')) { '--ffmpeg-only' } else { '' }
 $args = @($assembler, '--root', $rootPath, '--python-archive', $pyArchive, '--ffmpeg-archive', $ffArchive, '--wheel-dir', $wheelDir, '--lock', $lock)
 if ($mode) { $args += $mode }
 & (Join-Path $bootstrap 'python.exe') @args

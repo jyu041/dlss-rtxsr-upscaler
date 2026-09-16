@@ -108,6 +108,21 @@ def test_verify_reports_state_and_runs_optional_selftest(tmp_path):
     assert result["ok"] is True and called
 
 
+def test_verify_detects_modified_managed_file(tmp_path):
+    manifest = tmp_path / "manifest.json"
+    demo = spec(allowlist=("payload.bin",), policy="USER_SUPPLIED")
+    manifest.write_text(json.dumps({"runtimes": [demo.__dict__]}), encoding="utf-8")
+    archive = tmp_path / "demo.zip"
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.writestr("payload.bin", b"ok")
+    manager = RuntimeManager(manifest, tmp_path / "install")
+    manager.import_zip("demo", archive)
+    (tmp_path / "install" / "demo" / "payload.bin").write_bytes(b"tampered")
+    result = manager.verify("demo")
+    assert result["ok"] is False
+    assert "integrity" in result["detail"]
+
+
 def test_manifest_loads_pinned_multifile_candidate():
     manager = RuntimeManager(Path("src/runtime_manager/manifest.json"), Path("runtime"))
     spec = manager.specs["dlssg-sm86-0.3.1-candidate"]

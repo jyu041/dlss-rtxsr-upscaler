@@ -215,6 +215,17 @@ class RuntimeManager:
             result["ok"] = False
             result["detail"] = f"runtime is {state.value}"
             return result
+        try:
+            file_records = self._installed_file_records(spec, destination)
+            recorded = self.state().get(runtime_id, {}).get("files")
+            if not isinstance(recorded, list) or recorded != file_records:
+                result["ok"] = False
+                result["detail"] = "managed file integrity record is missing or does not match"
+                return result
+        except (OSError, ValueError) as exc:
+            result["ok"] = False
+            result["detail"] = f"managed file integrity check failed: {exc}"
+            return result
         if selftest:
             selftest(destination)
         result["ok"] = True
@@ -340,8 +351,9 @@ class RuntimeManager:
                 os.replace(staging, destination)
                 if selftest:
                     selftest(destination)
+                file_records = self._installed_file_records(spec, destination)
                 records = self.state()
-                records[spec.id] = {"version": spec.version, "sha256": spec.sha256, "destination": spec.destination}
+                records[spec.id] = {"version": spec.version, "sha256": spec.sha256, "destination": spec.destination, "files": file_records}
                 temporary = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
                 temporary.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
                 os.replace(temporary, self.state_path)
@@ -357,6 +369,22 @@ class RuntimeManager:
         finally:
             if owned_parent:
                 shutil.rmtree(staging_parent, ignore_errors=True)
+
+    def _installed_file_records(self, spec: RuntimeSpec, destination: Path) -> list[dict[str, object]]:
+        """Return the exact allowlisted file identities for an active runtime."""
+        if not destination.is_dir():
+            raise ValueError("runtime destination is not a directory")
+        actual: list[dict[str, object]] = []
+        for path in sorted(destination.rglob("*")):
+            if not path.is_file() or path.is_symlink():
+                continue
+            relative = path.relative_to(destination).as_posix()
+            actual.append({"path": relative, "sha256": sha256_file(path), "size_bytes": path.stat().st_size})
+        expected = sorted(str(PurePosixPath(path.replace("\\", "/"))) for path in spec.allowlist)
+        names = [str(item["path"]) for item in actual]
+        if names != expected:
+            raise ValueError(f"managed file set differs from allowlist: {names}")
+        return actual
 
     def import_zip(self, runtime_id: str, archive: Path) -> Path:
         """Import an offline archive through the same hash and allowlist gates."""

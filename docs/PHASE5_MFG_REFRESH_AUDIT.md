@@ -46,3 +46,8 @@ Consequently, the current supported MFG contract remains 2X/3X/4X through the
 validated C55 path. A future 5X/6X implementation requires a separately
 versioned worker/protocol, complete output-order/count tests, synthetic-video
 integration, cancellation/teardown validation, and explicit runtime evidence.
+
+The refreshed candidate is selectable only through the explicit
+`DLSSG_RUNTIME_PROFILE=candidate-0.3.1` profile after a hash-verified runtime
+installation. The default remains the preserved legacy path. Selection does
+not imply C55 compatibility or native validation.

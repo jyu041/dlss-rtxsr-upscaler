@@ -11,6 +11,7 @@ from .base import Backend, BackendStatus
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WORKER = ROOT / "native" / "dlssg_sm86_offline" / "bin" / "dlssg_sm86_offline.exe"
 MANAGED_COMMUNITY_RUNTIME = ROOT / "runtime" / "dlssg" / "legacy" / "version.dll"
+MANAGED_CANDIDATE_RUNTIME = ROOT / "runtime" / "dlssg" / "candidate-0.3.1" / "version.dll"
 MANAGED_OFFICIAL_RUNTIME_DIR = ROOT / "runtime" / "dlssg" / "official"
 
 
@@ -30,9 +31,12 @@ class DLSSGBackend(Backend):
         community_runtime: str | Path | None = None,
         official_runtime_dir: str | Path | None = None,
     ):
+        configured_runtime = community_runtime or os.environ.get("DLSSG_COMMUNITY_RUNTIME")
+        if configured_runtime is None and os.environ.get("DLSSG_RUNTIME_PROFILE", "legacy") == "candidate-0.3.1":
+            configured_runtime = MANAGED_CANDIDATE_RUNTIME
         self.configuration = DlssgConfiguration(
             Path(worker or os.environ.get("DLSSG_WORKER_EXE", DEFAULT_WORKER)).expanduser().resolve(),
-            Path(community_runtime or os.environ.get("DLSSG_COMMUNITY_RUNTIME", MANAGED_COMMUNITY_RUNTIME)).expanduser().resolve(),
+            Path(configured_runtime or MANAGED_COMMUNITY_RUNTIME).expanduser().resolve(),
             Path(official_runtime_dir or os.environ.get("DLSSG_OFFICIAL_RUNTIME_DIR", MANAGED_OFFICIAL_RUNTIME_DIR)).expanduser().resolve(),
         )
 

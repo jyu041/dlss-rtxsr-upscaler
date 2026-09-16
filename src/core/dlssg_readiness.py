@@ -52,6 +52,15 @@ def _resolve(value: str | Path | None, saved: str | None, env_name: str) -> Path
     return Path(raw).expanduser().resolve() if raw else None
 
 
+def _community_runtime(value: str | Path | None, saved: str | None) -> Path | None:
+    explicit = _resolve(value, saved, "DLSSG_COMMUNITY_RUNTIME")
+    if explicit is not None:
+        return explicit
+    if os.environ.get("DLSSG_RUNTIME_PROFILE", "legacy") == "candidate-0.3.1":
+        return (ROOT / "runtime" / "dlssg" / "candidate-0.3.1" / "version.dll").resolve()
+    return None
+
+
 def _worker_candidates() -> Iterable[Path]:
     yield ROOT / "runtime" / "dlssg_sm86_offline" / WORKER_NAME
     yield ROOT / "native" / "dlssg_sm86_offline" / "bin" / WORKER_NAME
@@ -159,7 +168,7 @@ def assess(*, worker: str | Path | None = None, community_runtime: str | Path | 
     else:
         checks.append(_selftest(worker_path, verbose))
 
-    community_path = _resolve(community_runtime, saved.get("community_runtime"), "DLSSG_COMMUNITY_RUNTIME")
+    community_path = _community_runtime(community_runtime, saved.get("community_runtime"))
     community_hash = sha256_file(community_path) if community_path else None
     community_ok = community_hash == EXPECTED_COMMUNITY_SHA256
     checks.append(ReadinessCheck("COMMUNITY", "READY" if community_ok else "MISSING" if not community_path or not community_path.is_file() else "IDENTITY MISMATCH", community_ok,

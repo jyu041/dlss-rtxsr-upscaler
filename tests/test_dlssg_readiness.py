@@ -134,6 +134,14 @@ def test_gpu_query_failure_and_identity_are_actionable(monkeypatch):
     assert not bad.ok and "query failed" in bad.detail
 
 
+def test_candidate_profile_selects_only_managed_candidate(monkeypatch):
+    monkeypatch.setenv("DLSSG_RUNTIME_PROFILE", "candidate-0.3.1")
+    monkeypatch.delenv("DLSSG_COMMUNITY_RUNTIME", raising=False)
+    monkeypatch.setattr(readiness, "load_last_used", lambda: {"dlssg": {}})
+    selected = readiness._community_runtime(None, None)
+    assert selected == (readiness.ROOT / "runtime" / "dlssg" / "candidate-0.3.1" / "version.dll").resolve()
+
+
 def test_missing_ffmpeg_and_ffprobe_are_actionable(monkeypatch):
     monkeypatch.setattr(readiness.shutil, "which", lambda name: None)
     assert "not on PATH" in readiness._ffmpeg_check(False).detail

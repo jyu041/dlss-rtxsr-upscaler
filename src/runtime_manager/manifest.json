@@ -2,6 +2,28 @@
   "schema": 1,
   "runtimes": [
     {
+      "id": "dlssg-official-provider-310.9.1",
+      "name": "NVIDIA DLSS-G official provider 310.9.1",
+      "backend": "dlssg",
+      "version": "310.9.1-v2.14.1",
+      "source": "https://github.com/NVIDIA-RTX/Streamline",
+      "source_url": "https://github.com/NVIDIA-RTX/Streamline/releases/tag/v2.14.1",
+      "artifact_url": "https://github.com/NVIDIA-RTX/Streamline/releases/download/v2.14.1/streamline-sdk-v2.14.1.zip",
+      "sha256": "92C4D954631A1710DA86CA3FA8D5034F2B9503838C95FC4AE977AE149319781B",
+      "size_bytes": 275994000,
+      "archive_type": "provider-zip",
+      "allowlist": ["nvngx_dlssg.dll", "nvngx_dlss.license.txt"],
+      "archive_members": ["bin/x64/nvngx_dlssg.dll", "bin/x64/nvngx_dlss.license.txt"],
+      "extract_map": {"bin/x64/nvngx_dlssg.dll": "nvngx_dlssg.dll", "bin/x64/nvngx_dlss.license.txt": "nvngx_dlss.license.txt"},
+      "destination": "dlssg/official",
+      "policy": "UPSTREAM_DOWNLOAD",
+      "channel": "validated-provider",
+      "license_name": "NVIDIA/Streamline and included third-party terms",
+      "redistributable": false,
+      "direct_user_download": true,
+      "constraints": {"provider_sha256": "FF6E90EB78B827927DFF5B4ECC6B1C870C2E9BCA29ED9F48C7D348CC9E170B82", "provider_size_bytes": 7460976}
+    },
+    {
       "id": "dlssg-sm86-0.3.1-candidate",
       "name": "DLSS Frame Generation SM86 0.3.1 candidate",
       "backend": "dlssg",

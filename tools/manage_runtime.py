@@ -7,10 +7,13 @@ import json
 import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from src.runtime_manager import RuntimeManager
 
 
-ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "src" / "runtime_manager" / "manifest.json"
 DEFAULT_INSTALL_ROOT = ROOT / "runtime"
 

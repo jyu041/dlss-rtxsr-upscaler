@@ -116,6 +116,24 @@ def test_manifest_loads_pinned_multifile_candidate():
     assert spec.direct_user_download is True and spec.redistributable is False
 
 
+def test_inventory_exposes_expected_and_current_identity(tmp_path):
+    manifest = tmp_path / "manifest.json"
+    demo = spec(policy="USER_SUPPLIED")
+    manifest.write_text(json.dumps({"runtimes": [demo.__dict__]}), encoding="utf-8")
+    manager = RuntimeManager(manifest, tmp_path / "install")
+    item = manager.inventory()[0]
+    assert item["current_version"] is None and item["version"] == "1"
+    assert item["state"] == "NOT_INSTALLED"
+
+
+def test_install_dispatches_to_pinned_multifile_flow(tmp_path, monkeypatch):
+    manager = RuntimeManager(Path("src/runtime_manager/manifest.json"), tmp_path / "runtime")
+    called = []
+    monkeypatch.setattr(manager, "install_files", lambda runtime_id, **kwargs: called.append(runtime_id) or tmp_path / "installed")
+    assert manager.install("dlssg-sm86-0.3.1-candidate") == tmp_path / "installed"
+    assert called == ["dlssg-sm86-0.3.1-candidate"]
+
+
 def test_multifile_install_verifies_each_download_before_activation(tmp_path, monkeypatch):
     first, second = b"first", b"second"
     import hashlib

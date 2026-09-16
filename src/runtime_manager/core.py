@@ -174,8 +174,10 @@ class RuntimeManager:
         spec = self.specs[runtime_id]
         record = self.state().get(runtime_id)
         destination = self.install_root / spec.destination
-        if not record or not destination.is_dir():
+        if not record and not destination.exists():
             return spec, RuntimeState.NOT_INSTALLED
+        if not record or not destination.is_dir():
+            return spec, RuntimeState.INVALID
         if record.get("version") != spec.version:
             return spec, RuntimeState.UPDATE_AVAILABLE
         return spec, RuntimeState.INSTALLED
@@ -185,11 +187,14 @@ class RuntimeManager:
         items = []
         for runtime_id in sorted(self.specs):
             spec, state = self.inspect(runtime_id)
+            record = self.state().get(runtime_id, {})
             items.append({
                 "id": spec.id,
                 "name": spec.name,
                 "backend": spec.backend,
                 "version": spec.version,
+                "current_version": record.get("version"),
+                "current_sha256": record.get("sha256"),
                 "state": state.value,
                 "policy": spec.policy,
                 "channel": spec.channel,
@@ -246,6 +251,16 @@ class RuntimeManager:
         except Exception:
             temporary.unlink(missing_ok=True)
             raise
+
+    def install(self, runtime_id: str, *, target: Path | None = None, progress: Callable[[int, int | None], None] | None = None, selftest: Callable[[Path], None] | None = None) -> Path:
+        """Perform one explicit installation using only the manifest's pinned source."""
+        spec = self.specs[runtime_id]
+        if spec.files:
+            return self.install_files(runtime_id, progress=progress, selftest=selftest)
+        if not target:
+            raise ValueError("an archive target is required for this runtime")
+        archive = self.download(runtime_id, target, progress=progress)
+        return self.activate_zip(runtime_id, archive, selftest=selftest)
 
     def install_files(self, runtime_id: str, *, progress: Callable[[int, int | None], None] | None = None, selftest: Callable[[Path], None] | None = None) -> Path:
         """Explicitly download and activate a pinned multi-file runtime candidate."""

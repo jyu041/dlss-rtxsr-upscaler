@@ -8,6 +8,15 @@ provenance references, not a grant to redistribute third-party binaries.
 - Repository: [sdli1995/dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86)
 - Current release/tag: `0.3.1`
 - Current tag/HEAD: `117faf5c70333b34160f5d21d01c222261cc5af1`
+- Exact pinned root files independently downloaded from that commit:
+  `version.dll` is 29,676,832 bytes with SHA-256
+  `3D4C7D537A6E71E3A9D41FFC6487E054B26C56D27B7C0825D39EAA7EF0C7E86D`;
+  `dlssg_sm86.ini` is 2,727 bytes with SHA-256
+  `231574047C4989D292E592802102D2437FC636B56E535E8D70D403F20D4CCAFC`;
+  `THIRD_PARTY_NOTICES.txt` is 3,349 bytes with SHA-256
+  `AC3B44AB30A4235EDD18FECA1AB4F802D57C8D3D0EE4878DC77B81A6B127155F`.
+  The previously recorded 15,667,520-byte / 581-byte identities belong only
+  to the legacy `5f62ff44` generation.
 - The current README describes a proxy around an unmodified factory runtime,
   optimized Ampere kernels, and a 310.9 runtime path with a five-generated-
   frame ceiling (6X where the game supports Dynamic MFG). It reports 2X/3X/4X
@@ -20,6 +29,12 @@ provenance references, not a grant to redistribute third-party binaries.
 - Recommended Phase 5 integration: keep C55 and the old runtime untouched;
   obtain a newer runtime only through an explicit, user-visible
   `UPSTREAM_DOWNLOAD` installation and test it as a separate candidate.
+- The 0.3.1 commit message identifies this release as a 310.9 rebuild and
+  changes the factory ceiling to 3 generated frames (4X); upstream also
+  describes an optional 5-generated-frame/6X path. This is upstream evidence,
+  not C55 compatibility evidence. The root proxy has blank PE version fields
+  and an untrusted self-signed Authenticode chain; no Defender scan was used as
+  a release gate.
 
 ## DLSS 5 Visual Enhancer
 
@@ -83,5 +98,6 @@ The manager introduced in Phase 5 uses explicit categories:
 - `USER_SUPPLIED`: manually provided local experimental runtime.
 - `SYSTEM_COMPONENT`: driver/system files such as `nvofapi64.dll`.
 
-No normal startup path downloads a runtime, and no candidate is activated
-before its archive, hash, allowlist, and backend self-test gates succeed.
+No normal startup path downloads a runtime. Candidate files may be explicitly
+downloaded and hash-verified, but candidate presence is only static verification;
+native activation additionally requires a current C55 compatibility attestation.

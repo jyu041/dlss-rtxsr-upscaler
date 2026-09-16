@@ -422,6 +422,8 @@ def render_dlssg(
             config.worker,
             config.community_runtime,
             config.official_runtime_dir,
+            expected_community_sha256=config.expected_runtime_sha256,
+            strict_runtime_hash=True,
             diagnostic_callback=on_diagnostic_line,
             diagnostic_mode=bool(diagnostics),
         )

@@ -14,9 +14,11 @@ from typing import Iterable
 from .paths import ROOT
 from .process_utils import tool
 from .user_presets import load_last_used
+from .dlssg_profiles import C55_WORKER_SHA256, LEGACY_RUNTIME_SHA256, profile
+from .dlssg_attestation import ATTESTATION_PATH, current as current_attestation, is_current, load as load_attestation
 
-EXPECTED_WORKER_SHA256 = "C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916"
-EXPECTED_COMMUNITY_SHA256 = "C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2"
+EXPECTED_WORKER_SHA256 = C55_WORKER_SHA256
+EXPECTED_COMMUNITY_SHA256 = LEGACY_RUNTIME_SHA256
 WORKER_NAME = "dlssg_sm86_offline.exe"
 SELFTEST_TIMEOUT_SECONDS = 10
 MANAGED_LEGACY_RUNTIME = ROOT / "runtime" / "dlssg" / "legacy" / "version.dll"
@@ -169,14 +171,16 @@ def assess(*, worker: str | Path | None = None, community_runtime: str | Path | 
     else:
         checks.append(_selftest(worker_path, verbose))
 
-    profile = runtime_profile or saved.get("runtime_profile") or os.environ.get("DLSSG_RUNTIME_PROFILE", "legacy")
-    if profile not in {"legacy", "candidate-0.3.1"}:
-        raise ValueError(f"Unknown DLSS-G runtime profile: {profile}")
-    community_path = _community_runtime(community_runtime, saved.get("community_runtime"), profile)
+    profile_name = runtime_profile or saved.get("runtime_profile") or os.environ.get("DLSSG_RUNTIME_PROFILE", "legacy")
+    selected_profile = profile(profile_name)
+    community_path = _community_runtime(community_runtime, saved.get("community_runtime"), profile_name)
     community_hash = sha256_file(community_path) if community_path else None
-    community_ok = community_hash == EXPECTED_COMMUNITY_SHA256
-    checks.append(ReadinessCheck("COMMUNITY", "READY" if community_ok else "MISSING" if not community_path or not community_path.is_file() else "IDENTITY MISMATCH", community_ok,
-        f"user-supplied version.dll {_display(community_path, verbose)}; matching hash is provenance, not a safety guarantee" if community_path else "Absolute community version.dll path is required", community_hash if verbose else None))
+    expected_hash = EXPECTED_COMMUNITY_SHA256 if selected_profile.name == "legacy" else selected_profile.runtime_sha256
+    community_ok = community_hash == expected_hash
+    candidate_blocked = selected_profile.compatibility_required
+    community_state = "READY" if community_ok and not candidate_blocked else "COMPATIBILITY TEST REQUIRED" if community_ok else "MISSING" if not community_path or not community_path.is_file() else "IDENTITY MISMATCH"
+    checks.append(ReadinessCheck("COMMUNITY", community_state, community_ok and not candidate_blocked,
+        f"profile={selected_profile.name}; version.dll {_display(community_path, verbose)}; exact identity verified" if community_path else "Managed runtime is required", community_hash if verbose else None))
 
     official_path = _resolve(official_runtime_dir, saved.get("official_runtime_dir"), "DLSSG_OFFICIAL_RUNTIME_DIR")
     official_ok = bool(official_path and official_path.is_dir() and any(official_path.iterdir()))
@@ -186,8 +190,8 @@ def assess(*, worker: str | Path | None = None, community_runtime: str | Path | 
     static_ready = all(item.ok for item in checks)
     return {"state": "DLSS-G STATICALLY READY" if static_ready else "DLSS-G NOT READY", "ready": static_ready,
             "static_ready": static_ready, "checks": [asdict(item) for item in checks],
-            "policy": {"worker_sha256": EXPECTED_WORKER_SHA256, "community_sha256": EXPECTED_COMMUNITY_SHA256,
-                       "community_hash_is_provenance_only": True, "runtime_profile": profile, "no_fallback": True, "no_download": True,
+            "policy": {"worker_sha256": EXPECTED_WORKER_SHA256, "community_sha256": expected_hash,
+                       "community_hash_is_provenance_only": True, "runtime_profile": selected_profile.name, "candidate_requires_compatibility_attestation": candidate_blocked, "no_fallback": True, "no_download": True,
                        "official_runtime_static_validation": "not attestable without loading native runtime"}}
 
 

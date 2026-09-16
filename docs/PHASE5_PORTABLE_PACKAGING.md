@@ -32,3 +32,17 @@ python tools/build_portable_candidate.py --output artifacts/NVE-phase5-portable.
 
 The builder requires `python.exe`, `ffmpeg.exe`, and `ffprobe.exe`, records
 hashes for staged external files, and never downloads or infers these inputs.
+
+## Explicit runtime commands
+
+The optional runtime manifest can be inspected without changing files:
+
+```powershell
+python tools/manage_runtime.py inventory
+python tools/manage_runtime.py verify dlssg-sm86-0.3.1-candidate
+```
+
+Only `install` and `repair` perform a pinned HTTPS download, and both print
+progress while staging and verifying the runtime. They require an explicit
+command invocation; `inventory`, application startup, and diagnostics never
+download or activate a runtime.

@@ -75,8 +75,8 @@ $args = @($assembler, '--root', $rootPath, '--runtime-root', $stage, '--python-a
 if ($LASTEXITCODE -ne 0) { Write-Error 'Staged Python assembly failed; existing runtime was preserved.'; exit $LASTEXITCODE }
 $stagedPython = Join-Path $stage 'python\python.exe'
 if (-not (Test-Path -LiteralPath $stagedPython -PathType Leaf)) { Write-Error 'Staged Python executable is missing; existing runtime was preserved.'; exit 1 }
-& $stagedPython -c 'import nvvfx, torch; assert torch.__version__ == "2.10.0+cu128"; assert torch.cuda.is_available()'
-if ($LASTEXITCODE -ne 0) { Write-Error 'Staged Python critical import/CUDA validation failed; existing runtime was preserved.'; exit $LASTEXITCODE }
+$probe = & $stagedPython -c "import nvvfx, torch; print(torch.__version__); print(torch.cuda.is_available())"
+if ($LASTEXITCODE -ne 0 -or $probe -notcontains '2.10.0+cu128' -or $probe -notcontains 'True') { Write-Error 'Staged Python critical import/CUDA validation failed; existing runtime was preserved.'; exit 1 }
 $old = Join-Path $rootPath 'runtime\python'; $backup = Join-Path $repairRoot ('python-old-' + [guid]::NewGuid().ToString('N'))
 if (Test-Path -LiteralPath $old) { Move-Item -LiteralPath $old -Destination $backup }
 Move-Item -LiteralPath $stagedPython -Destination $old

@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "runtimes": [
+    {
+      "id": "dlssg-legacy-reference",
+      "name": "DLSS Frame Generation legacy reference",
+      "backend": "dlssg",
+      "version": "5f62ff44",
+      "source": "https://github.com/sdli1995/dlssg_for_sm86",
+      "source_url": "https://github.com/sdli1995/dlssg_for_sm86",
+      "artifact_url": null,
+      "sha256": null,
+      "size_bytes": null,
+      "archive_type": "user-supplied",
+      "allowlist": ["version.dll", "dlssg_sm86.ini"],
+      "destination": "dlssg/legacy",
+      "policy": "USER_SUPPLIED",
+      "required": false,
+      "constraints": {"multipliers": [2, 3, 4]}
+    },
+    {
+      "id": "dlss5-legacy-reference",
+      "name": "DLSS 5 legacy Feature-18 reference",
+      "backend": "dlss5",
+      "version": "v3-legacy",
+      "source": "https://github.com/Blueforcer/ComfyUI-DLSS5-Enhancer",
+      "source_url": "https://github.com/Blueforcer/ComfyUI-DLSS5-Enhancer",
+      "artifact_url": null,
+      "sha256": null,
+      "size_bytes": null,
+      "archive_type": "user-supplied",
+      "allowlist": ["dlss5/session.py", "dlss5/settings.py", "dlss5/protocol.py", "dlss5/diagnostics.py"],
+      "destination": "dlss5/legacy",
+      "policy": "USER_SUPPLIED",
+      "required": false,
+      "constraints": {"gpu_generation": 30, "output_scale": 1.0}
+    }
+  ]
+}

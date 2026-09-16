@@ -1,4 +1,5 @@
 import json
+from tools.check_portable_runtime import main as check_main
 
 from src.core.portable_runtime import inspect
 
@@ -21,3 +22,8 @@ def test_portable_runtime_requires_all_launcher_tools(tmp_path):
         entries.append({"path": relative, "sha256": hashlib.sha256(payload).hexdigest(), "size_bytes": len(payload)})
     (tmp_path / "build-manifest.json").write_text(json.dumps({"external_runtime_files": {"portable": entries}}), encoding="utf-8")
     assert inspect(tmp_path)["state"] == "READY"
+
+
+def test_portable_launcher_check_fails_closed_without_manifest(tmp_path, capsys):
+    assert check_main(["--root", str(tmp_path)]) == 1
+    assert "NOT_CONFIGURED" in capsys.readouterr().out

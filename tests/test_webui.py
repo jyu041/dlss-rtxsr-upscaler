@@ -199,3 +199,10 @@ def test_ui_has_no_redundant_processing_or_sr_workflow():
     assert 'Load Last Render' in source
     assert 'show_label=False' in source
     assert "2X Frame Generation, 3X Multi Frame Generation, and 4X Multi Frame Generation are hardware-validated" in source
+
+
+def test_portable_launcher_verifies_manifest_before_embedded_python():
+    source = open("start.bat", encoding="utf-8").read()
+    check = source.index("check_portable_runtime.py")
+    launch = source.index('call "%~dp0runtime\\python\\python.exe" "%~dp0app.py"')
+    assert check < launch

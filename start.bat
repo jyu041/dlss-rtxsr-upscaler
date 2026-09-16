@@ -24,5 +24,6 @@ set "NVE_FFPROBE=%~dp0runtime\tools\ffmpeg\ffprobe.exe"
 if not exist "%NVE_FFPROBE%" set "NVE_FFPROBE=ffprobe"
 "%NVE_FFMPEG%" -version >nul 2>nul || (echo FFmpeg was not found in runtime\tools\ffmpeg or on PATH.& exit /b 1)
 "%NVE_FFPROBE%" -version >nul 2>nul || (echo FFprobe was not found in runtime\tools\ffmpeg or on PATH.& exit /b 1)
+call "%~dp0runtime\python\python.exe" "%~dp0tools\check_portable_runtime.py" --root "%~dp0" || (echo Portable runtime manifest or file identities are invalid. Rebuild from a clean candidate.& exit /b 1)
 call "%~dp0runtime\python\python.exe" "%~dp0app.py"
 exit /b %errorlevel%

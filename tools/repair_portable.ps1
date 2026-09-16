@@ -57,11 +57,10 @@ $lock = Join-Path $rootPath 'tools\portable_runtime_lock.json'
 $assembler = Join-Path $rootPath 'tools\assemble_portable_runtime.py'
 if (-not (Test-Path -LiteralPath $lock -PathType Leaf) -or -not (Test-Path -LiteralPath $assembler -PathType Leaf)) { throw 'Portable artifact lock or assembler is missing.' }
 $wheelDir = Join-Path $cache 'wheels'
-$bootstrap = Join-Path $rootPath 'runtime\python'
+$bootstrap = Join-Path $cache 'bootstrap-python'
+if (Test-Path -LiteralPath $bootstrap) { Remove-Item -LiteralPath $bootstrap -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $bootstrap | Out-Null
-if (-not (Test-Path -LiteralPath (Join-Path $bootstrap 'python.exe'))) {
-    Expand-Archive -LiteralPath $pyArchive -DestinationPath $bootstrap -Force
-}
+Expand-Archive -LiteralPath $pyArchive -DestinationPath $bootstrap -Force
 $mode = if ($missing.Count -eq 1 -and ([string]$missing[0]).ToLowerInvariant().Contains('ffmpeg')) { '--ffmpeg-only' } else { '' }
 $args = @($assembler, '--root', $rootPath, '--python-archive', $pyArchive, '--ffmpeg-archive', $ffArchive, '--wheel-dir', $wheelDir, '--lock', $lock)
 if ($mode) { $args += $mode }

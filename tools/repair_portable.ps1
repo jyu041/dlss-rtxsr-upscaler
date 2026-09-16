@@ -62,7 +62,7 @@ if (Test-Path -LiteralPath $bootstrap) { Remove-Item -LiteralPath $bootstrap -Re
 New-Item -ItemType Directory -Force -Path $bootstrap | Out-Null
 Expand-Archive -LiteralPath $pyArchive -DestinationPath $bootstrap -Force
 $mode = if ($missing.Count -eq 1 -and ([string]$missing[0]).ToLowerInvariant().Contains('ffmpeg')) { '--ffmpeg-only' } else { '' }
-$repairRoot = Join-Path $rootPath 'runtime\.repair'
+$repairRoot = Join-Path $env:TEMP ('nve-repair-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $repairRoot | Out-Null
 if ($mode) {
     $args = @($assembler, '--root', $rootPath, '--python-archive', $pyArchive, '--ffmpeg-archive', $ffArchive, '--wheel-dir', $wheelDir, '--lock', $lock, $mode)

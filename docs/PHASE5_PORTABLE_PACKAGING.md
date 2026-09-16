@@ -27,11 +27,15 @@ without changing the source tree:
 ```powershell
 python tools/build_portable_candidate.py --output artifacts/NVE-phase5-portable.zip `
   --python-runtime <python-runtime-directory> `
-  --ffmpeg-runtime <ffmpeg-directory>
+  --ffmpeg-runtime <ffmpeg-directory> `
+  --python-notice <python-license-notice> `
+  --ffmpeg-notice <ffmpeg-license-notice>
 ```
 
 The builder requires `python.exe`, `ffmpeg.exe`, and `ffprobe.exe`, records
-hashes for staged external files, and never downloads or infers these inputs.
+hashes for staged external files and their supplied text notices, and never
+downloads or infers these inputs. A supplied external runtime without an
+explicit notice is rejected.
 
 ## Explicit runtime commands
 

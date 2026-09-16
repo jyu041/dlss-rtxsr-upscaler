@@ -27,3 +27,8 @@ def test_repair_script_is_fail_closed():
     source = (ROOT / "tools" / "repair_portable.ps1").read_text(encoding="utf-8")
     assert "https://*" in source
     assert "Portable runtime requires repair" in source
+
+
+def test_startup_check_does_not_request_full_hash_scan():
+    source = (ROOT / "start.bat").read_text(encoding="utf-8")
+    assert "--full" not in source

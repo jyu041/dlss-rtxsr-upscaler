@@ -35,7 +35,12 @@ $missing = @(
     (Join-Path $rootPath 'runtime\tools\ffmpeg\ffprobe.exe')
 ) | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }
 if ($missing.Count -eq 0) {
-    Write-Host 'Portable base files are present. Run start.bat or check_portable_runtime.py.'
+    Write-Host 'Portable base files are present. Running full verification.'
+    $python = Join-Path $rootPath 'runtime\python\python.exe'
+    if (Test-Path -LiteralPath (Join-Path $rootPath 'tools\check_portable_runtime.py')) {
+        & $python (Join-Path $rootPath 'tools\check_portable_runtime.py') --root $rootPath --full
+        exit $LASTEXITCODE
+    }
     exit 0
 }
 Write-Host 'Portable runtime requires repair.'

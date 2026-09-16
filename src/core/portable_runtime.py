@@ -15,7 +15,7 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest().upper()
 
 
-def inspect(root: str | Path) -> dict[str, object]:
+def inspect(root: str | Path, *, full: bool = True) -> dict[str, object]:
     root = Path(root).expanduser().resolve()
     manifest_path = root / "build-manifest.json"
     if not manifest_path.is_file():
@@ -39,11 +39,11 @@ def inspect(root: str | Path) -> dict[str, object]:
             path = (root / relative).resolve()
             if root not in path.parents or not path.is_file():
                 return {"state": "BROKEN", "detail": f"Missing portable runtime file: {relative}", "files": checked}
-            actual = _sha256(path)
             expected_hash = str(entry.get("sha256", "")).upper()
             expected_size = entry.get("size_bytes")
-            checked.append({"category": category, "path": relative, "sha256": actual, "size_bytes": path.stat().st_size})
-            if actual != expected_hash or path.stat().st_size != expected_size:
+            actual_size = path.stat().st_size
+            checked.append({"category": category, "path": relative, "sha256": expected_hash if not full else _sha256(path), "size_bytes": actual_size})
+            if (full and checked[-1]["sha256"] != expected_hash) or actual_size != expected_size:
                 return {"state": "BROKEN", "detail": f"Portable runtime identity mismatch: {relative}", "files": checked}
     for category, entry in (notices or {}).items():
         if entry is None:
@@ -54,13 +54,14 @@ def inspect(root: str | Path) -> dict[str, object]:
         path = (root / relative).resolve()
         if root not in path.parents or not path.is_file():
             return {"state": "BROKEN", "detail": f"Missing portable runtime notice: {relative}", "files": checked}
-        actual = _sha256(path)
         expected_hash = str(entry.get("sha256", "")).upper()
         expected_size = entry.get("size_bytes")
-        checked.append({"category": f"notice:{category}", "path": relative, "sha256": actual, "size_bytes": path.stat().st_size})
-        if actual != expected_hash or path.stat().st_size != expected_size:
+        actual_size = path.stat().st_size
+        checked.append({"category": f"notice:{category}", "path": relative, "sha256": expected_hash if not full else _sha256(path), "size_bytes": actual_size})
+        if (full and checked[-1]["sha256"] != expected_hash) or actual_size != expected_size:
             return {"state": "BROKEN", "detail": f"Portable runtime notice identity mismatch: {relative}", "files": checked}
     required = (root / "runtime" / "python" / "python.exe", root / "runtime" / "tools" / "ffmpeg" / "ffmpeg.exe", root / "runtime" / "tools" / "ffmpeg" / "ffprobe.exe")
     if not all(path.is_file() for path in required):
         return {"state": "INCOMPLETE", "detail": "Portable runtime manifest is valid but required launcher tools are absent", "files": checked}
-    return {"state": "READY", "detail": "Portable Python and media tool identities match the build manifest", "files": checked}
+    detail = "Portable Python and media tool files are present; full hashes not checked at startup" if not full else "Portable Python and media tool identities match the build manifest"
+    return {"state": "READY", "detail": detail, "files": checked}

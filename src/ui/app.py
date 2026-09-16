@@ -5,7 +5,7 @@ from src.core.config import load_settings, save_settings, load_presets
 from src.core.diagnostics import collect
 from src.core.dlssg_readiness import assess, format_summary
 from src.backends.rtx_vsr import RTXVSRBackend
-from src.backends.dlss5 import DLSS5Backend
+from src.backends.dlss5 import DLSS5Backend, DLSS5_OUTPUT_SCALES
 from src.backends.dlss_sr import DLSSSRBackend
 from src.backends.dlssg import DLSSGBackend
 from src.video.ffmpeg import preview_frame
@@ -234,6 +234,17 @@ def build():
     last = load_last_used()
     rlast = last.get("rtx_vsr", {})
     dlast = last.get("dlss5", {})
+    try:
+        dlss_backend = DLSS5Backend()
+        dlss_scales = dlss_backend.supported_output_scales()
+    except Exception:
+        dlss_scales = list(DLSS5_OUTPUT_SCALES)
+    try:
+        dlss_default_scale = float(dlast.get("scale", 1.0))
+    except (TypeError, ValueError):
+        dlss_default_scale = 1.0
+    if dlss_default_scale not in dlss_scales:
+        dlss_default_scale = 1.0
     srlast = last.get("dlss_sr", {})
     dlssglast = last.get("dlssg", {})
     dlssg_runtime_default = dlssglast.get("community_runtime", os.environ.get("DLSSG_COMMUNITY_RUNTIME", ""))
@@ -278,7 +289,7 @@ def build():
                     _tip(DLSS5_TOOLTIPS, "builtin_preset", "Built-in preset")
                     preset = gr.Dropdown(list(load_presets()) + ["Default"], value="Photoreal Balanced", show_label=False)
                     _tip(DLSS5_TOOLTIPS, "scale", "DLSS scale")
-                    dlss_scale = gr.Dropdown([1.0, 1.5, 1.724, 2.0, 3.0], value=dlast.get("scale", 1.0), show_label=False)
+                    dlss_scale = gr.Dropdown(dlss_scales, value=dlss_default_scale, show_label=False)
                     _tip(DLSS5_TOOLTIPS, "working_scale", "NR Working Resolution")
                     nr_working_scale = gr.Dropdown([("100% (Native)", 1.0), ("75%", 0.75), ("67% (2/3)", 2.0 / 3.0), ("50%", 0.5)], value=1.0, show_label=False)
                     _tip(DLSS5_TOOLTIPS, "recompose", "Recomposition")

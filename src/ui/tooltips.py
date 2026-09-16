@@ -8,7 +8,7 @@ RTX_TOOLTIPS = {
 
 DLSS5_TOOLTIPS = {
     "builtin_preset": "Built-in application preset that fills the DLSS5 controls. It is separate from named user settings.",
-    "scale": "Neural Rendering output scale: 1.0x is native/DLAA-style, 1.5x Quality, approximately 1.724x Balanced, 2.0x Performance, and 3.0x Ultra Performance. Higher scales are substantially slower on RTX 30.",
+    "scale": "DLSS5 Neural Rendering output scale. On the validated RTX 30/Ampere v3 runtime, only 1.0x native output is supported; higher scales are disabled because they reproducibly fall back with NGX InvalidParameter (0xBAD00005). Other GPU/runtime pairs retain their separately validated choices.",
     "working_scale": "Experimental. Runs optical flow and Neural Rendering at a smaller resolution, then applies the neural residual to the native frame. This is separate from DLSS output scale and currently requires 1.0x output.",
     "recompose": "Reduced-resolution NR only. CUDA performs residual upscaling and composition on the GPU; CPU remains available as a compatibility fallback.",
     "nr_preset": "Selects the Neural Rendering profile exposed by the runtime. Preset #1, #2, and #3 are runtime profiles; no universal quality ranking is assumed.",

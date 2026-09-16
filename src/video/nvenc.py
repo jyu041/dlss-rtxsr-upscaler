@@ -30,9 +30,9 @@ def nvenc_preflight(codec: str, width: int, height: int, *, timeout: float = 15.
         result["stderr_tail"] = "ffmpeg was not found on PATH"
         return result
     try:
-        version = runner([ffmpeg, "-version"], capture_output=True, text=True, timeout=timeout, check=False)
+        version = runner([ffmpeg, "-version"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, check=False)
         result["ffmpeg_version"] = (version.stdout or "").splitlines()[0] if version.returncode == 0 else None
-        checked = runner(build_preflight_command(codec, width, height, ffmpeg), capture_output=True, text=True, timeout=timeout, check=False)
+        checked = runner(build_preflight_command(codec, width, height, ffmpeg), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, check=False)
         result["return_code"] = checked.returncode
         result["stderr_tail"] = (checked.stderr or "")[-2000:]
         result["available"] = checked.returncode == 0

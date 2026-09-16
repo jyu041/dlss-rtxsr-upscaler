@@ -23,6 +23,19 @@ The benchmark samples whole-GPU memory with `nvidia-smi`, so VRAM values are
 approximate and include other programs. Reports contain local filesystem paths;
 redact them before posting publicly.
 
+On the exercised NVIDIA GeForce RTX 3070 Ti / Windows 11 build 26200 / driver
+610.62 system, the verified v3 runtime and pinned client support DLSS5 output at 1.0x
+only. Quality, Balanced, Performance, and Ultra Performance requests
+reproducibly reached the Feature-18 path but fell back with NGX
+InvalidParameter (0xBAD00005). Quality failed at multiple input resolutions,
+including 256x256, 640x360, and 960x540. The offline client/runtime audit
+indicates a native v3 low-resolution-colour/upscaling contract limitation; no
+project/client parameter defect was proven. The application gates those
+requests before worker launch for this validated RTX30/Ampere pairing. This is
+a current capability policy based on the exercised pair, not official NVIDIA
+RTX30 DLSS5 support and not a universal claim about RTX 40/50 or other
+DLSS5 runtimes.
+
 Reduced-resolution NR is experimental. Both optical flow and Feature 18 run at
 the selected working resolution, then the neural residual is applied to the
 native frame so output dimensions remain native. 100% is the default and

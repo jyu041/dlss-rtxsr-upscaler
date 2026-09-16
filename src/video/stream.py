@@ -38,7 +38,7 @@ def render_vsr(source, destination, backend, scale=2.0, quality="ULTRA", mode="S
             encoder.stdin.write(cpu.tobytes())
             count += 1
             if count == 1 or count % 100 == 0:
-                sample = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"], capture_output=True, text=True, check=False)
+                sample = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
                 memory_samples.append({"frame": count, "gpu_memory_mib": sample.stdout.strip() if sample.returncode == 0 else "unavailable"})
             report_progress(progress, frame_index=count, total_frames=frames, phase="PROCESSING", message="Processing RTX VSR")
         teardown = session.finish()
@@ -50,7 +50,7 @@ def render_vsr(source, destination, backend, scale=2.0, quality="ULTRA", mode="S
         if encoder.returncode: raise RuntimeError(encoder.stderr.read().decode(errors="replace")[-2000:])
         report_progress(progress, frame_index=count, total_frames=frames, phase="MUXING", message="Preserving audio and metadata")
         mux = ["ffmpeg", "-y", "-v", "error", "-i", str(video_only), "-i", str(source), "-map", "0:v:0", "-map", "1:a?", "-c:v", "copy", "-c:a", "copy", "-map_metadata", "1", str(destination)]
-        result = subprocess.run(mux, capture_output=True, text=True, check=False)
+        result = subprocess.run(mux, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
         if result.returncode: raise RuntimeError(result.stderr[-2000:])
         return {"frames": count, "fps": count / max(.001, time.perf_counter() - started), "dimensions": output, "audio_preserved": bool(info["audio_codec"] != "none"), "encoder": enc, "gpu_memory_samples": memory_samples, "frames_estimated": estimated, "worker_teardown": teardown}
     finally:

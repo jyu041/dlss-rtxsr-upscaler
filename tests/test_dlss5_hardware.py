@@ -41,22 +41,24 @@ def _frames(count, cut_at=None):
 def test_dlss5_temporal_and_scaling_matrix():
     backend = DLSS5Backend()
     assert backend.status().state == "EXPERIMENTAL READY"
+    assert backend.supported_output_scales() == [1.0]
     started = time.perf_counter()
     native_started = time.perf_counter()
-    outputs = list(backend.process_frames(_frames(30, cut_at=15), width=128, height=128, frame_count=30))
+    telemetry = {}
+    outputs = list(backend.process_frames(_frames(30, cut_at=15), width=128, height=128, frame_count=30, telemetry=telemetry))
     assert len(outputs) == 30
     assert outputs[0][1]["reset"] is True
     assert any(meta["reset"] for _, meta in outputs[1:])
-    memory = __import__("subprocess").run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"], capture_output=True, text=True, check=False)
+    assert telemetry["feature_18_verified"] is True
+    assert telemetry["native_fallback"] is False, f"DLSS5 1x fallback evidence: {telemetry.get('feature_18_failure_evidence')}"
+    assert not telemetry.get("feature_18_failure_evidence")
+    memory = __import__("subprocess").run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
     print(f"DLSS5 1x: {len(outputs) / max(.001, time.perf_counter() - native_started):.2f} FPS, VRAM sample={memory.stdout.strip() or 'unavailable'} MiB")
-    for factor, expected in ((1.5, 192), (2.0, 256)):
-        mode_started = time.perf_counter()
+    for factor in (1.5, 1.724, 2.0, 3.0):
         options = backend.options(upscaling_mode=factor, nr_style="Natural", nr_intensity=.60, local_tone_strength=.40, local_structure_strength=.40, skin_structure_strength=.15, automatic_mask=False, dlss_model_preset="Default", motion_mode="optical_flow")
-        scaled = list(backend.process_frames(_frames(5), width=128, height=128, frame_count=5, options=options))
-        assert len(scaled) == 5
-        assert scaled[-1][0].shape[:2] == (expected, expected)
-        memory = __import__("subprocess").run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"], capture_output=True, text=True, check=False)
-        print(f"DLSS5 {factor:g}x: {len(scaled) / max(.001, time.perf_counter() - mode_started):.2f} FPS, VRAM sample={memory.stdout.strip() or 'unavailable'} MiB")
+        with pytest.raises(RuntimeError, match="output scaling above 1.0x"):
+            backend._validate_output_scale(options)
+        print(f"DLSS5 {factor:g}x: rejected by RTX30 capability gate before worker launch")
     print(f"DLSS5 temporal/scaling matrix: {time.perf_counter() - started:.2f}s")
 
 
@@ -66,6 +68,8 @@ def test_dlss5_synthetic_preview_full_video_and_cancellation(tmp_path):
         ["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=256x256:rate=30", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "3", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(source)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     assert created.returncode == 0, created.stderr
@@ -92,7 +96,7 @@ def test_dlss5_synthetic_preview_full_video_and_cancellation(tmp_path):
     assert tracker.snapshot().percent == 100
     assert len(set(monitor_timestamps)) > 1
     from src.ui.app import do_frame
-    before, after, status = do_frame(source, 0, "DLSS 5 only", "Super Resolution", 2.0, "ULTRA", 1.0, "Default", "Natural", .60, .40, .40, .15, "Off", "Default")
+    before, after, status = do_frame(source, 0, "DLSS 5 only", "Super Resolution", 2.0, "ULTRA", 1.0, "Default", "Natural", .60, .40, .40, .15, "Off", "Default", sr_mode="Off", sr_model="Default")
     assert Path(before).is_file()
     assert Path(after).is_file()
     assert "Feature-18 verified" in status

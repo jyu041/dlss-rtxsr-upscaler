@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -25,6 +26,17 @@ REQUIRED_HASHES = {
     "dxgi_sha256": ("dxgi.dll",),
     "dlss_sha256": ("nvngx_dlss.dll",),
 }
+
+DLSS5_OUTPUT_SCALES = (1.0, 1.5, 1.724, 2.0, 3.0)
+
+
+def output_scale_supported(gpu: dict[str, Any] | None, bundle: dict[str, Any] | None, scale: float) -> bool:
+    """Apply the evidence-backed output-scale policy for the runtime pair."""
+    value = float(scale)
+    if value not in DLSS5_OUTPUT_SCALES:
+        return False
+    ampere_pair = isinstance(gpu, dict) and gpu.get("generation") == 30 and isinstance(bundle, dict) and bool(bundle.get("known_ampere_pair"))
+    return value == 1.0 or not ampere_pair
 
 
 def validate_working_scale_for_options(options, scale: float) -> float:
@@ -129,6 +141,42 @@ def _client_root() -> Path:
     return path
 
 
+_FEATURE18_FAILURE_PATTERNS = (
+    re.compile(r"feature\s*18\s+evaluate(?:d|ion)?\s+failed", re.IGNORECASE),
+    re.compile(r"nr\s+upscaling\s+fell\s+back\s+to\s+native", re.IGNORECASE),
+    re.compile(r"following\s+frames\s+use\s+the\s+native\s+path", re.IGNORECASE),
+)
+
+
+def _feature18_failure_evidence(log: str) -> list[str]:
+    return [line for line in log.splitlines() if any(pattern.search(line) for pattern in _FEATURE18_FAILURE_PATTERNS)]
+
+
+def _record_feature_telemetry(telemetry: dict[str, Any] | None, feature: dict[str, Any], failures: list[str]) -> None:
+    if telemetry is None:
+        return
+    telemetry["feature_18_verified"] = bool(feature.get("verified"))
+    telemetry["native_fallback"] = bool(feature.get("native_fallback")) or bool(failures)
+    telemetry["feature_18_evidence"] = feature.get("evidence")
+    if failures:
+        telemetry["feature_18_failure_evidence"] = failures
+
+
+def _validate_feature_report(session, feature: dict[str, Any] | None = None, telemetry: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Accept a DLSS5 result only while Feature-18 is verified and active."""
+    report = feature if feature is not None else session.feature_report()
+    log = session.reshade_log()
+    failures = _feature18_failure_evidence(log)
+    _record_feature_telemetry(telemetry, report, failures)
+    if not report.get("verified"):
+        raise RuntimeError("DLSS5 Feature-18 verification failed; the output is not accepted as a Neural Rendering result.")
+    if report.get("native_fallback") or failures:
+        evidence = failures or [str(item) for item in report.get("evidence", []) if "fallback" in str(item).lower()]
+        detail = f" Evidence: {' | '.join(evidence[-3:])}" if evidence else ""
+        raise RuntimeError("DLSS5 Feature-18 evaluation fell back to the native path; the output is not accepted as a DLSS5 Neural Rendering result." + detail)
+    return report
+
+
 class DLSS5Backend(Backend):
     def __init__(self):
         self.runtime = approval_runtime()
@@ -165,9 +213,9 @@ class DLSS5Backend(Backend):
         self._selftest_failed = bool(result) and not result.get("feature_18_verified", False)
         if result.get("feature_18_verified") and result.get("hashes") == self._hashes:
             self.available = True
-            self.reason = "Signed Feature-18 self-test passed; outbound worker block verified"
+            self.reason = "Verified Feature-18 self-test passed; outbound worker block verified"
         else:
-            self.reason = "Approved runtime has not passed the signed Feature-18 self-test"
+            self.reason = "Approved runtime has not passed the verified Feature-18 self-test"
 
     def status(self):
         if self.available:
@@ -202,6 +250,18 @@ class DLSS5Backend(Backend):
         if not self.available:
             raise RuntimeError(f"DLSS5 is not ready: {self.status().state}; {self.reason}")
 
+    def supported_output_scales(self) -> list[float]:
+        if isinstance(getattr(self, "gpu", None), dict) and isinstance(getattr(self, "bundle", None), dict):
+            return [scale for scale in DLSS5_OUTPUT_SCALES if output_scale_supported(self.gpu, self.bundle, scale)]
+        return list(DLSS5_OUTPUT_SCALES)
+
+    def _validate_output_scale(self, options) -> None:
+        scale = float(options.upscaling_factor)
+        if not output_scale_supported(getattr(self, "gpu", None), getattr(self, "bundle", None), scale):
+            if scale != 1.0 and isinstance(getattr(self, "gpu", None), dict) and self.gpu.get("generation") == 30 and isinstance(getattr(self, "bundle", None), dict) and self.bundle.get("known_ampere_pair"):
+                raise RuntimeError("DLSS5 output scaling above 1.0x is disabled for the validated RTX 30 Ampere v3 runtime because Quality/Balanced/Performance/Ultra Performance reproducibly fall back with NGX InvalidParameter (0xBAD00005). Use 1.0x DLSS5 output scale.")
+            raise ValueError(f"Unsupported DLSS5 output scale: {scale:g}x")
+
     @staticmethod
     def options(**values):
         _client_root()
@@ -225,6 +285,7 @@ class DLSS5Backend(Backend):
         if frame.shape[2] == 3:
             frame = np.concatenate((frame, np.full((*frame.shape[:2], 1), 255, dtype=np.uint8)), axis=2)
         options = options or self.options(upscaling_mode=1.0)
+        self._validate_output_scale(options)
         scale = validate_working_scale_for_options(options, nr_working_scale)
         requested_backend = _validate_recompose_backend(recompose_backend)
         native = frame
@@ -235,7 +296,8 @@ class DLSS5Backend(Backend):
             guide = TemporalGuide(session.render_width, session.render_height, enabled=False)
             motion = guide.process(source)
             output, _ = session.submit(index=0, rgba=source, motion=motion.motion, reset=True, pts=0)
-        session.feature_report()
+        feature = session.feature_report()
+        _validate_feature_report(session, feature, telemetry)
         if scale == 1.0:
             return output
         try:
@@ -274,8 +336,9 @@ class DLSS5Backend(Backend):
         from dlss5.motion import TemporalGuide
         from dlss5.session import DlssSession
 
-        scale = validate_working_scale_for_options(options or self.options(upscaling_mode=1.0), nr_working_scale)
         options = options or self.options(upscaling_mode=1.0, motion_mode="optical_flow")
+        self._validate_output_scale(options)
+        scale = validate_working_scale_for_options(options, nr_working_scale)
         requested_backend = _validate_recompose_backend(recompose_backend)
         working_width, working_height = compute_working_dimensions(width, height, scale)
         session_options = options if scale == 1.0 else self.options(**{**asdict(options), "upscaling_mode": 1.0})
@@ -344,14 +407,12 @@ class DLSS5Backend(Backend):
                     telemetry.setdefault("frames", []).append(metadata)
                 yield final, metadata
             session.close()
-            feature = session.feature_report()
-            if telemetry is not None:
-                telemetry["feature_18_verified"] = bool(feature.get("verified"))
-                telemetry["feature_18_evidence"] = feature.get("evidence")
-            if not feature.get("verified"):
-                raise RuntimeError("DLSS5 Feature-18 verification failed after temporal render")
-            if compositor is not None:
-                compositor.close()
+            try:
+                feature = session.feature_report()
+                _validate_feature_report(session, feature, telemetry)
+            finally:
+                if compositor is not None:
+                    compositor.close()
 
     def _create_compositor(self, requested_backend, native_width, native_height, working_width, working_height):
         if requested_backend == "cpu":
@@ -363,4 +424,4 @@ class DLSS5Backend(Backend):
         return CudaResidualCompositor(native_width, native_height, working_width, working_height, device=device)
 
     def process(self, *args, **kwargs):
-        raise RuntimeError("Use process_frame/process_video after the signed Feature-18 self-test")
+        raise RuntimeError("Use process_frame/process_video after the verified Feature-18 self-test")

@@ -82,7 +82,7 @@ def render_dlss5(source, destination, backend, options, *, start=0.0, duration=N
         if duration:
             mux += ["-t", str(max(1.0, float(duration))), "-shortest"]
         mux += [str(destination)]
-        result = subprocess.run(mux, capture_output=True, text=True, check=False)
+        result = subprocess.run(mux, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
         if result.returncode:
             raise RuntimeError(result.stderr[-2000:])
         return {"frames": count, "fps": count / max(0.001, time.perf_counter() - started), "dimensions": (output_width, output_height), "audio_preserved": bool(info["audio_codec"] != "none"), "scene_resets": resets, "encoder": encoder_name, "frames_estimated": estimated}

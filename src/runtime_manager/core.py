@@ -175,20 +175,28 @@ class RuntimeManager:
             raise ValueError("Runtime downloads require HTTPS")
         target = Path(target)
         target.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{spec.id}-", suffix=".download", dir=target.parent)
+        os.close(descriptor)
+        temporary = Path(temporary_name)
         request = urllib.request.Request(spec.artifact_url, headers={"User-Agent": "NVIDIA-Video-Enhancer-runtime-manager"})
-        with urllib.request.urlopen(request, timeout=60) as response, target.open("wb") as output:
-            total = int(response.headers.get("Content-Length", "0")) or None
-            copied = 0
-            while True:
-                block = response.read(1024 * 1024)
-                if not block:
-                    break
-                output.write(block)
-                copied += len(block)
-                if progress:
-                    progress(copied, total)
-        verify_artifact(target, spec)
-        return target
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response, temporary.open("wb") as output:
+                total = int(response.headers.get("Content-Length", "0")) or None
+                copied = 0
+                while True:
+                    block = response.read(1024 * 1024)
+                    if not block:
+                        break
+                    output.write(block)
+                    copied += len(block)
+                    if progress:
+                        progress(copied, total)
+            verify_artifact(temporary, spec)
+            os.replace(temporary, target)
+            return target
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            raise
 
     def activate_zip(self, runtime_id: str, archive: Path, *, verified: bool = False) -> Path:
         spec = self.specs[runtime_id]
@@ -203,17 +211,47 @@ class RuntimeManager:
             backup = destination.with_name(destination.name + ".previous")
             if backup.exists():
                 shutil.rmtree(backup)
-            if destination.exists():
+            had_previous = destination.exists()
+            if had_previous:
                 os.replace(destination, backup)
-            os.replace(staging, destination)
-            records = self.state()
-            records[spec.id] = {"version": spec.version, "sha256": spec.sha256, "destination": spec.destination}
-            temporary = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
-            temporary.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
-            os.replace(temporary, self.state_path)
-            return destination
+            try:
+                os.replace(staging, destination)
+                records = self.state()
+                records[spec.id] = {"version": spec.version, "sha256": spec.sha256, "destination": spec.destination}
+                temporary = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
+                temporary.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
+                os.replace(temporary, self.state_path)
+                return destination
+            except Exception:
+                if destination.exists():
+                    shutil.rmtree(destination)
+                if had_previous and backup.exists():
+                    os.replace(backup, destination)
+                raise
         except Exception:
             shutil.rmtree(staging_parent, ignore_errors=True)
             raise
         finally:
             shutil.rmtree(staging_parent, ignore_errors=True)
+
+    def import_zip(self, runtime_id: str, archive: Path) -> Path:
+        """Import an offline archive through the same hash and allowlist gates."""
+        return self.activate_zip(runtime_id, archive)
+
+    def remove(self, runtime_id: str) -> None:
+        spec = self.specs[runtime_id]
+        destination = (self.install_root / spec.destination).resolve()
+        root = self.install_root.resolve()
+        if root not in destination.parents:
+            raise ValueError("Runtime destination escapes the managed install root")
+        record = self.state().get(runtime_id)
+        if record and destination.exists():
+            if destination.is_dir():
+                shutil.rmtree(destination)
+            else:
+                destination.unlink()
+        records = self.state()
+        records.pop(runtime_id, None)
+        temporary = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
+        temporary.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
+        os.replace(temporary, self.state_path)

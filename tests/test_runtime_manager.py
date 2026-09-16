@@ -73,3 +73,18 @@ def test_inventory_labels_user_supplied_components_as_configure(tmp_path):
     item = manager.inventory()[0]
     assert item["state"] == "NOT_INSTALLED"
     assert item["action"] == "CONFIGURE"
+
+
+def test_import_and_remove_are_manifest_scoped(tmp_path):
+    manifest = tmp_path / "manifest.json"
+    demo = spec(allowlist=("payload.bin",), policy="USER_SUPPLIED")
+    manifest.write_text(json.dumps({"runtimes": [demo.__dict__]}), encoding="utf-8")
+    archive = tmp_path / "demo.zip"
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.writestr("payload.bin", b"ok")
+    manager = RuntimeManager(manifest, tmp_path / "install")
+    destination = manager.import_zip("demo", archive)
+    assert (destination / "payload.bin").read_bytes() == b"ok"
+    manager.remove("demo")
+    assert not destination.exists()
+    assert manager.inspect("demo")[1].value == "NOT_INSTALLED"

@@ -34,7 +34,9 @@ def assemble(root: Path, python_archive: Path, ffmpeg_archive: Path, wheel_dir: 
     if not arts: raise RuntimeError('empty artifact lock')
     py=root/'runtime'/'python'; ff=root/'runtime'/'tools'/'ffmpeg'
     if not ffmpeg_only:
-        if py.exists(): shutil.rmtree(py)
+        if py.exists():
+            shutil.rmtree(py, ignore_errors=True)
+            if py.exists(): raise RuntimeError(f'could not remove existing Python runtime: {py}')
         py.mkdir(parents=True)
         with zipfile.ZipFile(python_archive) as z: safe_extract(z, py)
         site=py/'Lib'/'site-packages'; site.mkdir(parents=True, exist_ok=True)

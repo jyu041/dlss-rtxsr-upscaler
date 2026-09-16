@@ -64,3 +64,12 @@ def test_manager_manifest_and_state_detection(tmp_path):
     loaded, state = manager.inspect("demo")
     assert loaded.version == "1"
     assert state.value == "NOT_INSTALLED"
+
+
+def test_inventory_labels_user_supplied_components_as_configure(tmp_path):
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"runtimes": [spec(policy="USER_SUPPLIED").__dict__]}), encoding="utf-8")
+    manager = RuntimeManager(manifest, tmp_path / "install")
+    item = manager.inventory()[0]
+    assert item["state"] == "NOT_INSTALLED"
+    assert item["action"] == "CONFIGURE"

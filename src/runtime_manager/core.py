@@ -150,6 +150,23 @@ class RuntimeManager:
             return spec, RuntimeState.UPDATE_AVAILABLE
         return spec, RuntimeState.INSTALLED
 
+    def inventory(self) -> list[dict[str, object]]:
+        """Return display-safe lifecycle data without mutating installed runtimes."""
+        items = []
+        for runtime_id in sorted(self.specs):
+            spec, state = self.inspect(runtime_id)
+            items.append({
+                "id": spec.id,
+                "name": spec.name,
+                "backend": spec.backend,
+                "version": spec.version,
+                "state": state.value,
+                "policy": spec.policy,
+                "action": "INSTALL" if spec.policy == "UPSTREAM_DOWNLOAD" else "CONFIGURE",
+                "source": spec.source_url,
+            })
+        return items
+
     def download(self, runtime_id: str, target: Path, progress: Callable[[int, int | None], None] | None = None) -> Path:
         spec = self.specs[runtime_id]
         if spec.policy != "UPSTREAM_DOWNLOAD" or not spec.artifact_url:

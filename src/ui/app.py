@@ -1,4 +1,5 @@
 import os, json, shutil, tempfile, gradio as gr
+from html import escape
 from pathlib import Path
 from src.core.media_info import probe, format_info
 from src.core.config import load_settings, save_settings, load_presets
@@ -36,7 +37,14 @@ def status_html():
     sr = d["dlss_sr"]["state"]
     fg = "Validated 2X/3X/4X" if d["dlssg"]["available"] else "Not configured"
     ffmpeg = "Ready" if d["ffmpeg"] == "AVAILABLE" else "Unavailable"
-    return f"<div class=\"app-header\"><h1>NVIDIA Video Enhancer</h1><p>RTX VSR + DLSS SR/NR + offline DLSS Frame Generation</p></div><div class=\"backend-status\"><span class=\"status-badge\">RTX VSR <b>● {rtx}</b></span><span class=\"status-badge\">DLSS SR <b>● {sr}</b></span><span class=\"status-badge\">DLSS 5 <b>● {dlss}</b></span><span class=\"status-badge\">DLSS-G 2X/3X/4X <b>● {fg}</b></span><span class=\"status-badge\">FFmpeg <b>● {ffmpeg}</b></span></div>"
+    runtime_items = d.get("runtimes", [])
+    runtime_text = " · ".join(
+        f"{escape(str(item.get('name', item.get('id', 'runtime'))))}: "
+        f"{escape(str(item.get('action', 'REVIEW')))}"
+        for item in runtime_items
+    )
+    runtime_card = f"<div class=\"runtime-status\"><b>Optional runtimes</b>: {runtime_text or 'none listed'}</div>"
+    return f"<div class=\"app-header\"><h1>NVIDIA Video Enhancer</h1><p>RTX VSR + DLSS SR/NR + offline DLSS Frame Generation</p></div><div class=\"backend-status\"><span class=\"status-badge\">RTX VSR <b>● {rtx}</b></span><span class=\"status-badge\">DLSS SR <b>● {sr}</b></span><span class=\"status-badge\">DLSS 5 <b>● {dlss}</b></span><span class=\"status-badge\">DLSS-G 2X/3X/4X <b>● {fg}</b></span><span class=\"status-badge\">FFmpeg <b>● {ffmpeg}</b></span></div>{runtime_card}"
 
 def _tip(mapping, key, label):
     return gr.HTML(setting_label(label, mapping[key]), show_label=False, elem_classes="setting-label")

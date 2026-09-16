@@ -1,9 +1,21 @@
 import platform, sys, json, subprocess
+from pathlib import Path
 from .process_utils import tool
 from src.backends.rtx_vsr import RTXVSRBackend
 from src.backends.dlss5 import DLSS5Backend
 from src.backends.dlss_sr import DLSSSRBackend
 from src.backends.dlssg import DLSSGBackend
+from src.runtime_manager import RuntimeManager
+
+RUNTIME_MANIFEST = Path(__file__).resolve().parents[1] / "runtime_manager" / "manifest.json"
+RUNTIME_INSTALL_ROOT = Path(__file__).resolve().parents[2] / "runtime"
+
+
+def runtime_inventory():
+    try:
+        return RuntimeManager(RUNTIME_MANIFEST, RUNTIME_INSTALL_ROOT).inventory()
+    except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+        return [{"state": "INVALID", "action": "REVIEW", "detail": f"Runtime manifest unavailable: {exc}"}]
 def collect():
     r=RTXVSRBackend().status(); d=DLSS5Backend().status(); sr_backend=DLSSSRBackend(); s=sr_backend.status(); fg=DLSSGBackend().status()
     gpu="UNAVAILABLE"
@@ -27,6 +39,6 @@ def collect():
         ffmpeg = "AVAILABLE" if ffmpeg_executable() else "UNAVAILABLE"
     except RuntimeError:
         ffmpeg = "UNAVAILABLE"
-    return {"windows":platform.platform(),"python":sys.version.split()[0],"conda_env":__import__('os').environ.get('CONDA_DEFAULT_ENV','unknown'),"gpu":gpu,"cuda":cuda,"nvvfx_version":vfx_version,"ffmpeg":ffmpeg,"ffprobe":"AVAILABLE" if tool('ffprobe') else 'UNAVAILABLE',"rtx_vsr":r.__dict__,"dlss5":dlss,"dlss_sr":sr,"dlssg":fg.__dict__}
+    return {"windows":platform.platform(),"python":sys.version.split()[0],"conda_env":__import__('os').environ.get('CONDA_DEFAULT_ENV','unknown'),"gpu":gpu,"cuda":cuda,"nvvfx_version":vfx_version,"ffmpeg":ffmpeg,"ffprobe":"AVAILABLE" if tool('ffprobe') else 'UNAVAILABLE',"runtimes":runtime_inventory(),"rtx_vsr":r.__dict__,"dlss5":dlss,"dlss_sr":sr,"dlssg":fg.__dict__}
 def main(): print(json.dumps(collect(), indent=2))
 if __name__ == "__main__": main()

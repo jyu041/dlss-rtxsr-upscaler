@@ -228,3 +228,26 @@ def test_activation_runs_selftest_before_recording_state_and_rolls_back(tmp_path
         manager.activate_zip("demo", archive, selftest=lambda _path: (_ for _ in ()).throw(RuntimeError("self-test failed")))
     assert (tmp_path / "install" / "demo" / "payload.bin").read_bytes() == old
     assert manager.inspect("demo")[1].value == "INSTALLED"
+
+
+@pytest.mark.parametrize("member", ["payload.bin:stream", "CON.txt", "payload.bin.", "payload.bin "])
+def test_safe_zip_rejects_windows_namespace_hazards(tmp_path, member):
+    archive = tmp_path / "hazard.zip"
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.writestr(member, b"bad")
+    with pytest.raises(ValueError, match="Unsafe"):
+        extract_safe_zip(archive, tmp_path / "stage", (member,))
+
+
+def test_candidate_install_is_files_verified_but_validation_required(tmp_path):
+    manifest = tmp_path / "manifest.json"
+    candidate = spec(constraints={"compatibility_test_required": True})
+    manifest.write_text(json.dumps({"runtimes": [candidate.__dict__]}), encoding="utf-8")
+    archive = tmp_path / "candidate.zip"
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.writestr("payload.bin", b"ok")
+    manager = RuntimeManager(manifest, tmp_path / "install")
+    manager.import_zip("demo", archive)
+    assert manager.inspect("demo")[1].value == "VALIDATION_REQUIRED"
+    result = manager.verify("demo")
+    assert result["ok"] is True and result["files_verified"] is True and result["backend_ready"] is False

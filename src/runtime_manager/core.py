@@ -28,6 +28,10 @@ class RuntimeState(StrEnum):
     INSTALLED = "INSTALLED"
     UPDATE_AVAILABLE = "UPDATE_AVAILABLE"
     INVALID = "INVALID"
+    VALIDATION_REQUIRED = "VALIDATION_REQUIRED"
+    READY = "READY"
+    STATIC_ONLY = "STATIC_ONLY"
+    MODIFIED = "MODIFIED"
 
 
 @dataclass(frozen=True)
@@ -104,7 +108,15 @@ class RuntimeSpec:
 
 def _safe_relative_path(value: str) -> bool:
     path = PurePosixPath(value.replace("\\", "/"))
-    return value not in {"", "."} and not path.is_absolute() and ".." not in path.parts and not any(part.endswith(":") for part in path.parts)
+    reserved = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+    if value in {"", "."} or path.is_absolute() or ".." in path.parts:
+        return False
+    for part in path.parts:
+        if not part or part.endswith((".", " ")) or ":" in part:
+            return False
+        if part.split(".", 1)[0].upper() in reserved:
+            return False
+    return True
 
 
 def sha256_file(path: Path, block_size: int = 1024 * 1024) -> str:
@@ -193,6 +205,10 @@ class RuntimeManager:
             return spec, RuntimeState.INVALID
         if record.get("version") != spec.version:
             return spec, RuntimeState.UPDATE_AVAILABLE
+        if spec.constraints.get("static_only"):
+            return spec, RuntimeState.STATIC_ONLY
+        if spec.constraints.get("compatibility_test_required") and not record.get("backend_ready", False):
+            return spec, RuntimeState.VALIDATION_REQUIRED
         return spec, RuntimeState.INSTALLED
 
     def inventory(self) -> list[dict[str, object]]:
@@ -224,7 +240,7 @@ class RuntimeManager:
         spec, state = self.inspect(runtime_id)
         destination = (self.install_root / spec.destination).resolve()
         result: dict[str, object] = {"id": spec.id, "state": state.value, "version": spec.version, "destination": str(destination)}
-        if state != RuntimeState.INSTALLED:
+        if state not in (RuntimeState.INSTALLED, RuntimeState.VALIDATION_REQUIRED, RuntimeState.STATIC_ONLY):
             result["ok"] = False
             result["detail"] = f"runtime is {state.value}"
             return result
@@ -239,7 +255,15 @@ class RuntimeManager:
             result["ok"] = False
             result["detail"] = f"managed file integrity check failed: {exc}"
             return result
-        selftest = selftest or __import__("src.runtime_manager.selftests", fromlist=["selftest_for"]).selftest_for(runtime_id)
+        if selftest is None and spec.constraints.get("compatibility_test_required"):
+            result["files_verified"] = True
+            result["backend_ready"] = False
+            result["ok"] = True
+            result["state"] = RuntimeState.VALIDATION_REQUIRED.value
+            result["detail"] = "managed files verified; explicit compatibility validation is required"
+            return result
+        if selftest is None and not self.specs[runtime_id].constraints.get("compatibility_test_required"):
+            selftest = __import__("src.runtime_manager.selftests", fromlist=["selftest_for"]).selftest_for(runtime_id)
         if selftest:
             try:
                 selftest(destination)
@@ -248,7 +272,8 @@ class RuntimeManager:
                 result["backend_ready"] = False
                 result["detail"] = f"files verified; backend self-test failed: {exc}"
                 return result
-        result["backend_ready"] = True
+        result["files_verified"] = True
+        result["backend_ready"] = not spec.constraints.get("static_only", False)
         result["ok"] = True
         result["detail"] = "managed files present and self-test passed" if selftest else "managed files present; self-test not requested"
         return result
@@ -286,7 +311,10 @@ class RuntimeManager:
 
     def install(self, runtime_id: str, *, target: Path | None = None, progress: Callable[[int, int | None], None] | None = None, selftest: Callable[[Path], None] | None = None) -> Path:
         """Perform one explicit installation using only the manifest's pinned source."""
-        selftest = selftest or __import__("src.runtime_manager.selftests", fromlist=["selftest_for"]).selftest_for(runtime_id)
+        if selftest is None and self.specs[runtime_id].constraints.get("compatibility_test_required"):
+            selftest = None
+        else:
+            selftest = selftest or __import__("src.runtime_manager.selftests", fromlist=["selftest_for"]).selftest_for(runtime_id)
         spec = self.specs[runtime_id]
         if spec.files:
             return self.install_files(runtime_id, progress=progress, selftest=selftest)
@@ -376,7 +404,9 @@ class RuntimeManager:
                     selftest(destination)
                 file_records = self._installed_file_records(spec, destination)
                 records = self.state()
-                records[spec.id] = {"version": spec.version, "sha256": spec.sha256, "destination": spec.destination, "files": file_records}
+                records[spec.id] = {"version": spec.version, "sha256": spec.sha256, "destination": spec.destination, "files": file_records,
+                                    "files_verified": True, "backend_ready": bool(selftest) and not spec.constraints.get("static_only", False),
+                                    "validation_required": bool(spec.constraints.get("compatibility_test_required", False)) and not bool(selftest)}
                 temporary = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
                 temporary.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
                 os.replace(temporary, self.state_path)

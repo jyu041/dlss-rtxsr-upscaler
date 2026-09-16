@@ -41,7 +41,7 @@ def sha256(path: Path) -> str:
     return digest.hexdigest().upper()
 
 
-def _copy_external_runtime(source: Path | None, destination: Path, required: tuple[str, ...], label: str) -> list[dict[str, object]]:
+def _copy_external_runtime(source: Path | None, destination: Path, required: tuple[str, ...], label: str, relative_prefix: str) -> list[dict[str, object]]:
     if source is None:
         return []
     source = source.resolve()
@@ -51,7 +51,7 @@ def _copy_external_runtime(source: Path | None, destination: Path, required: tup
     if missing:
         raise RuntimeError(f"{label} runtime is missing: {', '.join(missing)}")
     shutil.copytree(source, destination)
-    return [{"path": path.relative_to(destination).as_posix(), "sha256": sha256(path), "size_bytes": path.stat().st_size} for path in sorted(destination.rglob("*")) if path.is_file()]
+    return [{"path": f"{relative_prefix}/{path.relative_to(destination).as_posix()}", "sha256": sha256(path), "size_bytes": path.stat().st_size} for path in sorted(destination.rglob("*")) if path.is_file()]
 
 
 def build(output: Path, source_root: Path, python_runtime: Path | None = None, ffmpeg_runtime: Path | None = None) -> dict[str, object]:
@@ -73,8 +73,8 @@ def build(output: Path, source_root: Path, python_runtime: Path | None = None, f
             if path.is_file() and path.suffix.lower() in FORBIDDEN_SUFFIXES:
                 raise RuntimeError(f"refusing to package binary-like tracked file: {path.relative_to(stage)}")
         external = {
-            "python": _copy_external_runtime(python_runtime, stage / "runtime" / "python", ("python.exe",), "Python") if python_runtime else [],
-            "ffmpeg": _copy_external_runtime(ffmpeg_runtime, stage / "runtime" / "tools" / "ffmpeg", ("ffmpeg.exe", "ffprobe.exe"), "FFmpeg") if ffmpeg_runtime else [],
+            "python": _copy_external_runtime(python_runtime, stage / "runtime" / "python", ("python.exe",), "Python", "runtime/python") if python_runtime else [],
+            "ffmpeg": _copy_external_runtime(ffmpeg_runtime, stage / "runtime" / "tools" / "ffmpeg", ("ffmpeg.exe", "ffprobe.exe"), "FFmpeg", "runtime/tools/ffmpeg") if ffmpeg_runtime else [],
         }
         manifest = {
             "schema": 1,

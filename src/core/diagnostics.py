@@ -5,6 +5,7 @@ from src.backends.rtx_vsr import RTXVSRBackend
 from src.backends.dlss5 import DLSS5Backend
 from src.backends.dlss_sr import DLSSSRBackend
 from src.backends.dlssg import DLSSGBackend
+from src.backends.dlss5_neuroframe import inspect_candidate as inspect_dlss5_neuroframe
 from src.runtime_manager import RuntimeManager
 from src.core.system_readiness import collect as collect_system_readiness
 
@@ -40,6 +41,6 @@ def collect():
         ffmpeg = "AVAILABLE" if ffmpeg_executable() else "UNAVAILABLE"
     except RuntimeError:
         ffmpeg = "UNAVAILABLE"
-    return {"windows":platform.platform(),"python":sys.version.split()[0],"conda_env":__import__('os').environ.get('CONDA_DEFAULT_ENV','unknown'),"gpu":gpu,"cuda":cuda,"system_readiness":collect_system_readiness(),"nvvfx_version":vfx_version,"ffmpeg":ffmpeg,"ffprobe":"AVAILABLE" if tool('ffprobe') else 'UNAVAILABLE',"runtimes":runtime_inventory(),"rtx_vsr":r.__dict__,"dlss5":dlss,"dlss_sr":sr,"dlssg":fg.__dict__}
+    return {"windows":platform.platform(),"python":sys.version.split()[0],"conda_env":__import__('os').environ.get('CONDA_DEFAULT_ENV','unknown'),"gpu":gpu,"cuda":cuda,"system_readiness":collect_system_readiness(),"nvvfx_version":vfx_version,"ffmpeg":ffmpeg,"ffprobe":"AVAILABLE" if tool('ffprobe') else 'UNAVAILABLE',"runtimes":runtime_inventory(),"dlss5_neuroframe":inspect_dlss5_neuroframe().__dict__,"rtx_vsr":r.__dict__,"dlss5":dlss,"dlss_sr":sr,"dlssg":fg.__dict__}
 def main(): print(json.dumps(collect(), indent=2))
 if __name__ == "__main__": main()

@@ -262,6 +262,20 @@ class RuntimeManager:
         archive = self.download(runtime_id, target, progress=progress)
         return self.activate_zip(runtime_id, archive, selftest=selftest)
 
+    def repair(self, runtime_id: str, *, target: Path | None = None, progress: Callable[[int, int | None], None] | None = None, selftest: Callable[[Path], None] | None = None) -> Path:
+        """Reinstall the pinned runtime after an explicit user request.
+
+        Repair never selects a different source or silently downloads. It uses
+        the same manifest-driven path as ``install`` and retains the existing
+        activation rollback behavior. The caller supplies an archive target
+        for archive-based runtimes; multi-file runtimes stage their downloads
+        under the managed root and do not need one.
+        """
+        spec = self.specs[runtime_id]
+        if spec.policy != "UPSTREAM_DOWNLOAD":
+            raise ValueError("Only explicit upstream-download components can be repaired")
+        return self.install(runtime_id, target=target, progress=progress, selftest=selftest)
+
     def install_files(self, runtime_id: str, *, progress: Callable[[int, int | None], None] | None = None, selftest: Callable[[Path], None] | None = None) -> Path:
         """Explicitly download and activate a pinned multi-file runtime candidate."""
         spec = self.specs[runtime_id]

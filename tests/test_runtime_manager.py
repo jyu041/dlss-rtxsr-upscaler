@@ -134,6 +134,24 @@ def test_install_dispatches_to_pinned_multifile_flow(tmp_path, monkeypatch):
     assert called == ["dlssg-sm86-0.3.1-candidate"]
 
 
+def test_repair_reuses_explicit_pinned_install_path(tmp_path, monkeypatch):
+    manager = RuntimeManager(Path("src/runtime_manager/manifest.json"), tmp_path / "runtime")
+    called = []
+    monkeypatch.setattr(manager, "install", lambda runtime_id, **kwargs: called.append((runtime_id, kwargs)) or tmp_path / "repaired")
+    result = manager.repair("dlssg-sm86-0.3.1-candidate", selftest=lambda _path: None)
+    assert result == tmp_path / "repaired"
+    assert called[0][0] == "dlssg-sm86-0.3.1-candidate"
+    assert called[0][1]["selftest"] is not None
+
+
+def test_repair_rejects_user_supplied_runtime(tmp_path):
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"runtimes": [spec(policy="USER_SUPPLIED").__dict__]}), encoding="utf-8")
+    manager = RuntimeManager(manifest, tmp_path / "install")
+    with pytest.raises(ValueError, match="upstream-download"):
+        manager.repair("demo")
+
+
 def test_multifile_install_verifies_each_download_before_activation(tmp_path, monkeypatch):
     first, second = b"first", b"second"
     import hashlib

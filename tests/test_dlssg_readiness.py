@@ -142,6 +142,12 @@ def test_candidate_profile_selects_only_managed_candidate(monkeypatch):
     assert selected == (readiness.ROOT / "runtime" / "dlssg" / "candidate-0.3.1" / "version.dll").resolve()
 
 
+def test_default_profile_matches_backend_managed_legacy_path(monkeypatch):
+    monkeypatch.delenv("DLSSG_RUNTIME_PROFILE", raising=False)
+    monkeypatch.delenv("DLSSG_COMMUNITY_RUNTIME", raising=False)
+    assert readiness._community_runtime(None, None) == (readiness.ROOT / "runtime" / "dlssg" / "legacy" / "version.dll").resolve()
+
+
 def test_missing_ffmpeg_and_ffprobe_are_actionable(monkeypatch):
     monkeypatch.setattr(readiness.shutil, "which", lambda name: None)
     assert "not on PATH" in readiness._ffmpeg_check(False).detail

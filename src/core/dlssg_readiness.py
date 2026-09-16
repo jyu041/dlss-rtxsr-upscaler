@@ -19,6 +19,7 @@ EXPECTED_WORKER_SHA256 = "C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4
 EXPECTED_COMMUNITY_SHA256 = "C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2"
 WORKER_NAME = "dlssg_sm86_offline.exe"
 SELFTEST_TIMEOUT_SECONDS = 10
+MANAGED_LEGACY_RUNTIME = ROOT / "runtime" / "dlssg" / "legacy" / "version.dll"
 
 
 @dataclass(frozen=True)
@@ -58,7 +59,7 @@ def _community_runtime(value: str | Path | None, saved: str | None, runtime_prof
         return explicit
     if (runtime_profile or os.environ.get("DLSSG_RUNTIME_PROFILE", "legacy")) == "candidate-0.3.1":
         return (ROOT / "runtime" / "dlssg" / "candidate-0.3.1" / "version.dll").resolve()
-    return None
+    return MANAGED_LEGACY_RUNTIME.resolve()
 
 
 def _worker_candidates() -> Iterable[Path]:

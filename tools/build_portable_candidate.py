@@ -51,7 +51,7 @@ def _copy_external_runtime(source: Path | None, destination: Path, required: tup
     if missing:
         raise RuntimeError(f"{label} runtime is missing: {', '.join(missing)}")
     shutil.copytree(source, destination, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    return [{"path": f"{relative_prefix}/{path.relative_to(destination).as_posix()}", "sha256": sha256(path), "size_bytes": path.stat().st_size} for path in sorted(destination.rglob("*")) if path.is_file() and "__pycache__" not in path.parts and path.suffix.lower() != ".pyc"]
+    return [{"path": f"{relative_prefix}/{path.relative_to(destination).as_posix()}", "sha256": sha256(path), "size_bytes": path.stat().st_size} for path in sorted(destination.rglob("*")) if path.is_file() and "__pycache__" not in path.parts and path.suffix.lower() != ".pyc" and not (path.parent.name.endswith(".dist-info") and path.name == "RECORD")]
 
 
 def _copy_notice(source: Path | None, destination: Path, label: str) -> dict[str, object] | None:

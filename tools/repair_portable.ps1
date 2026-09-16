@@ -62,7 +62,31 @@ if (Test-Path -LiteralPath $bootstrap) { Remove-Item -LiteralPath $bootstrap -Re
 New-Item -ItemType Directory -Force -Path $bootstrap | Out-Null
 Expand-Archive -LiteralPath $pyArchive -DestinationPath $bootstrap -Force
 $mode = if ($missing.Count -eq 1 -and ([string]$missing[0]).ToLowerInvariant().Contains('ffmpeg')) { '--ffmpeg-only' } else { '' }
-$args = @($assembler, '--root', $rootPath, '--python-archive', $pyArchive, '--ffmpeg-archive', $ffArchive, '--wheel-dir', $wheelDir, '--lock', $lock)
-if ($mode) { $args += $mode }
+$repairRoot = Join-Path $rootPath 'runtime\.repair'
+New-Item -ItemType Directory -Force -Path $repairRoot | Out-Null
+if ($mode) {
+    $args = @($assembler, '--root', $rootPath, '--python-archive', $pyArchive, '--ffmpeg-archive', $ffArchive, '--wheel-dir', $wheelDir, '--lock', $lock, $mode)
+    & (Join-Path $bootstrap 'python.exe') @args
+    exit $LASTEXITCODE
+}
+$stage = Join-Path $repairRoot ('python-new-' + [guid]::NewGuid().ToString('N'))
+$args = @($assembler, '--root', $rootPath, '--runtime-root', $stage, '--python-archive', $pyArchive, '--ffmpeg-archive', $ffArchive, '--wheel-dir', $wheelDir, '--lock', $lock)
 & (Join-Path $bootstrap 'python.exe') @args
-exit $LASTEXITCODE
+if ($LASTEXITCODE -ne 0) { Write-Error 'Staged Python assembly failed; existing runtime was preserved.'; exit $LASTEXITCODE }
+$stagedPython = Join-Path $stage 'python\python.exe'
+if (-not (Test-Path -LiteralPath $stagedPython -PathType Leaf)) { Write-Error 'Staged Python executable is missing; existing runtime was preserved.'; exit 1 }
+& $stagedPython -c 'import nvvfx, torch; assert torch.__version__ == "2.10.0+cu128"; assert torch.cuda.is_available()'
+if ($LASTEXITCODE -ne 0) { Write-Error 'Staged Python critical import/CUDA validation failed; existing runtime was preserved.'; exit $LASTEXITCODE }
+$old = Join-Path $rootPath 'runtime\python'; $backup = Join-Path $repairRoot ('python-old-' + [guid]::NewGuid().ToString('N'))
+if (Test-Path -LiteralPath $old) { Move-Item -LiteralPath $old -Destination $backup }
+Move-Item -LiteralPath $stagedPython -Destination $old
+$check = Join-Path $rootPath 'tools\check_portable_runtime.py'
+& (Join-Path $old 'python.exe') $check --root $rootPath --full
+if ($LASTEXITCODE -ne 0) {
+    Remove-Item -LiteralPath $old -Recurse -Force
+    if (Test-Path -LiteralPath $backup) { Move-Item -LiteralPath $backup -Destination $old }
+    Write-Error 'Final verification failed; previous runtime restored.'; exit 1
+}
+if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Recurse -Force }
+if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
+exit 0

@@ -29,10 +29,11 @@ def fetch(url: str, path: Path, expected: str):
     if digest(tmp) != expected: tmp.unlink(); raise RuntimeError(f'hash mismatch: {path.name}')
     tmp.replace(path)
 
-def assemble(root: Path, python_archive: Path, ffmpeg_archive: Path, wheel_dir: Path, lock: Path, python_only=False, ffmpeg_only=False):
+def assemble(root: Path, python_archive: Path, ffmpeg_archive: Path, wheel_dir: Path, lock: Path, python_only=False, ffmpeg_only=False, runtime_root: Path | None = None):
     data=json.loads(lock.read_text(encoding='utf-8')); arts=data['artifacts']
     if not arts: raise RuntimeError('empty artifact lock')
-    py=root/'runtime'/'python'; ff=root/'runtime'/'tools'/'ffmpeg'
+    runtime_root = (runtime_root or root/'runtime').resolve()
+    py=runtime_root/'python'; ff=runtime_root/'tools'/'ffmpeg'
     if not ffmpeg_only:
         if py.exists():
             shutil.rmtree(py, ignore_errors=True)
@@ -44,7 +45,7 @@ def assemble(root: Path, python_archive: Path, ffmpeg_archive: Path, wheel_dir: 
         pipwheel=next((a for a in arts if a['name']=='pip'), None)
         if not pipwheel: raise RuntimeError('lock does not contain pip bootstrap')
         with zipfile.ZipFile(wheel_dir/pipwheel['filename']) as z: safe_extract(z, site)
-        req=root/'runtime'/'locked-requirements.txt'
+        req=runtime_root/'locked-requirements.txt'
         req.write_text('\n'.join(f"{a['name']}=={a['version']} --hash=sha256:{a['sha256']}" for a in arts if a['name']!='pip')+'\n', encoding='utf-8', newline='\n')
         pyexe=py/'python.exe'
         subprocess.run([str(pyexe),'-m','pip','install','--no-index','--find-links',str(wheel_dir),'--no-deps','--require-hashes','--target',str(site),'-r',str(req)], check=True)
@@ -57,6 +58,6 @@ def assemble(root: Path, python_archive: Path, ffmpeg_archive: Path, wheel_dir: 
     return {'python': str(py/'python.exe'), 'ffmpeg': str(ff/'ffmpeg.exe'), 'ffprobe': str(ff/'ffprobe.exe'), 'artifacts': len(arts)}
 
 def main():
-    p=argparse.ArgumentParser(); p.add_argument('--root',type=Path,required=True); p.add_argument('--python-archive',type=Path,required=True); p.add_argument('--ffmpeg-archive',type=Path,required=True); p.add_argument('--wheel-dir',type=Path,required=True); p.add_argument('--lock',type=Path,required=True)
-    p.add_argument('--python-only', action='store_true'); p.add_argument('--ffmpeg-only', action='store_true'); a=p.parse_args(); print(json.dumps(assemble(a.root.resolve(),a.python_archive.resolve(),a.ffmpeg_archive.resolve(),a.wheel_dir.resolve(),a.lock.resolve(), a.python_only, a.ffmpeg_only),indent=2)); return 0
+    p=argparse.ArgumentParser(); p.add_argument('--root',type=Path,required=True); p.add_argument('--runtime-root',type=Path); p.add_argument('--python-archive',type=Path,required=True); p.add_argument('--ffmpeg-archive',type=Path,required=True); p.add_argument('--wheel-dir',type=Path,required=True); p.add_argument('--lock',type=Path,required=True)
+    p.add_argument('--python-only', action='store_true'); p.add_argument('--ffmpeg-only', action='store_true'); a=p.parse_args(); print(json.dumps(assemble(a.root.resolve(),a.python_archive.resolve(),a.ffmpeg_archive.resolve(),a.wheel_dir.resolve(),a.lock.resolve(), a.python_only, a.ffmpeg_only, a.runtime_root),indent=2)); return 0
 if __name__=='__main__': raise SystemExit(main())

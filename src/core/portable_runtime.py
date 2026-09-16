@@ -15,7 +15,7 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest().upper()
 
 
-def inspect(root: str | Path, *, full: bool = True) -> dict[str, object]:
+def inspect(root: str | Path, *, full: bool = False) -> dict[str, object]:
     root = Path(root).expanduser().resolve()
     manifest_path = root / "build-manifest.json"
     if not manifest_path.is_file():

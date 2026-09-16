@@ -32,3 +32,8 @@ def test_repair_script_is_fail_closed():
 def test_startup_check_does_not_request_full_hash_scan():
     source = (ROOT / "start.bat").read_text(encoding="utf-8")
     assert "--full" not in source
+
+
+def test_builder_excludes_generated_bytecode_from_runtime_manifest():
+    source = (ROOT / "tools" / "build_portable_candidate.py").read_text(encoding="utf-8")
+    assert 'ignore_patterns("__pycache__", "*.pyc")' in source

@@ -11,7 +11,7 @@ def test_portable_runtime_is_not_configured_without_manifest(tmp_path):
 def test_portable_runtime_detects_identity_mismatch(tmp_path):
     (tmp_path / "build-manifest.json").write_text(json.dumps({"external_runtime_files": {"python": [{"path": "runtime/python/python.exe", "sha256": "A" * 64, "size_bytes": 4}]}}), encoding="utf-8")
     path = tmp_path / "runtime" / "python"; path.mkdir(parents=True); (path / "python.exe").write_bytes(b"bad!")
-    assert inspect(tmp_path)["state"] == "BROKEN"
+    assert inspect(tmp_path, full=True)["state"] == "BROKEN"
 
 
 def test_portable_runtime_requires_all_launcher_tools(tmp_path):
@@ -37,5 +37,5 @@ def test_portable_runtime_detects_tampered_notice(tmp_path):
     for relative, payload in (("runtime/python/python.exe", b"python"), ("runtime/tools/ffmpeg/ffmpeg.exe", b"ffmpeg"), ("runtime/tools/ffmpeg/ffprobe.exe", b"ffprobe")):
         path = tmp_path / relative; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(payload)
     notice.write_text("changed", encoding="utf-8")
-    assert inspect(tmp_path)["state"] == "BROKEN"
-    assert "notice identity mismatch" in inspect(tmp_path)["detail"]
+    assert inspect(tmp_path, full=True)["state"] == "BROKEN"
+    assert "notice identity mismatch" in inspect(tmp_path, full=True)["detail"]

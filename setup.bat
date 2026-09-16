@@ -22,4 +22,7 @@ if not exist "%NVE_FFPROBE%" set "NVE_FFPROBE=ffprobe"
 "%NVE_FFMPEG%" -hide_banner -encoders 2>nul | findstr /r /c:"h264_nvenc" /c:"hevc_nvenc" >nul || (echo FFmpeg lacks h264_nvenc/hevc_nvenc. Provide a full compatible build.& exit /b 1)
 echo [5/5] Running diagnostics
 call conda run --no-capture-output %NVE_CONDA_TARGET% python -m src.core.diagnostics || exit /b 1
+if not exist config mkdir config
+>"config\source_env.bat" echo @echo off
+if defined NVE_CONDA_PREFIX (>>"config\source_env.bat" echo set "NVE_CONDA_PREFIX=%NVE_CONDA_PREFIX%") else (>>"config\source_env.bat" echo set "NVE_CONDA_ENV=%NVE_CONDA_ENV%")
 echo Environment ready: %NVE_CONDA_ENV%

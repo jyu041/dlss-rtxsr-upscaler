@@ -4,12 +4,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_release_launcher_is_portable_only():
+def test_release_launcher_prefers_portable_and_supports_source_conda():
     source = (ROOT / "start.bat").read_text(encoding="utf-8")
-    assert "conda" not in source.lower()
     assert "set \"NVE_FFMPEG_PATH=%~dp0runtime\\tools\\ffmpeg\\ffmpeg.exe\"" in source
     assert "check_portable_runtime.py" in source
     assert '--root "%~dp0."' in source
+    assert ":source_mode" in source
+    assert "conda run --no-capture-output" in source
+    assert "config\\source_env.bat" in source
+    assert "where ffmpeg" in source
 
 
 def test_developer_launcher_keeps_conda_workflow_separate():

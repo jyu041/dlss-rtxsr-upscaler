@@ -53,6 +53,7 @@ build.ninja
 rules.ninja
 config/settings.local.json
 runtime.local.ps1
+config/source_env.bat
 config/user_presets.json
 config/user_presets.json.corrupt-*
 runtime/dlss5-v3/dlss_sr_selftest.json

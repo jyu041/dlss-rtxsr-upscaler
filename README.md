@@ -87,7 +87,7 @@ The portable package is the normal user path. It does not require Conda,
 Python, FFmpeg installation, or `PATH` changes. If its base runtime is damaged,
 run `repair.bat`.
 
-### 2. Development checkout
+### 2. Source checkout
 
 From a Git-enabled terminal:
 
@@ -95,13 +95,13 @@ From a Git-enabled terminal:
 git clone --recurse-submodules https://github.com/jyu041/dlss-rtxsr-upscaler.git
 cd dlss-rtxsr-upscaler
 setup.bat
+start.bat
 ```
 
-### 3. Launch the local UI
-
-```bat
-start-dev.bat
-```
+`setup.bat` prepares the Conda environment and checks FFmpeg/NVENC. `start.bat`
+uses that environment for a source checkout when no complete portable runtime is
+present. Optional Runtime Manager downloads remain explicit; source startup does
+not silently download DLSS-G, DLSS 5, or community runtimes.
 
 Open the printed localhost URL, upload an owned or synthetic test video, choose one backend, preview a frame or clip, and then render. Start with the defaults shown in the comparison table before tuning a backend.
 

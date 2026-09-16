@@ -8,17 +8,21 @@ from itertools import chain
 from pathlib import Path
 
 from src.core.media_info import frame_total, probe
+from src.core.process_utils import tool
 from src.core.progress import report_progress
 from src.video.nvenc import format_preflight_failure, nvenc_preflight
 
 
 def render_dlss5(source, destination, backend, options, *, start=0.0, duration=None, codec="H.264", cancel=None, progress=None, nr_working_scale=1.0, recompose_backend="auto"):
+    ffmpeg = tool("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError("ffmpeg was not found in the bundled runtime or on PATH.")
     info = probe(str(source))
     width, height, fps = int(info["width"]), int(info["height"]), float(info["fps"])
     frame_count, estimated = frame_total(info, duration)
     session_frame_count = frame_count or 2
     report_progress(progress, frame_index=0, total_frames=frame_count, phase="INITIALIZING", message="Initializing DLSS5 Feature-18")
-    raw = ["ffmpeg", "-v", "error"]
+    raw = [ffmpeg, "-v", "error"]
     if start:
         raw += ["-ss", str(max(0.0, float(start)))]
     raw += ["-i", str(source)]
@@ -52,7 +56,7 @@ def render_dlss5(source, destination, backend, options, *, start=0.0, duration=N
         if not preflight["available"]:
             raise RuntimeError(format_preflight_failure(preflight))
         encoder = subprocess.Popen(
-            ["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{output_width}x{output_height}", "-r", str(fps), "-i", "-", "-an", "-c:v", encoder_name, "-preset", "p5", "-cq", "19", str(video_only)],
+            [ffmpeg, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{output_width}x{output_height}", "-r", str(fps), "-i", "-", "-an", "-c:v", encoder_name, "-preset", "p5", "-cq", "19", str(video_only)],
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
@@ -75,7 +79,7 @@ def render_dlss5(source, destination, backend, options, *, start=0.0, duration=N
         if encoder.returncode:
             raise RuntimeError((encoder.stderr.read() if encoder.stderr else b"").decode(errors="replace")[-2000:])
         report_progress(progress, frame_index=count, total_frames=frame_count, phase="MUXING", message="Preserving audio and metadata")
-        mux = ["ffmpeg", "-y", "-v", "error", "-i", str(video_only)]
+        mux = [ffmpeg, "-y", "-v", "error", "-i", str(video_only)]
         if start:
             mux += ["-ss", str(max(0.0, float(start)))]
         mux += ["-i", str(source), "-map", "0:v:0", "-map", "1:a?", "-c:v", "copy", "-c:a", "copy", "-map_metadata", "1"]

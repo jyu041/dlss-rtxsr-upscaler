@@ -4,8 +4,9 @@ from .paths import safe_input
 
 def probe(path):
     p = safe_input(path)
-    if not tool("ffprobe"): raise RuntimeError("ffprobe was not found in this Conda environment.")
-    r = run(["ffprobe","-v","error","-show_streams","-show_format","-of","json",p], encoding="utf-8", errors="replace")
+    executable = tool("ffprobe")
+    if not executable: raise RuntimeError("ffprobe was not found in the bundled runtime or on PATH.")
+    r = run([executable,"-v","error","-show_streams","-show_format","-of","json",p], encoding="utf-8", errors="replace")
     if r.returncode: raise RuntimeError(r.stderr.strip() or "ffprobe failed")
     d=json.loads(r.stdout); streams=d.get("streams",[]); v=next((s for s in streams if s.get("codec_type")=="video"),{})
     a=next((s for s in streams if s.get("codec_type")=="audio"),{})

@@ -21,6 +21,14 @@ class RuntimeState(StrEnum):
 
 
 @dataclass(frozen=True)
+class RuntimeFile:
+    path: str
+    url: str
+    sha256: str
+    size_bytes: int
+
+
+@dataclass(frozen=True)
 class RuntimeSpec:
     id: str
     name: str
@@ -42,6 +50,7 @@ class RuntimeSpec:
     license_name: str | None = None
     redistributable: bool = False
     direct_user_download: bool = False
+    files: tuple[RuntimeFile, ...] = ()
 
     @classmethod
     def from_dict(cls, data: dict) -> "RuntimeSpec":
@@ -65,13 +74,22 @@ class RuntimeSpec:
         policy = str(data["policy"])
         if policy not in {"PROJECT_BUNDLED", "UPSTREAM_DOWNLOAD", "USER_SUPPLIED", "SYSTEM_COMPONENT"}:
             raise ValueError(f"unknown runtime policy: {policy}")
+        file_specs = []
+        for item in data.get("files", []):
+            if not isinstance(item, dict):
+                raise ValueError("runtime files must be objects")
+            file_path = str(item.get("path", "")); file_url = str(item.get("url", "")); file_hash = str(item.get("sha256", ""))
+            file_size = item.get("size_bytes")
+            if not _safe_relative_path(file_path) or not file_url.startswith("https://") or len(file_hash) != 64 or any(char not in "0123456789abcdefABCDEF" for char in file_hash) or not isinstance(file_size, int) or file_size < 0:
+                raise ValueError("runtime file metadata is invalid")
+            file_specs.append(RuntimeFile(file_path, file_url, file_hash.upper(), file_size))
         size = data.get("size_bytes")
         if size is not None and (not isinstance(size, int) or size < 0):
             raise ValueError("size_bytes must be a non-negative integer")
         digest = data.get("sha256")
         if digest is not None and (not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdefABCDEF" for char in digest)):
             raise ValueError("sha256 must be a 64-character hexadecimal digest")
-        return cls(id=str(data["id"]), name=str(data["name"]), backend=str(data["backend"]), version=str(data["version"]), source=source_url, source_url=source_url, artifact_url=str(artifact_url) if artifact_url is not None else None, sha256=digest.upper() if digest else None, size_bytes=size, archive_type=str(data["archive_type"]), allowlist=allowlist, destination=destination, policy=policy, required=bool(data.get("required", False)), constraints=dict(data.get("constraints", {})), notice_url=str(data["notice_url"]) if data.get("notice_url") else None, channel=str(data.get("channel", "candidate")), license_name=str(data["license_name"]) if data.get("license_name") else None, redistributable=bool(data.get("redistributable", False)), direct_user_download=bool(data.get("direct_user_download", False)))
+        return cls(id=str(data["id"]), name=str(data["name"]), backend=str(data["backend"]), version=str(data["version"]), source=source_url, source_url=source_url, artifact_url=str(artifact_url) if artifact_url is not None else None, sha256=digest.upper() if digest else None, size_bytes=size, archive_type=str(data["archive_type"]), allowlist=allowlist, destination=destination, policy=policy, required=bool(data.get("required", False)), constraints=dict(data.get("constraints", {})), notice_url=str(data["notice_url"]) if data.get("notice_url") else None, channel=str(data.get("channel", "candidate")), license_name=str(data["license_name"]) if data.get("license_name") else None, redistributable=bool(data.get("redistributable", False)), direct_user_download=bool(data.get("direct_user_download", False)), files=tuple(file_specs))
 
 
 def _safe_relative_path(value: str) -> bool:
@@ -229,6 +247,34 @@ class RuntimeManager:
             temporary.unlink(missing_ok=True)
             raise
 
+    def install_files(self, runtime_id: str, *, progress: Callable[[int, int | None], None] | None = None, selftest: Callable[[Path], None] | None = None) -> Path:
+        """Explicitly download and activate a pinned multi-file runtime candidate."""
+        spec = self.specs[runtime_id]
+        if spec.policy != "UPSTREAM_DOWNLOAD" or not spec.files:
+            raise ValueError("Runtime does not define pinned upstream files")
+        self.install_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=f"{spec.id}-", dir=self.install_root) as temporary:
+            downloaded = Path(temporary) / "downloaded"
+            downloaded.mkdir()
+            total = sum(item.size_bytes for item in spec.files)
+            copied_total = 0
+            for item in spec.files:
+                target = downloaded / item.path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                request = urllib.request.Request(item.url, headers={"User-Agent": "NVIDIA-Video-Enhancer-runtime-manager"})
+                with urllib.request.urlopen(request, timeout=60) as response, target.open("wb") as output:
+                    while True:
+                        block = response.read(1024 * 1024)
+                        if not block:
+                            break
+                        output.write(block)
+                        copied_total += len(block)
+                        if progress:
+                            progress(copied_total, total)
+                if target.stat().st_size != item.size_bytes or sha256_file(target) != item.sha256:
+                    raise ValueError(f"Runtime file verification failed: {item.path}")
+            return self._activate_directory(runtime_id, downloaded, selftest=selftest)
+
     def activate_zip(self, runtime_id: str, archive: Path, *, verified: bool = False, selftest: Callable[[Path], None] | None = None) -> Path:
         spec = self.specs[runtime_id]
         if not verified:
@@ -238,6 +284,22 @@ class RuntimeManager:
         staging = staging_parent / "payload"
         try:
             extract_safe_zip(Path(archive), staging, spec.allowlist)
+            return self._activate_directory(runtime_id, staging, selftest=selftest, staging_parent=staging_parent)
+        except Exception:
+            shutil.rmtree(staging_parent, ignore_errors=True)
+            raise
+        finally:
+            shutil.rmtree(staging_parent, ignore_errors=True)
+
+    def _activate_directory(self, runtime_id: str, staging: Path, *, selftest: Callable[[Path], None] | None = None, staging_parent: Path | None = None) -> Path:
+        spec = self.specs[runtime_id]
+        owned_parent = staging_parent is None
+        if owned_parent:
+            staging_parent = Path(tempfile.mkdtemp(prefix=f"{spec.id}-", dir=self.install_root))
+            managed_staging = staging_parent / "payload"
+            shutil.copytree(staging, managed_staging)
+            staging = managed_staging
+        try:
             destination = self.install_root / spec.destination
             backup = destination.with_name(destination.name + ".previous")
             if backup.exists():
@@ -262,10 +324,10 @@ class RuntimeManager:
                     os.replace(backup, destination)
                 raise
         except Exception:
-            shutil.rmtree(staging_parent, ignore_errors=True)
             raise
         finally:
-            shutil.rmtree(staging_parent, ignore_errors=True)
+            if owned_parent:
+                shutil.rmtree(staging_parent, ignore_errors=True)
 
     def import_zip(self, runtime_id: str, archive: Path) -> Path:
         """Import an offline archive through the same hash and allowlist gates."""

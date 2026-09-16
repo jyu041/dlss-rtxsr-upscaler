@@ -108,6 +108,42 @@ def test_verify_reports_state_and_runs_optional_selftest(tmp_path):
     assert result["ok"] is True and called
 
 
+def test_manifest_loads_pinned_multifile_candidate():
+    manager = RuntimeManager(Path("src/runtime_manager/manifest.json"), Path("runtime"))
+    spec = manager.specs["dlssg-sm86-0.3.1-candidate"]
+    assert spec.policy == "UPSTREAM_DOWNLOAD"
+    assert [item.path for item in spec.files] == ["version.dll", "dlssg_sm86.ini"]
+    assert spec.direct_user_download is True and spec.redistributable is False
+
+
+def test_multifile_install_verifies_each_download_before_activation(tmp_path, monkeypatch):
+    first, second = b"first", b"second"
+    import hashlib
+    files = [
+        {"path": "version.dll", "url": "https://example.invalid/version.dll", "sha256": hashlib.sha256(first).hexdigest(), "size_bytes": len(first)},
+        {"path": "dlssg_sm86.ini", "url": "https://example.invalid/dlssg_sm86.ini", "sha256": hashlib.sha256(second).hexdigest(), "size_bytes": len(second)},
+    ]
+    values = {**spec(policy="UPSTREAM_DOWNLOAD").__dict__, "files": files, "artifact_url": None, "allowlist": ("version.dll", "dlssg_sm86.ini")}
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"runtimes": [values]}), encoding="utf-8")
+
+    class Response:
+        headers = {"Content-Length": "0"}
+        def __init__(self, data): self.data = data
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+        def read(self, _size):
+            data, self.data = self.data, b""
+            return data
+
+    payloads = iter((first, second))
+    monkeypatch.setattr("src.runtime_manager.core.urllib.request.urlopen", lambda *_args, **_kwargs: Response(next(payloads)))
+    manager = RuntimeManager(manifest, tmp_path / "install")
+    destination = manager.install_files("demo")
+    assert (destination / "version.dll").read_bytes() == first
+    assert (destination / "dlssg_sm86.ini").read_bytes() == second
+
+
 def test_activation_runs_selftest_before_recording_state_and_rolls_back(tmp_path):
     manifest = tmp_path / "manifest.json"
     demo = spec(allowlist=("payload.bin",), policy="USER_SUPPLIED")

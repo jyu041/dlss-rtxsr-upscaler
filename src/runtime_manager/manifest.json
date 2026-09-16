@@ -2,6 +2,30 @@
   "schema": 1,
   "runtimes": [
     {
+      "id": "dlssg-sm86-0.3.1-candidate",
+      "name": "DLSS Frame Generation SM86 0.3.1 candidate",
+      "backend": "dlssg",
+      "version": "0.3.1-117faf5c",
+      "source": "https://github.com/sdli1995/dlssg_for_sm86",
+      "source_url": "https://github.com/sdli1995/dlssg_for_sm86/commit/117faf5c70333b34160f5d21d01c222261cc5af1",
+      "artifact_url": null,
+      "sha256": null,
+      "size_bytes": null,
+      "archive_type": "files",
+      "allowlist": ["version.dll", "dlssg_sm86.ini"],
+      "destination": "dlssg/candidate-0.3.1",
+      "policy": "UPSTREAM_DOWNLOAD",
+      "channel": "candidate",
+      "license_name": "GPLv3 source ancestry plus separate NVIDIA/third-party binary terms",
+      "redistributable": false,
+      "direct_user_download": true,
+      "files": [
+        {"path": "version.dll", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/117faf5c70333b34160f5d21d01c222261cc5af1/version.dll", "sha256": "C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2", "size_bytes": 15667520},
+        {"path": "dlssg_sm86.ini", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/117faf5c70333b34160f5d21d01c222261cc5af1/dlssg_sm86.ini", "sha256": "FD7F0722194E6E8D8C085327D9826EFFB411925A69A5E7549D70EFF26A9F18B5", "size_bytes": 581}
+      ],
+      "constraints": {"multipliers": [2, 3, 4], "status": "candidate; C55 compatibility not independently exercised"}
+    },
+    {
       "id": "dlssg-legacy-reference",
       "name": "DLSS Frame Generation legacy reference",
       "backend": "dlssg",

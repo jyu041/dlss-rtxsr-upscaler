@@ -182,6 +182,14 @@ def test_dlssg_backend_discovers_managed_runtime_when_no_override(tmp_path, monk
     assert backend.configuration.official_runtime_dir == (tmp_path / "official").resolve()
 
 
+def test_dlssg_backend_candidate_profile_is_explicit(tmp_path, monkeypatch):
+    from src.backends import dlssg
+    monkeypatch.delenv("DLSSG_COMMUNITY_RUNTIME", raising=False)
+    monkeypatch.setattr(dlssg, "MANAGED_CANDIDATE_RUNTIME", tmp_path / "candidate" / "version.dll")
+    backend = dlssg.DLSSGBackend(runtime_profile="candidate-0.3.1")
+    assert backend.configuration.community_runtime == (tmp_path / "candidate" / "version.dll").resolve()
+
+
 def test_ui_has_no_redundant_processing_or_sr_workflow():
     source = open("src/ui/app.py", encoding="utf-8").read()
     assert 'label="Processing order"' not in source

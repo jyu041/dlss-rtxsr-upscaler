@@ -30,9 +30,13 @@ class DLSSGBackend(Backend):
         worker: str | Path | None = None,
         community_runtime: str | Path | None = None,
         official_runtime_dir: str | Path | None = None,
+        runtime_profile: str | None = None,
     ):
+        profile = runtime_profile or os.environ.get("DLSSG_RUNTIME_PROFILE", "legacy")
         configured_runtime = community_runtime or os.environ.get("DLSSG_COMMUNITY_RUNTIME")
-        if configured_runtime is None and os.environ.get("DLSSG_RUNTIME_PROFILE", "legacy") == "candidate-0.3.1":
+        if profile not in {"legacy", "candidate-0.3.1"}:
+            raise ValueError(f"Unknown DLSS-G runtime profile: {profile}")
+        if configured_runtime is None and profile == "candidate-0.3.1":
             configured_runtime = MANAGED_CANDIDATE_RUNTIME
         self.configuration = DlssgConfiguration(
             Path(worker or os.environ.get("DLSSG_WORKER_EXE", DEFAULT_WORKER)).expanduser().resolve(),

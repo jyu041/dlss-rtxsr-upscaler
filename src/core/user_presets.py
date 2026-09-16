@@ -17,7 +17,7 @@ _LOCK = threading.RLock()
 RTX_FIELDS = {"mode", "scale", "quality"}
 DLSS_FIELDS = {"scale", "nr_preset", "nr_style", "model_preset", "intensity", "local_tone", "local_structure", "skin_structure", "automatic_mask"}
 DLSS_SR_FIELDS = {"mode", "model_preset"}
-DLSSG_FIELDS = {"community_runtime", "official_runtime_dir", "motion_provider", "depth_mode", "multiplier"}
+DLSSG_FIELDS = {"community_runtime", "official_runtime_dir", "motion_provider", "depth_mode", "multiplier", "runtime_profile"}
 
 
 def _empty() -> dict:
@@ -103,6 +103,10 @@ def _validate(backend: str, values: dict) -> dict:
             raise ValueError("Invalid DLSS-G depth mode")
         if result.get("multiplier", 2) not in {2, 3, 4}:
             raise ValueError("Invalid DLSS-G multiplier")
+        if "runtime_profile" in result:
+            if result["runtime_profile"] not in {"legacy", "candidate-0.3.1"}:
+                raise ValueError("Invalid DLSS-G runtime profile")
+            result["runtime_profile"] = result["runtime_profile"]
         result["multiplier"] = int(result.get("multiplier", 2))
     return result
 

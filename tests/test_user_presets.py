@@ -69,6 +69,10 @@ def test_dlssg_settings_roundtrip_and_validation(tmp_path, monkeypatch):
         user_presets.save_last_used("dlssg", {**values, "depth_mode": "Depth"})
     with pytest.raises(ValueError):
         user_presets.save_last_used("dlssg", {**values, "multiplier": 5})
+    user_presets.save_last_used("dlssg", {**values, "runtime_profile": "candidate-0.3.1"})
+    assert user_presets.load_last_used()["dlssg"]["runtime_profile"] == "candidate-0.3.1"
+    with pytest.raises(ValueError):
+        user_presets.save_last_used("dlssg", {**values, "runtime_profile": "untrusted"})
 
 
 def test_schema_v1_without_dlssg_and_existing_backends_are_preserved(tmp_path, monkeypatch):

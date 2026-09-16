@@ -74,14 +74,20 @@ flowchart LR
 
 ## Quick Start
 
-### 1. Install prerequisites
+### 1. Download and extract the portable package
 
-- Windows 10 or 11 x64
-- NVIDIA GPU with a compatible NVIDIA driver
-- Miniconda or Anaconda
-- FFmpeg and FFprobe available either in `runtime/tools/ffmpeg/` or on `PATH`
+- Download the NVIDIA Video Enhancer portable ZIP from the project release.
+- Extract it into a directory you control.
+- Run `start.bat`; it uses only the Python, FFmpeg, and FFprobe files inside
+  the extracted package.
+- Open the printed localhost URL. Optional Runtime Manager downloads are
+  explicit and occur only when an action is selected.
 
-### 2. Clone and create the environment
+The portable package is the normal user path. It does not require Conda,
+Python, FFmpeg installation, or `PATH` changes. If its base runtime is damaged,
+run `repair.bat`.
+
+### 2. Development checkout
 
 From a Git-enabled terminal:
 
@@ -94,12 +100,12 @@ setup.bat
 ### 3. Launch the local UI
 
 ```bat
-start.bat
+start-dev.bat
 ```
 
 Open the printed localhost URL, upload an owned or synthetic test video, choose one backend, preview a frame or clip, and then render. Start with the defaults shown in the comparison table before tuning a backend.
 
-The detailed installation guide covers NVIDIA VFX, the local DLSS SDK staging path, and optional DLSS 5 approval requirements: [`docs/INSTALL.md`](docs/INSTALL.md).
+The detailed developer setup is documented in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md). NVIDIA VFX, local DLSS SDK staging, and optional DLSS 5 approval requirements are covered in [`docs/INSTALL.md`](docs/INSTALL.md).
 
 ## Requirements By Backend
 
@@ -117,7 +123,7 @@ Backend availability depends on the installed GPU, driver, and exact runtime com
 This project is designed for local, explicit, auditable processing:
 
 - The UI binds to localhost and does not enable Gradio sharing.
-- Proprietary NVIDIA runtimes, model weights, media, and worker packages are never silently downloaded. The specifically validated DLSS SR REL runtime may be bundled under NVIDIA terms; DLSS-G and DLSS5 runtimes remain user-supplied.
+- Proprietary NVIDIA runtimes, model weights, media, and worker packages are never silently downloaded. Explicit Runtime Manager actions may acquire supported optional components; DLSS-G and DLSS5 runtimes remain separately gated and are not claimed to be bundled.
 - User-supplied runtimes are checked against configured provenance and hash rules where required.
 - DLSS 5 requires explicit approval and a firewall outbound block for the worker.
 - Missing, invalid, or unapproved runtimes fail closed with diagnostics.

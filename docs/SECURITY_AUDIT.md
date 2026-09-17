@@ -1,41 +1,54 @@
 # Security and Provenance
 
-The application is a local utility. Its UI binds to localhost, does not enable
-Gradio sharing, and does not silently download or execute external runtimes.
-Backend adapters fail closed when a dependency is missing or unapproved.
+The application is a local utility. Its UI binds to localhost and does not
+enable Gradio sharing. Backend selection is explicit and a failed backend does
+not silently fall back to another processing method.
 
 ## Runtime rules
 
-- NVIDIA VFX, DLSS/NGX, and DLSS5 runtimes must be obtained separately from a
-  legitimate source and remain outside Git.
-- DLSS SR validates the exact SHA256 of the configured `nvngx_dlss.dll` before
-  use and requires a native self-test.
-- DLSS5 validates a user-controlled approval manifest, all required hashes,
-  signed Feature-18 evidence, and an exact enabled Windows Firewall outbound
-  block for the local worker.
-- A changed hash invalidates approval. There is no silent fallback to resize,
-  RTX VSR, or another DLSS mode.
-- Do not place proprietary DLLs, model weights, media, approval manifests, or
-  generated logs in tracked paths.
+- Normal `setup.bat` may download supported runtime components automatically
+  when a stable public HTTPS upstream source is available.
+- Project-owned binaries are obtained from this project's public GitHub release.
+  Third-party binaries are downloaded directly from their upstream projects;
+  this repository does not re-host the external DLSS-G or DLSS 5 archives.
+- Stable release digests and pinned file identities are verified automatically
+  where available. These are implementation integrity checks, not manual user
+  approval requirements.
+- DLSS SR still performs its native functional self-test before being considered
+  ready.
+- DLSS 5 no longer requires a user-created approval manifest or a mandatory
+  Windows Firewall rule. Its runtime must be structurally complete and must pass
+  the local Feature-18 functional self-test for the exact installed runtime.
+- The DLSS 5 backend continues to reject output when the runtime does not provide
+  verified Feature-18 execution or falls back to the native/non-neural path.
+- An outbound firewall block for the third-party DLSS 5 worker is optional. Its
+  presence may be reported in diagnostics, but it is not a readiness gate.
+- Do not commit proprietary/community runtime binaries, model weights, personal
+  media, generated runtime state, or diagnostic logs to the source repository.
 
 ## Public references
 
-The only retained source submodule is
+The retained source submodule is
 [Blueforcer/ComfyUI-DLSS5-Enhancer](https://github.com/Blueforcer/ComfyUI-DLSS5-Enhancer),
-pinned to commit `796ed5927a202ba50b5c929cd08e16b365041162`. Only its generic
-`dlss5` protocol/session/settings/motion/diagnostic code is used; ComfyUI is
-not installed or modified.
+pinned to commit `796ed5927a202ba50b5c929cd08e16b365041162`.
+Its protocol/session/settings/motion/diagnostic code is used as the client for
+the compatible Visual Enhancer v3 runtime.
 
-The official public [NVIDIA Streamline](https://github.com/NVIDIA-RTX/Streamline)
-SDK may be staged locally for development, but its normal public 2.12.0
-package does not establish the required Feature-1004/DLSS NR plugin. It is
-ignored and is not redistributed. The existing unsigned `nvngx_dlssnr.dll`
-must not be used.
+The standard DLSS-G production setup downloads the validated legacy SM86
+runtime directly from the pinned upstream `sdli1995/dlssg_for_sm86` commit and
+the official provider directly from NVIDIA's Streamline v2.14.1 release.
+Neither external runtime is re-hosted by this project.
+
+The DLSS 5 v3 runtime is downloaded directly from the upstream Merserk DLSS 5
+Visual Enhancer 3.0 GitHub release. The setup helper validates the published
+archive digest automatically and extracts only the runtime subtree into the
+managed local runtime directory.
 
 ## Review guidance
 
-Before enabling an experimental runtime, record its source, exact hashes,
-Authenticode status, Defender result, and the runtime's applicable license.
-Keep the worker outbound firewall rule enabled and use synthetic or owned
-media for tests. Malware-scan cleanliness does not establish vendor
-provenance or redistribution rights.
+When changing a pinned automatic download, reviewers should confirm the source
+URL, version/commit, applicable license/terms, and any available published
+digest. Functional self-tests remain the final readiness check for native GPU
+backends. Malware-scan cleanliness and a matching hash are useful integrity
+signals but do not, by themselves, establish vendor provenance, compatibility,
+or redistribution rights.

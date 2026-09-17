@@ -1,4 +1,4 @@
-"""Gated adapter for the locally approved DLSS5 protocol client."""
+"""Adapter for the managed DLSS5 protocol client and runtime."""
 
 from __future__ import annotations
 
@@ -17,14 +17,14 @@ from .base import Backend, BackendStatus
 from .dlss5_recompose import compute_working_dimensions, downsample_for_nr, residual_recompose_cpu, validate_nr_working_scale
 
 ROOT = Path(__file__).resolve().parents[2]
-APPROVAL = ROOT / "runtime" / "dlss5-v3" / "approval.json"
-SELFTEST_RESULT = ROOT / "runtime" / "dlss5-v3" / "selftest.json"
-REQUIRED_HASHES = {
-    "worker_sha256": ("nvngx.dll",),
-    "renodx_sha256": ("renodx-dlss5.addon64",),
-    "dlssnr_sha256": ("nvngx_dlssnr.dll",),
-    "dxgi_sha256": ("dxgi.dll",),
-    "dlss_sha256": ("nvngx_dlss.dll",),
+DEFAULT_RUNTIME = ROOT / "runtime" / "dlss5-v3"
+SELFTEST_RESULT = DEFAULT_RUNTIME / "selftest.json"
+REQUIRED_RUNTIME_FILES = {
+    "worker_sha256": "nvngx.dll",
+    "renodx_sha256": "renodx-dlss5.addon64",
+    "dlssnr_sha256": "nvngx_dlssnr.dll",
+    "dxgi_sha256": "dxgi.dll",
+    "dlss_sha256": "nvngx_dlss.dll",
 }
 
 DLSS5_OUTPUT_SCALES = (1.0, 1.5, 1.724, 2.0, 3.0)
@@ -61,37 +61,24 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest().upper()
 
 
-def _approval() -> dict[str, Any] | None:
-    try:
-        data = json.loads(APPROVAL.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return data if isinstance(data, dict) else None
+def runtime_path() -> Path:
+    configured = os.environ.get("DLSS5_RUNTIME_DIR")
+    return Path(configured).expanduser().resolve() if configured else DEFAULT_RUNTIME.resolve()
 
 
-def approval_runtime() -> Path | None:
-    approval = _approval()
-    if not approval or not approval.get("approved") or not approval.get("approved_by_user"):
-        return None
-    configured = Path(str(approval.get("runtime_dir", "")))
-    return (configured if configured.is_absolute() else ROOT / configured).resolve()
-
-
-def _hash_report(runtime: Path, approval: dict[str, Any]) -> tuple[bool, dict[str, str], str]:
-    actual: dict[str, str] = {}
-    for key, names in REQUIRED_HASHES.items():
-        path = runtime / names[0]
+def runtime_fingerprint(runtime: Path) -> dict[str, str]:
+    """Return an automatic cache fingerprint; users never need to approve hashes."""
+    result: dict[str, str] = {}
+    for key, name in REQUIRED_RUNTIME_FILES.items():
+        path = runtime / name
         if not path.is_file():
-            return False, actual, f"Missing required runtime file: {path}"
-        actual[key] = _sha256(path)
-        expected = str(approval.get(key, "")).upper()
-        if actual[key] != expected:
-            return False, actual, f"Hash mismatch for {path.name}: {actual[key]} != {expected}"
-    return True, actual, "Approved runtime hashes match"
+            raise RuntimeError(f"Missing required DLSS5 runtime file: {path}")
+        result[key] = _sha256(path)
+    return result
 
 
 def firewall_status(worker: Path) -> dict[str, Any]:
-    """Inspect, but never change, the worker's Windows Firewall rules."""
+    """Inspect an optional outbound block for diagnostics; it is never a readiness gate."""
     script = (
         "Get-NetFirewallRule | "
         "Where-Object {$_.DisplayName -match 'DLSS5'} | ForEach-Object { "
@@ -111,9 +98,9 @@ def firewall_status(worker: Path) -> dict[str, Any]:
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return {"valid": False, "reason": f"Firewall inspection failed: {exc}", "rules": []}
+        return {"valid": False, "reason": f"Firewall inspection unavailable: {exc}", "rules": []}
     if result.returncode:
-        return {"valid": False, "reason": result.stderr.strip() or "Firewall inspection failed", "rules": []}
+        return {"valid": False, "reason": result.stderr.strip() or "Firewall inspection unavailable", "rules": []}
     try:
         parsed = json.loads(result.stdout) if result.stdout.strip() else []
     except ValueError:
@@ -129,7 +116,7 @@ def firewall_status(worker: Path) -> dict[str, Any]:
         and rule.get("enabled") == "True"
         and rule.get("program_exact")
     ]
-    return {"valid": bool(outbound), "reason": "Outbound worker block verified" if outbound else "No exact enabled outbound block rule", "rules": rules}
+    return {"valid": bool(outbound), "reason": "Optional outbound worker block present" if outbound else "No optional outbound worker block configured", "rules": rules}
 
 
 def _client_root() -> Path:
@@ -179,23 +166,22 @@ def _validate_feature_report(session, feature: dict[str, Any] | None = None, tel
 
 class DLSS5Backend(Backend):
     def __init__(self):
-        self.runtime = approval_runtime()
+        candidate = runtime_path()
+        self.runtime: Path | None = candidate if candidate.is_dir() else None
         self.available = False
         self.reason = "No runtime"
         self._hashes: dict[str, str] = {}
-        self._firewall: dict[str, Any] = {"valid": False, "rules": []}
+        self._firewall: dict[str, Any] = {"valid": False, "reason": "Not inspected", "rules": []}
         self._selftest_failed = False
         if self.runtime is None:
-            self.reason = "Runtime is not approved by the local manifest"
+            self.reason = f"DLSS5 runtime is not installed at {candidate}"
             return
-        approval = _approval() or {}
-        matched, self._hashes, self.reason = _hash_report(self.runtime, approval)
+        try:
+            self._hashes = runtime_fingerprint(self.runtime)
+        except RuntimeError as exc:
+            self.reason = str(exc)
+            return
         self._firewall = firewall_status(self.runtime / "nvngx.dll")
-        if not matched:
-            return
-        if not self._firewall["valid"]:
-            self.reason = self._firewall["reason"]
-            return
         try:
             _client_root()
             from dlss5.paths import RuntimeLayout
@@ -210,32 +196,31 @@ class DLSS5Backend(Backend):
             result = json.loads(SELFTEST_RESULT.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             result = {}
-        self._selftest_failed = bool(result) and not result.get("feature_18_verified", False)
-        if result.get("feature_18_verified") and result.get("hashes") == self._hashes:
+        current_test = result.get("runtime_fingerprint") == self._hashes
+        self._selftest_failed = bool(result) and current_test and not result.get("feature_18_verified", False)
+        if result.get("feature_18_verified") and current_test:
             self.available = True
-            self.reason = "Verified Feature-18 self-test passed; outbound worker block verified"
+            self.reason = "Verified Feature-18 self-test passed"
         else:
-            self.reason = "Approved runtime has not passed the verified Feature-18 self-test"
+            self.reason = "Runtime installed; automatic Feature-18 self-test has not passed for this runtime"
 
     def status(self):
         if self.available:
             state = "EXPERIMENTAL READY"
-        elif self.reason.startswith("Hash mismatch"):
-            state = "HASH MISMATCH"
         elif self.runtime is None:
-            state = "STAGED - NOT APPROVED" if (ROOT / "runtime" / "dlss5-v3" / "approval.json").is_file() else "NO RUNTIME"
+            state = "NO RUNTIME"
         elif self._selftest_failed:
             state = "FAILED SELFTEST"
         elif "self-test" in self.reason:
-            state = "APPROVED - NOT TESTED"
+            state = "INSTALLED - SELFTEST REQUIRED"
         else:
-            state = "FAILED SELFTEST"
+            state = "RUNTIME ERROR"
         return BackendStatus("DLSS 5", self.available, state, self.reason)
 
     def validate_runtime(self) -> dict[str, Any]:
         if self.runtime is None or not self._hashes:
             raise RuntimeError(self.reason)
-        return {"runtime": str(self.runtime), "hashes": self._hashes, "firewall": self._firewall}
+        return {"runtime": str(self.runtime), "runtime_fingerprint": self._hashes, "firewall_advisory": self._firewall}
 
     def selftest(self) -> dict[str, Any]:
         if self.runtime is None:

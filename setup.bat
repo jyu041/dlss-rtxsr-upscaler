@@ -92,10 +92,16 @@ if /I "%NVE_DLSS5_CHOICE%"=="Y" (
     call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\check_setup_network.py --require-download
     if errorlevel 1 (
       echo WARNING: DLSS 5 v3 download was skipped because this shell has no usable setup download path. Other backends remain usable.
-      echo Run setup.bat from a normal network-enabled shell, or set NVE_DLSS5_ARCHIVE to the exact pinned v3.0 ZIP and rerun setup.
+      echo Run setup.bat from a normal network-enabled shell and rerun setup.
     ) else (
-      call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\provision_dlss5_v3.py --yes
-      if errorlevel 1 echo WARNING: DLSS 5 v3 provisioning or Feature-18 validation did not complete. Other backends remain usable; DLSS 5 stays unavailable until its gates pass.
+      set "NVE_DLSS5_MANAGED_ARCHIVE=%~dp0runtime\cache\dlss5-v3\DLSS.5.Visual.Enhancer.v3.0.zip"
+      call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\cache_dlss5_v3_archive.py
+      if errorlevel 1 (
+        echo WARNING: DLSS 5 v3 archive download/cache verification failed. Other backends remain usable.
+      ) else (
+        call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\provision_dlss5_v3.py --yes --archive "%NVE_DLSS5_MANAGED_ARCHIVE%"
+        if errorlevel 1 echo WARNING: DLSS 5 v3 provisioning or Feature-18 validation did not complete. The verified archive remains cached for a later retry.
+      )
     )
   )
 ) else (

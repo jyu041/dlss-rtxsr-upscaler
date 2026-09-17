@@ -1,0 +1,66 @@
+name: validate-dlss5-v3-real
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/validate-dlss5-v3-real.yml'
+      - 'tools/provision_dlss5_v3.py'
+
+jobs:
+  validate-real-archive:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download and validate actual upstream v3 archive
+        shell: pwsh
+        run: |
+          @'
+          import json
+          import tempfile
+          from pathlib import Path
+
+          from tools.provision_dlss5_v3 import (
+              ARCHIVE_SHA256,
+              ARCHIVE_SIZE_BYTES,
+              EXPECTED_RUNTIME_SHA256,
+              authenticode_report,
+              defender_scan,
+              download_archive,
+              extract_verified_runtime,
+              verify_archive,
+              verify_runtime_files,
+          )
+
+          with tempfile.TemporaryDirectory() as td:
+              root = Path(td)
+              archive = root / 'DLSS.5.Visual.Enhancer.v3.0.zip'
+              payload = root / 'payload'
+
+              download_archive(archive)
+              verify_archive(archive)
+              hashes = extract_verified_runtime(archive, payload)
+              assert hashes == EXPECTED_RUNTIME_SHA256, (hashes, EXPECTED_RUNTIME_SHA256)
+              assert verify_runtime_files(payload) == EXPECTED_RUNTIME_SHA256
+
+              auth = authenticode_report(payload)
+              assert auth['completed'] is True
+              assert len(auth['files']) == 5
+
+              scan = defender_scan(payload)
+              assert scan['status'] == 'passed', scan
+
+              print(json.dumps({
+                  'archive_size': archive.stat().st_size,
+                  'archive_sha256': ARCHIVE_SHA256,
+                  'expected_archive_size': ARCHIVE_SIZE_BYTES,
+                  'runtime_hashes': hashes,
+                  'authenticode': auth,
+                  'defender': scan,
+              }, indent=2))
+          '@ | python -

@@ -37,11 +37,19 @@ file must match the previously validated identity exactly:
 | `dxgi.dll` | `0CEE63F9C9F13F3AC909C5B4903F4DBB4B719A7AB3B4F13B0DEAF83C814B94F7` |
 | `nvngx_dlss.dll` | `C85F971CE023C9F3492FC7455F0B01A24BA18EA39636407A846902C4360B0B7E` |
 
-The staged five-file payload is then inspected with Windows
-`Get-AuthenticodeSignature` and scanned with Microsoft Defender using
-`MpCmdRun.exe`. Authenticode is recorded as provenance information because not
-every component is expected to be signed; a clean malware-scan result is
-required for automatic approval.
+The staged five-file payload then receives one Windows Authenticode trust
+observation per file. The provisioner first uses PowerShell
+`Get-AuthenticodeSignature`; if `Microsoft.PowerShell.Security` is unavailable,
+it falls back to the native Windows `WinVerifyTrust` API with cache-only URL
+retrieval. An empty or partial result is an error. Authenticode is recorded as
+provenance information because not every component is expected to be signed;
+it is not used to pretend that unsigned third-party files are signed.
+
+The same payload is scanned with Microsoft Defender using `MpCmdRun.exe`, and a
+clean scan result is required for automatic approval. The exact five file hashes
+are rechecked after Authenticode inspection and again after the Defender scan so
+security tooling or other local changes cannot silently alter the staged files
+between verification and activation.
 
 After those checks pass, the provisioner atomically activates the runtime at:
 
@@ -49,10 +57,12 @@ After those checks pass, the provisioner atomically activates the runtime at:
 runtime/dlss5-v3/
 ```
 
-It then requests Windows elevation to create an enabled **Outbound / Block**
+The exact five file hashes are checked again after activation. The provisioner
+then requests Windows elevation to create an enabled **Outbound / Block**
 firewall rule for the exact installed `nvngx.dll` worker. The application
 independently verifies that exact program-path rule before allowing the backend
-to become ready.
+to become ready, and the provisioner performs another runtime hash check after
+the firewall operation.
 
 Only after the file, scan and firewall gates pass does the provisioner create
 the gitignored local `runtime/dlss5-v3/approval.json`. The approval records the

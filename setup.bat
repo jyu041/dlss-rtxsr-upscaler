@@ -6,7 +6,6 @@ set GRADIO_ANALYTICS_ENABLED=False
 if not defined NVE_CONDA_ENV set "NVE_CONDA_ENV=dlss-rtxsr-upscaler"
 if defined NVE_CONDA_PREFIX (set NVE_CONDA_TARGET=--prefix "%NVE_CONDA_PREFIX%") else (set NVE_CONDA_TARGET=--name "%NVE_CONDA_ENV%")
 if defined NVE_CONDA_PREFIX (if not exist "%NVE_CONDA_PREFIX%\conda-meta\history" (echo NVE_CONDA_PREFIX must point to an existing Conda environment.& exit /b 2)) else (echo(%NVE_CONDA_ENV%| %SystemRoot%\System32\findstr.exe /r /x "[A-Za-z0-9][A-Za-z0-9_.-]*" >nul || (echo NVE_CONDA_ENV must contain only letters, numbers, underscore, period, or hyphen.& exit /b 2))
-where conda >nul 2>nul || (echo Miniconda or Anaconda is required.& exit /b 1)
 
 echo [1/10] Checking setup network/proxy and Conda
 powershell.exe -NoProfile -NonInteractive -Command "$bad=@(); foreach($n in @('HTTP_PROXY','HTTPS_PROXY','ALL_PROXY')){$v=[Environment]::GetEnvironmentVariable($n); if(-not $v){continue}; $candidate=$v; if($candidate -notmatch '://'){$candidate='http://'+$candidate}; try{$u=[Uri]$candidate}catch{continue}; if(($u.Host -in @('127.0.0.1','localhost','::1')) -and $u.Port -eq 9){$bad += ($n+'='+$v)}}; if($bad.Count -gt 0){Write-Host ('NETWORK BLOCKED: setup inherited a local discard proxy: '+($bad -join ', ')); exit 2}"
@@ -15,6 +14,7 @@ if errorlevel 2 (
   echo Run setup.bat from a normal network-enabled terminal. The project will not bypass a sandbox or automation security boundary.
   exit /b 2
 )
+where conda >nul 2>nul || (echo Miniconda or Anaconda is required.& exit /b 1)
 
 echo [2/10] Creating/updating Python environment
 call conda env update %NVE_CONDA_TARGET% -f environment.yml --prune || exit /b 1

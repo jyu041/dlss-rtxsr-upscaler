@@ -1,4 +1,4 @@
-"""Configuration adapter for offline DLSS-G 2X frame interpolation."""
+"""Configuration adapter for offline DLSS-G 2X/3X/4X frame generation."""
 
 from __future__ import annotations
 
@@ -17,7 +17,11 @@ DEFAULT_WORKER = ROOT / "runtime" / "dlssg" / "worker" / "dlssg_sm86_offline.exe
 MANAGED_COMMUNITY_RUNTIME = ROOT / "runtime" / "dlssg" / "legacy" / "version.dll"
 MANAGED_CANDIDATE_RUNTIME = ROOT / "runtime" / "dlssg" / "candidate-0.3.1" / "version.dll"
 MANAGED_OFFICIAL_RUNTIME_DIR = ROOT / "runtime" / "dlssg" / "official"
-DEFAULT_RUNTIME_PROFILE = "candidate-0.3.1"
+# The frozen C55 worker was validated end-to-end with the legacy 5f62ff44
+# direct-host runtime on RTX 3070 Ti, including 2X/3X/4X.  The newer 0.3.1
+# proxy generation is intentionally an opt-in candidate because it does not
+# satisfy the C55 direct-host startup contract.
+DEFAULT_RUNTIME_PROFILE = "legacy"
 
 
 @dataclass(frozen=True)
@@ -55,6 +59,7 @@ class DLSSGBackend(Backend):
 
     def status(self) -> BackendStatus:
         config = self.configuration
+        selected_profile = get_profile(config.runtime_profile)
         missing = []
         if not config.worker.is_file():
             missing.append(f"worker: {config.worker}")
@@ -64,29 +69,45 @@ class DLSSGBackend(Backend):
             missing.append(f"official runtime directory: {config.official_runtime_dir}")
         if missing:
             return BackendStatus("DLSS-G 2X/3X/4X", False, "NOT CONFIGURED", "; ".join(missing))
+
         actual = sha256_file(config.community_runtime)
         if actual != config.expected_runtime_sha256:
             return BackendStatus("DLSS-G 2X/3X/4X", False, "IDENTITY MISMATCH", f"{config.runtime_profile} runtime SHA-256 mismatch")
-        if config.runtime_profile == "candidate-0.3.1":
+
+        if selected_profile.ini_sha256:
             ini = config.community_runtime.with_name("dlssg_sm86.ini")
-            if sha256_file(ini) != get_profile(config.runtime_profile).ini_sha256:
-                return BackendStatus("DLSS-G 2X/3X/4X", False, "IDENTITY MISMATCH", "candidate INI SHA-256 mismatch")
+            if sha256_file(ini) != selected_profile.ini_sha256:
+                return BackendStatus("DLSS-G 2X/3X/4X", False, "IDENTITY MISMATCH", f"{config.runtime_profile} INI SHA-256 mismatch")
+
         worker_hash = sha256_file(config.worker)
         if worker_hash != "C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916":
             return BackendStatus("DLSS-G 2X/3X/4X", False, "IDENTITY MISMATCH", "worker SHA-256 is not the verified C55 identity")
+
+        official_identity = official_runtime_identity(config.official_runtime_dir)
+        if not policy_satisfied(official_identity):
+            return BackendStatus("DLSS-G 2X/3X/4X", False, "IDENTITY MISMATCH", "official provider is absent or does not match the pinned NVIDIA 310.9.1 identity")
+
         if config.runtime_profile == "candidate-0.3.1":
-            official_identity = official_runtime_identity(config.official_runtime_dir)
-            if not policy_satisfied(official_identity):
-                return BackendStatus("DLSS-G 2X/3X/4X", False, "COMPATIBILITY TEST REQUIRED", "official provider is absent or does not match the pinned NVIDIA 310.9.1 policy")
-            expected = current_attestation(runtime_path=config.community_runtime, ini_path=config.community_runtime.with_name("dlssg_sm86.ini"), official_identity=official_identity, worker_path=config.worker)
+            expected = current_attestation(
+                runtime_path=config.community_runtime,
+                ini_path=config.community_runtime.with_name("dlssg_sm86.ini"),
+                official_identity=official_identity,
+                worker_path=config.worker,
+            )
             attestation = load_attestation()
             if not attestation or not is_current(attestation, expected):
-                return BackendStatus("DLSS-G 2X/3X/4X", False, "COMPATIBILITY TEST REQUIRED", "Candidate files are verified, but C55 compatibility has not passed the 2X/3X/4X synthetic test")
+                return BackendStatus(
+                    "DLSS-G 2X/3X/4X",
+                    False,
+                    "COMPATIBILITY TEST REQUIRED",
+                    "The 0.3.1 proxy candidate is not the validated C55 default and requires a current 2X/3X/4X compatibility attestation",
+                )
+
         return BackendStatus(
             "DLSS-G 2X/3X/4X",
             True,
             "VALIDATED",
-            "Offline 2X Frame Generation and 3X/4X Multi Frame Generation using NVIDIA Optical Flow and external Ampere DLSS-G runtime",
+            "Offline 2X Frame Generation and 3X/4X Multi Frame Generation using NVIDIA Optical Flow and the validated Ampere DLSS-G direct-host runtime",
         )
 
     def require_configuration(self) -> DlssgConfiguration:

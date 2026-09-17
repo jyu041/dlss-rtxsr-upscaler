@@ -3,7 +3,7 @@
 ## Current source checkout (recommended)
 
 Use Windows 10 or 11 x64 with a compatible NVIDIA driver, Miniconda or
-Anaconda, FFmpeg/FFprobe with NVENC available on `PATH`, and the Microsoft
+Anaconda, Git, FFmpeg/FFprobe with NVENC available on `PATH`, and the Microsoft
 Visual C++ 2015-2022 Redistributable x64.
 
 Clone the public repository and run:
@@ -15,29 +15,37 @@ setup.bat
 start.bat
 ```
 
-`setup.bat` creates/updates the dedicated `dlss-rtxsr-upscaler` Conda
-environment, installs Python 3.11, Gradio, PyTorch CUDA 12.8, the official
-`nvidia-vfx` package and the other pinned Python dependencies, then verifies
-FFmpeg/FFprobe and requires both `h264_nvenc` and `hevc_nvenc`.
+`setup.bat` is the normal installation path. It creates/updates the dedicated
+`dlss-rtxsr-upscaler` Conda environment, installs Python 3.11, Gradio, PyTorch
+CUDA 12.8, the official `nvidia-vfx` package and the other pinned Python
+dependencies, verifies FFmpeg/FFprobe, and requires both `h264_nvenc` and
+`hevc_nvenc`.
 
-The setup step also explicitly bootstraps the validated project resources that
-used to live only in the private resources repository:
+It then automatically installs every supported runtime component for which the
+project has a stable public download path:
 
-- C55 DLSS-G worker, SHA-256
-  `C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916`
-- DLSS SR host, SHA-256
-  `E23F3CD5BEB5E70001E9950C890027D46F84CEB4439A09CEA67E343AB34A34BB`
-- validated official DLSS SR REL runtime, SHA-256
-  `3975567B8943C53ACCE397F2B72380092F84F162D00B0D2C7D08A1025C563983`
+- the project-owned C55 DLSS-G worker from the public `v0.1.0-beta.2` release;
+- the validated DLSS SR host and official REL `nvngx_dlss.dll` from that same
+  public project release;
+- the validated legacy SM86 DLSS-G `version.dll` and INI directly from the
+  pinned upstream `sdli1995/dlssg_for_sm86` GitHub commit;
+- the pinned NVIDIA DLSS-G 310.9.1 provider directly from NVIDIA's Streamline
+  v2.14.1 GitHub release;
+- the DLSS 5 Visual Enhancer v3.0 runtime directly from its upstream GitHub
+  release.
 
-They are downloaded from this project's public `v0.1.0-beta.2` release through
-the manifest-driven Runtime Manager. The release ZIP is pinned to SHA-256
-`F32F8D9586D3A3006D5E26549D9BAB74DD33E10326157D5AEE4620C9DD0006C8`,
-and extracted files are re-verified before activation. An outside user does
-not need access to `dlss-rtxsr-upscaler-resources`.
+The private `dlss-rtxsr-upscaler-resources` repository is not required by
+outside users. Third-party runtime archives are downloaded from their own
+upstream projects rather than being re-hosted here.
 
-The setup operation is an explicit network action initiated by the user. Normal
-`start.bat` startup does not silently download project or optional runtimes.
+Stable identities and release digests are checked automatically during setup.
+Those checks are internal integrity checks: users do not create approval files,
+copy hashes, or approve each runtime manually.
+
+`setup.bat` also runs the DLSS SR self-test automatically and attempts the DLSS
+5 Feature-18 self-test automatically. A backend-specific download or hardware
+self-test failure produces a warning and leaves only that backend unavailable;
+it does not prevent RTX VSR or the other working backends from being used.
 
 If FFmpeg is not already available, install a reputable full build such as:
 
@@ -61,44 +69,89 @@ validated C55 worker, DLSS SR host, and official DLSS SR REL runtime. Its
 application source predates the current `main` branch, so new users should
 prefer the source-checkout workflow above.
 
-## Backend requirements
+## Backend requirements after setup
 
-RTX VSR needs the compatible official NVIDIA VFX package and an NVIDIA GPU.
-The source setup installs the pinned Python package; the backend remains
-hardware/driver dependent.
+### RTX Video Super Resolution
 
-DLSS SR uses the publicly bootstrapped validated native D3D12 host and official
-REL `nvngx_dlss.dll`. Developers need the NVIDIA SDK headers/libraries only to
-rebuild the host; normal users do not. A first-use local self-test is still
-required:
+RTX VSR needs a compatible NVIDIA GPU/driver and the NVIDIA VFX package. The
+source environment installs the pinned Python package automatically. Backend
+availability remains hardware/driver dependent.
+
+### DLSS Super Resolution
+
+The validated native D3D12 host and official REL runtime are installed
+automatically. The local self-test is also attempted by `setup.bat`. If it did
+not pass, it can be rerun manually for troubleshooting:
 
 ```powershell
 conda run -n dlss-rtxsr-upscaler python tools\check_dlss_sr_readiness.py --selftest
 ```
 
-DLSS Frame Generation receives the validated C55 worker from the public project
-release during setup. The external community and/or official DLSS-G runtime is
-still a separately licensed component and is not silently installed. Inspect
-available managed components with:
+Normal users do not need NVIDIA SDK headers/libraries; those are only required
+to rebuild the native host from source.
+
+### DLSS Frame Generation
+
+The standard validated DLSS-G path is automated. Setup installs:
+
+- the frozen C55 worker;
+- the validated legacy SM86 community runtime directly from its upstream
+  commit;
+- the pinned NVIDIA Streamline provider.
+
+The saved source environment points the application at those managed files and
+uses the validated `legacy` runtime profile by default. No manual DLL copying is
+required for that path.
+
+The newer SM86 0.3.1 runtime remains available as a separate candidate through
+the Runtime Manager and retains its own compatibility-test requirement. It is
+not selected automatically because the older legacy profile is the production
+path already validated with C55.
+
+Runtime inventory and repair commands remain available for troubleshooting:
 
 ```powershell
 conda run -n dlss-rtxsr-upscaler python tools\manage_runtime.py inventory
 ```
 
-The pinned official Streamline provider can be explicitly installed through
-the Runtime Manager. The current SM86 0.3.1 runtime remains a compatibility
-candidate and requires its compatibility attestation. The older validated
-legacy community runtime remains user supplied.
+### DLSS 5 Neural Rendering
 
-DLSS 5 is experimental and optional. It needs the retained generic protocol
-client, a separately obtained local runtime, a user-approved
-`runtime/dlss5-v3/approval.json`, exact hash matches, and the required Windows
-Firewall outbound block. The runtime and model files are not bundled by this
-project.
+DLSS 5 remains experimental, but normal installation no longer requires a
+manual approval manifest, manually copied hashes, or a mandatory Windows
+Firewall rule.
 
-If an optional backend is unavailable, the UI reports the reason and refuses
-that operation. It does not silently resize, switch backends, or download
-replacement files.
+`setup.bat` downloads the compatible Visual Enhancer v3.0 runtime directly from
+its upstream GitHub release into `runtime\dlss5-v3`, then attempts the local
+Feature-18 self-test. If the installed GPU/driver/runtime combination passes,
+the backend becomes `EXPERIMENTAL READY` automatically.
+
+The application still verifies that a render really executed Feature 18 rather
+than silently accepting a fallback. That is a functional correctness check,
+not a user approval step.
+
+An outbound Windows Firewall block for the third-party DLSS 5 worker is
+optional. Users who want one can create it themselves; the application may
+report its presence diagnostically but does not require it for readiness.
+
+If the automatic DLSS 5 download is unavailable, a user who already has a
+compatible Visual Enhancer installation can copy/register its `bin\runtime`
+contents with:
+
+```powershell
+conda run -n dlss-rtxsr-upscaler python tools\bootstrap_dlss5_runtime.py --runtime-dir "D:\path\to\DLSS 5 Visual Enhancer\bin\runtime"
+conda run -n dlss-rtxsr-upscaler python -m src.backends.dlss5_selftest
+```
+
+This is a fallback path, not part of normal setup.
+
+## What still cannot be automated
+
+The project should automate installation whenever a stable public upstream URL
+exists. If a future NVIDIA or third-party component requires an account,
+click-through SDK agreement, vendor portal, or other acquisition flow that
+cannot be scripted reliably, the README and this document will identify that
+specific file and source. Users should not be asked to perform manual runtime
+work merely for provenance bookkeeping.
 
 ## Developer native builds
 
@@ -114,6 +167,6 @@ For the DLSS SR host, place the compatible NVIDIA SDK under
 native\dlss_sr_host\build.bat
 ```
 
-The application is local-only and binds its UI to localhost. For security and
-provenance requirements, see `docs/SECURITY_AUDIT.md`, `docs/THIRD_PARTY.md`,
-and `docs/DLSS5_APPROVAL.md`.
+The application is local-only and binds its UI to localhost. For runtime
+provenance and licensing details, see `docs/SECURITY_AUDIT.md` and
+`docs/THIRD_PARTY.md`.

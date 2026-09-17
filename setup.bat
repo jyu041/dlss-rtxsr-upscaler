@@ -8,14 +8,14 @@ if defined NVE_CONDA_PREFIX (set NVE_CONDA_TARGET=--prefix "%NVE_CONDA_PREFIX%")
 if defined NVE_CONDA_PREFIX (if not exist "%NVE_CONDA_PREFIX%\conda-meta\history" (echo NVE_CONDA_PREFIX must point to an existing Conda environment.& exit /b 2)) else (echo(%NVE_CONDA_ENV%| %SystemRoot%\System32\findstr.exe /r /x "[A-Za-z0-9][A-Za-z0-9_.-]*" >nul || (echo NVE_CONDA_ENV must contain only letters, numbers, underscore, period, or hyphen.& exit /b 2))
 where conda >nul 2>nul || (echo Miniconda or Anaconda is required.& exit /b 1)
 
-echo [1/9] Checking Conda
-echo [2/9] Creating/updating Python environment
+echo [1/10] Checking Conda
+echo [2/10] Creating/updating Python environment
 call conda env update %NVE_CONDA_TARGET% -f environment.yml --prune || exit /b 1
 
-echo [3/9] Checking Python packages
+echo [3/10] Checking Python packages
 call conda run --no-capture-output %NVE_CONDA_TARGET% python -m pip check || exit /b 1
 
-echo [4/9] Checking FFmpeg/NVENC
+echo [4/10] Checking FFmpeg/NVENC
 set "NVE_FFMPEG=%~dp0runtime\tools\ffmpeg\ffmpeg.exe"
 if not exist "%NVE_FFMPEG%" set "NVE_FFMPEG=ffmpeg"
 set "NVE_FFPROBE=%~dp0runtime\tools\ffmpeg\ffprobe.exe"
@@ -24,7 +24,7 @@ if not exist "%NVE_FFPROBE%" set "NVE_FFPROBE=ffprobe"
 "%NVE_FFPROBE%" -version >nul 2>nul || (echo FFprobe was not found in runtime\tools\ffmpeg or on PATH. Install a compatible build or provide the bundled runtime.& exit /b 1)
 "%NVE_FFMPEG%" -hide_banner -encoders 2>nul | findstr /r /c:"h264_nvenc" /c:"hevc_nvenc" >nul || (echo FFmpeg lacks h264_nvenc/hevc_nvenc. Provide a full compatible build.& exit /b 1)
 
-echo [5/9] Installing verified public project runtimes
+echo [5/10] Installing verified public project runtimes
 set "NVE_BOOTSTRAP_ARCHIVE=%TEMP%\NVIDIA-Video-Enhancer-v0.1.0-beta.2-bootstrap.zip"
 call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\manage_runtime.py verify project-c55-worker-beta2 >nul 2>nul
 if errorlevel 1 (
@@ -45,7 +45,7 @@ if not exist "%~dp0runtime\dlss-sr-host\nvngx_dlss.dll" (echo DLSS SR runtime bo
 if not exist "%~dp0native\dlssg_sm86_offline\bin" mkdir "%~dp0native\dlssg_sm86_offline\bin" || exit /b 1
 copy /y "%DLSSG_WORKER_EXE%" "%~dp0native\dlssg_sm86_offline\bin\dlssg_sm86_offline.exe" >nul || exit /b 1
 
-echo [6/9] Installing managed DLSS-G provider and compatibility runtime
+echo [6/10] Installing managed DLSS-G provider and compatibility runtime
 set "NVE_DLSSG_PROVIDER_ARCHIVE=%TEMP%\NVIDIA-Streamline-v2.14.1.zip"
 call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\manage_runtime.py verify dlssg-official-provider-310.9.1 >nul 2>nul
 if errorlevel 1 (
@@ -66,16 +66,33 @@ set "DLSSG_OFFICIAL_RUNTIME_DIR=%~dp0runtime\dlssg\official"
 if not exist "%DLSSG_COMMUNITY_RUNTIME%" (echo Managed DLSS-G compatibility runtime was not installed correctly.& exit /b 1)
 if not exist "%DLSSG_OFFICIAL_RUNTIME_DIR%\nvngx_dlssg.dll" (echo Managed NVIDIA DLSS-G provider was not installed correctly.& exit /b 1)
 
-echo [7/9] Running backend validation
+echo [7/10] Optional managed DLSS 5 v3 provisioning
+set "NVE_DLSS5_CHOICE="
+if /I "%NVE_SETUP_DLSS5%"=="1" set "NVE_DLSS5_CHOICE=Y"
+if /I "%NVE_SETUP_DLSS5%"=="0" set "NVE_DLSS5_CHOICE=N"
+if not defined NVE_DLSS5_CHOICE (
+  echo DLSS 5 v3 is experimental and requires an explicit local approval, malware scan, firewall block, and hardware self-test.
+  choice /C YN /N /M "Provision the pinned validated DLSS 5 v3 runtime now? [Y/N] "
+  if errorlevel 2 (set "NVE_DLSS5_CHOICE=N") else (set "NVE_DLSS5_CHOICE=Y")
+)
+if /I "%NVE_DLSS5_CHOICE%"=="Y" (
+  echo The DLSS 5 provisioner may show a Windows UAC prompt to create the exact outbound worker firewall rule.
+  call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\provision_dlss5_v3.py --yes
+  if errorlevel 1 echo WARNING: DLSS 5 v3 provisioning or Feature-18 validation did not complete. Other backends remain usable; DLSS 5 stays unavailable until its gates pass.
+) else (
+  echo Skipping optional DLSS 5 v3 provisioning. You can run tools\provision_dlss5_v3.py later.
+)
+
+echo [8/10] Running backend validation
 call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\check_dlss_sr_readiness.py --selftest
 if errorlevel 1 echo WARNING: DLSS SR self-test did not pass on this machine. The verified files remain installed and no manual path configuration is required.
 call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\validate_dlssg_candidate.py --official "%DLSSG_OFFICIAL_RUNTIME_DIR%"
 if errorlevel 1 echo WARNING: DLSS-G compatibility validation did not pass on this machine. The managed files remain installed and no manual path configuration is required.
 
-echo [8/9] Running diagnostics
+echo [9/10] Running diagnostics
 call conda run --no-capture-output %NVE_CONDA_TARGET% python -m src.core.diagnostics || exit /b 1
 
-echo [9/9] Saving source environment
+echo [10/10] Saving source environment
 if not exist config mkdir config
 >"config\source_env.bat" echo @echo off
 if defined NVE_CONDA_PREFIX (>>"config\source_env.bat" echo set "NVE_CONDA_PREFIX=%NVE_CONDA_PREFIX%") else (>>"config\source_env.bat" echo set "NVE_CONDA_ENV=%NVE_CONDA_ENV%")
@@ -88,4 +105,4 @@ echo.
 echo Environment ready: %NVE_CONDA_ENV%
 echo C55, DLSS SR, and the managed DLSS-G provider/runtime are installed from pinned public sources.
 echo Normal use does not require downloading backend DLLs manually or entering runtime paths in the UI.
-echo DLSS 5 remains experimental and separately gated until its execution runtime is promoted to a validated managed component.
+echo DLSS 5 v3 can also be provisioned from its pinned upstream release through the explicit setup opt-in; it remains experimental and fail-closed behind hash, scan, firewall, and Feature-18 self-test gates.

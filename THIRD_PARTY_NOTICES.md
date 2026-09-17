@@ -59,7 +59,18 @@ recorded public upstream URLs, verifies the recorded hashes/sizes, and places
 them in the local managed runtime directory. Their upstream licenses and terms
 continue to apply.
 
-DLSS 5 execution runtimes remain separately gated and are not automatically
-promoted from static research candidates.
+The optional DLSS 5 v3 provisioner follows the same non-redistribution model.
+After explicit user opt-in it downloads `DLSS.5.Visual.Enhancer.v3.0.zip`
+directly from the public `Merserk/dlss5-visual-enhancer` v3.0 release, verifies
+the pinned release archive and the five exact runtime-file hashes, and keeps
+only the files required by the retained Feature-18 protocol client. The source
+repository's MIT license does not relicense those packaged NVIDIA, ReShade,
+RenoDX, or project-specific prebuilt runtime files. Their controlling licenses
+and distribution terms continue to apply. The setup flow records Authenticode
+observations, requires a clean Microsoft Defender scan for automatic approval,
+and does not copy these binaries into this Git repository or a project release.
+
+The newer DLSS 5 Neuroframe v9 release remains a separate static-only research
+candidate and is not substituted for the validated v3 execution path.
 
 FFmpeg/FFprobe and Python dependencies retain their own upstream licenses.

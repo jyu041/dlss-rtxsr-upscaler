@@ -77,6 +77,15 @@ def test_setup_bootstraps_managed_resources_and_persists_canonical_paths():
     assert "dlss-rtxsr-upscaler-resources" not in setup
 
 
+def test_setup_offers_fail_closed_managed_dlss5_v3_provisioning():
+    setup = (ROOT / "setup.bat").read_text(encoding="utf-8")
+    assert "tools\\provision_dlss5_v3.py --yes" in setup
+    assert "NVE_SETUP_DLSS5" in setup
+    assert "choice /C YN" in setup
+    assert "Windows UAC" in setup
+    assert "hash, scan, firewall, and Feature-18 self-test gates" in setup
+
+
 def test_manifest_json_has_no_private_bootstrap_dependency():
     data = json.loads(MANIFEST.read_text(encoding="utf-8"))
     serialized = json.dumps(data)

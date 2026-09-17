@@ -29,14 +29,14 @@ The backends are selected explicitly. If a required runtime is missing, incompat
 | **RTX Video Super Resolution** | Ordinary video, compression artifacts, practical cleanup | 2× · ULTRA | Python/VFX runtime installed by `setup.bat` |
 | **DLSS Super Resolution** | Temporal super resolution through a native D3D12 host | Quality · Default model | Host/runtime installed and self-test attempted by `setup.bat` |
 | **DLSS Frame Generation** | Temporal interpolation through the DLSS-G worker | 2× / 3× / 4× | Worker + pinned compatibility runtime + NVIDIA provider installed and validated by `setup.bat` |
-| **DLSS 5 Neural Rendering** | CGI-like or AI-generated content where reinterpretation is acceptable | 1× native · Natural | Experimental; separate approval/runtime gate remains |
+| **DLSS 5 Neural Rendering** | CGI-like or AI-generated content where reinterpretation is acceptable | 1× native · Natural | Experimental; optional managed v3 provisioning with explicit approval, firewall, and Feature-18 self-test gates |
 
 ### What each one does
 
 - **RTX VSR** reconstructs and cleans up conventional video through NVIDIA's RTX Video SDK.
 - **DLSS SR** runs standalone NVIDIA NGX DLSS Super Resolution with DIS optical-flow guidance. It is not a game integration and does not receive engine motion vectors.
 - **DLSS-G** generates intermediate frames from consecutive decoded frames using NVIDIA Optical Flow, the project C55 worker, a pinned SM86 compatibility runtime, and the pinned official NVIDIA provider. It is frame generation, not an upscaler.
-- **DLSS 5** uses a separately approved local Feature-18 worker. It is a neural rendering experiment, not a conventional detail-preserving upscaler; faces, materials, and lighting may be reinterpreted.
+- **DLSS 5** uses the validated experimental v3 Feature-18 worker when the user explicitly opts into provisioning and all identity, malware-scan, firewall, and self-test gates pass. It is a neural rendering experiment, not a conventional detail-preserving upscaler; faces, materials, and lighting may be reinterpreted.
 
 ## Highlights
 
@@ -48,6 +48,7 @@ The backends are selected explicitly. If a required runtime is missing, incompat
 - Saved settings and presets for each backend
 - Manifest-driven runtime downloads with pinned URLs, hashes, destinations, and validation gates
 - Normal RTX VSR, DLSS SR, and DLSS-G use does not require manually downloading backend DLLs or entering executable paths in the UI
+- DLSS 5 v3 can be provisioned from the same setup flow after an explicit opt-in; the user is not asked to hand-copy DLLs, calculate hashes, author `approval.json`, or create the firewall rule manually
 - No backend fallback, silent runtime downloads at application startup, or unapproved proprietary binary substitution
 
 ## Architecture
@@ -70,7 +71,7 @@ flowchart LR
     K[setup.bat managed runtimes<br/>pinned + hash verified] -. gates .-> E
     K -. gates .-> F
     K -. gates .-> G
-    M[Experimental user approval] -. gates .-> H
+    M[Optional DLSS5 v3 provisioner<br/>hash + Defender + firewall + self-test] -. gates .-> H
 ```
 
 ## Quick Start
@@ -107,13 +108,14 @@ start.bat
 4. downloads and verifies the project-owned C55 DLSS-G worker and validated DLSS SR host/runtime from the public `v0.1.0-beta.2` release;
 5. downloads the pinned SM86 0.3.1 DLSS-G compatibility runtime from its public upstream source;
 6. downloads the pinned official NVIDIA DLSS-G provider from the public Streamline release;
-7. stores those components in canonical project-managed `runtime/` locations;
-8. attempts the DLSS SR self-test and bounded DLSS-G 2X/3X/4X compatibility validation; and
-9. writes `config/source_env.bat` so `start.bat` uses the managed runtime locations automatically.
+7. optionally provisions the validated experimental DLSS 5 v3 runtime after explicit user consent, including pinned archive/file verification, Authenticode inspection, a required Microsoft Defender scan, an exact outbound firewall block, local approval generation, and the synthetic Feature-18 self-test;
+8. attempts the DLSS SR self-test and bounded DLSS-G 2X/3X/4X compatibility validation;
+9. runs diagnostics; and
+10. writes `config/source_env.bat` so `start.bat` uses the managed runtime locations automatically.
 
-All downloaded managed components are checked against source-controlled identity policy before activation. `setup.bat` is an explicit user-initiated network action; ordinary `start.bat` startup does not silently download or replace runtime files.
+All downloaded managed components are checked against source-controlled identity policy before activation. `setup.bat` is an explicit user-initiated network action; ordinary `start.bat` startup does not silently download or replace runtime files. DLSS 5 v3 is additionally opt-in because it remains experimental and its worker is executed only after the extra local security gates pass.
 
-If a hardware validation fails, setup keeps the verified files installed and reports the backend as unavailable/needs validation rather than asking the user to browse for a DLL. The Runtime Manager remains available for inspection, repair, updates, and experimental components.
+If a hardware validation fails, setup keeps the other verified backends usable and reports the affected backend as unavailable/needs validation rather than asking the user to browse for a DLL. The Runtime Manager remains available for inspection, repair, updates, and experimental components.
 
 Open the printed localhost URL, upload an owned or synthetic test video, choose one backend, preview a frame or clip, and then render. The UI prefers a ready RTX VSR backend for a fresh session instead of defaulting to experimental DLSS 5.
 
@@ -130,7 +132,7 @@ The detailed setup is documented in [`docs/INSTALL.md`](docs/INSTALL.md). Develo
 | RTX VSR | Compatible GPU/driver; the pinned NVIDIA VFX Python package is installed by setup |
 | DLSS SR | Compatible GPU/driver; host/runtime are installed automatically and setup attempts the local self-test |
 | DLSS-G | Compatible GPU/driver; C55, SM86 compatibility runtime, and official NVIDIA provider are installed automatically and setup attempts the bounded compatibility validation |
-| DLSS 5 | Retained protocol client, separately approved execution runtime, exact hashes, signed Feature-18 evidence, and the required Windows Firewall outbound block |
+| DLSS 5 | Explicit opt-in to the managed v3 provisioner; setup verifies the pinned upstream runtime, requires a clean Defender scan, installs/verifies the outbound worker block, writes local approval, and runs the Feature-18 self-test |
 
 Backend availability depends on the installed GPU, driver, and exact runtime combination. RTX 30/40/50-series hardware may expose different capabilities; DLSS 5 support must not be inferred from community experiments alone. See [`docs/DLSS5_APPROVAL.md`](docs/DLSS5_APPROVAL.md) for the approval contract.
 
@@ -151,7 +153,14 @@ runtime/
 │   │   └── dlssg_sm86.ini
 │   └── official/
 │       └── nvngx_dlssg.dll
-└── ...
+└── dlss5-v3/                 # only when the user explicitly opts in
+    ├── nvngx.dll
+    ├── renodx-dlss5.addon64
+    ├── nvngx_dlssnr.dll
+    ├── dxgi.dll
+    ├── nvngx_dlss.dll
+    ├── approval.json         # local, gitignored
+    └── selftest.json         # local, gitignored after a successful test
 ```
 
 Advanced environment-variable overrides remain supported for development and validation, but they are not part of the normal user workflow.
@@ -162,10 +171,10 @@ This project is designed for local, explicit, auditable processing:
 
 - The UI binds to localhost and does not enable Gradio sharing.
 - `setup.bat` explicitly retrieves pinned managed components from their recorded public sources and verifies archive/file identities before activation.
-- The project does **not** redistribute the externally licensed DLSS-G compatibility/provider files in the Git repository; setup downloads them directly from their recorded upstream sources on the user's explicit request.
+- The project does **not** redistribute the externally licensed DLSS-G compatibility/provider files or DLSS 5 v3 runtime archive in the Git repository; setup downloads them directly from their recorded public upstream sources after the relevant user action.
+- DLSS 5 v3 provisioning is opt-in and additionally requires exact five-file hashes, Authenticode inspection, a clean Microsoft Defender scan, a verified exact outbound firewall block for the worker, a local approval manifest, and successful Feature-18 self-test evidence.
 - Ordinary application startup does not silently fetch or replace runtime files.
-- DLSS 5 requires explicit approval and a firewall outbound block for the worker.
-- Missing, invalid, incompatible, or unapproved runtimes fail closed with diagnostics.
+- Missing, invalid, incompatible, modified, or unapproved runtimes fail closed with diagnostics.
 - The application does not silently resize, sharpen, switch backends, or fetch replacement runtime files.
 
 Read the full audit in [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md).
@@ -176,6 +185,8 @@ Read the full audit in [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md).
 - DLSS SR uses estimated optical flow rather than engine-provided motion vectors and may fail around cuts, occlusion, hair, and transparency.
 - DLSS-G compatibility validation is hardware/runtime dependent; verified files alone do not guarantee that a given GPU/driver combination passes the bounded test.
 - DLSS 5 is experimental, hardware- and runtime-dependent, and may alter semantic content.
+- The currently validated RTX 3070-family/Ampere v3 path is restricted to 1.0× output; higher v3 output scales remain blocked because the tested pairing reproducibly fell back with NGX `InvalidParameter (0xBAD00005)`.
+- The newer Neuroframe v9 package remains static-only research and is not substituted for the validated v3 Feature-18 execution path.
 - Performance and output quality vary substantially by source media, codec, resolution, driver, and backend runtime.
 - NVIDIA runtimes and community runtime files remain subject to their own licenses and are not covered by this repository's MIT license.
 
@@ -199,6 +210,7 @@ native/dlss_sr_host/    Standalone D3D12 DLSS SR host
 tests/                  Deterministic and explicit hardware tests
 docs/                   Installation, architecture, security, and approval notes
 third_party/            Retained protocol dependency and local SDK staging area
+tools/provision_dlss5_v3.py  Explicit managed DLSS 5 v3 provisioning/security gate
 setup.bat               Conda + managed runtime provisioning
 start.bat               Local UI launcher
 ```
@@ -225,7 +237,7 @@ This project uses the following software and technologies; acknowledgement does 
 - OpenCV for image and frame processing
 - PyTorch for tensor and CUDA operations
 
-Beta packaging may redistribute only the specifically validated DLSS SR application host and official REL runtime under the applicable NVIDIA terms. The source repository does not redistribute the managed external DLSS-G compatibility/provider archives; `setup.bat` retrieves the pinned files directly from their public upstream sources. DLSS5 execution runtimes and model files remain separately gated.
+Beta packaging may redistribute only the specifically validated DLSS SR application host and official REL runtime under the applicable NVIDIA terms. The source repository does not redistribute the managed external DLSS-G compatibility/provider archives or the DLSS 5 v3 release archive; `setup.bat` retrieves pinned files directly from their public upstream sources after explicit user action. The v9 Neuroframe runtime remains separately gated as static-only research.
 
 ## License
 

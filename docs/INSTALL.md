@@ -37,7 +37,8 @@ pinned Python dependencies, then verifies FFmpeg/FFprobe and requires both
 
 After the machine prerequisites are present, normal users should not need to
 visit another repository to collect backend DLLs/executables, copy files into
-project folders, or enter absolute runtime paths in the UI.
+project folders, or enter absolute runtime paths in the UI. DLSS 5 v3 remains
+experimental, so setup asks for an explicit opt-in before provisioning it.
 
 ## Managed runtime provisioning
 
@@ -116,18 +117,63 @@ RTX VSR needs the compatible official NVIDIA VFX package and an NVIDIA GPU. The
 source setup installs the pinned Python package; final availability remains
 hardware/driver dependent.
 
-### DLSS 5
+### DLSS 5 v3
 
-DLSS 5 remains an experimental exception to the zero-manual-runtime contract.
-The current execution backend still requires a separately approved Feature-18
-runtime, exact hash matches, the local approval contract, a verified self-test,
-and the required Windows Firewall outbound block. The repository has pinned
-static Neuroframe research components, but they are not yet promoted to the
-validated execution runtime used by the main DLSS 5 backend.
+DLSS 5 remains experimental, but the validated v3 Feature-18 path no longer
+requires a user to browse for DLLs, copy files manually, calculate hashes, hand
+write `approval.json`, or create the firewall rule by hand.
 
-Until that provenance/execution boundary is resolved, setup does not pretend the
-DLSS 5 backend is turnkey and does not silently substitute a different runtime.
-See `docs/DLSS5_APPROVAL.md`.
+During `setup.bat`, the user is asked whether to provision DLSS 5 v3. Choosing
+Yes runs:
+
+```powershell
+python tools\provision_dlss5_v3.py --yes
+```
+
+The provisioner performs the following fail-closed sequence:
+
+1. downloads `DLSS.5.Visual.Enhancer.v3.0.zip` directly from the public Merserk
+   release;
+2. verifies the complete 466,919,995-byte archive against SHA-256
+   `6F0590D81677484F4ECDFAA5C44FC2A0E1A3835D33EEFC59D656E6C3BCF35F6A`;
+3. validates the whole ZIP namespace for traversal, symlink and
+   case-insensitive collision hazards;
+4. extracts only `nvngx.dll`, `renodx-dlss5.addon64`, `nvngx_dlssnr.dll`,
+   `dxgi.dll`, and `nvngx_dlss.dll`;
+5. verifies every extracted file against the exact v3 identities previously
+   validated by this project;
+6. records Windows Authenticode inspection results and requires a clean
+   Microsoft Defender `MpCmdRun.exe` custom scan;
+7. atomically installs the five files under `runtime/dlss5-v3/`;
+8. requests Windows UAC elevation to create and then independently verify an
+   exact enabled outbound-block firewall rule for `runtime/dlss5-v3/nvngx.dll`;
+9. writes the gitignored local approval manifest with the source, archive,
+   file, scan and firewall evidence; and
+10. runs the existing synthetic Feature-18 self-test.
+
+Only a successful self-test against the same runtime hashes can make the backend
+report `EXPERIMENTAL READY`. If any stage fails, setup continues for RTX VSR,
+DLSS SR and DLSS-G while DLSS 5 remains unavailable.
+
+The setup prompt can be controlled explicitly before launch:
+
+```bat
+set NVE_SETUP_DLSS5=1
+setup.bat
+```
+
+Use `NVE_SETUP_DLSS5=0` to skip the optional DLSS 5 step. A user who already
+has the exact public v3.0 release archive can run the provisioner later with
+`--archive <path>`; the same archive/file/scan/firewall/self-test gates still
+apply.
+
+The currently exercised RTX 3070-family/Ampere v3 path accepts 1.0x DLSS 5
+output. Higher output scales remain blocked for that validated pairing because
+they reproducibly fell back with NGX `InvalidParameter (0xBAD00005)`.
+
+The pinned Neuroframe v9 research candidate remains separate and static-only;
+setup does not substitute v9 for the validated v3 execution path. See
+`docs/DLSS5_APPROVAL.md` for the complete approval and hardware-scope contract.
 
 ## Startup behavior
 
@@ -136,7 +182,7 @@ normal source checkout it loads `config/source_env.bat` and starts the project
 through the Conda environment created by `setup.bat`.
 
 Ordinary startup does not download backend files. Runtime downloads and repairs
-occur only through the explicit setup/Runtime Manager actions.
+occur only through the explicit setup/Runtime Manager/DLSS5 provisioner actions.
 
 For isolated developer or validation runs only, set `NVE_CONDA_ENV` to a
 temporary Conda environment name before running `setup.bat` and `start.bat`.

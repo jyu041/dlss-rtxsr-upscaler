@@ -1,3 +1,5 @@
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -49,7 +51,32 @@ def test_setup_fails_fast_on_discard_proxy_before_conda_update():
     assert "ALL_PROXY" in setup
     assert "127.0.0.1" in setup
     assert "local discard proxy" in setup
+    assert setup.index("HTTP_PROXY") < setup.index("where conda")
     assert setup.index("HTTP_PROXY") < setup.index("conda env update")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="setup.bat validation is Windows-only")
+def test_setup_batch_rejects_discard_proxy_without_reaching_conda():
+    env = os.environ.copy()
+    env["HTTP_PROXY"] = "http://127.0.0.1:9"
+    env["HTTPS_PROXY"] = "http://127.0.0.1:9"
+    env["ALL_PROXY"] = "http://127.0.0.1:9"
+    result = subprocess.run(
+        ["cmd.exe", "/d", "/c", "setup.bat"],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+        check=False,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 2, output
+    assert "NETWORK BLOCKED" in output
+    assert "Run setup.bat from a normal network-enabled terminal" in output
+    assert "[2/10] Creating/updating Python environment" not in output
 
 
 def test_setup_supports_exact_archive_fallback_and_managed_cache():

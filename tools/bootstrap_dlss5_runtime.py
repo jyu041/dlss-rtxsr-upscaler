@@ -42,8 +42,9 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest().upper()
 
 
-def runtime_complete(path: Path = RUNTIME_TARGET) -> bool:
-    return path.is_dir() and all((path / name).is_file() for name in REQUIRED_RUNTIME_FILES)
+def runtime_complete(path: Path | None = None) -> bool:
+    target = RUNTIME_TARGET if path is None else path
+    return target.is_dir() and all((target / name).is_file() for name in REQUIRED_RUNTIME_FILES)
 
 
 def _safe_relative(value: str) -> bool:
@@ -116,7 +117,8 @@ def _extract_runtime(archive_path: Path, staging: Path) -> None:
         raise RuntimeError("DLSS5 archive is missing required runtime files: " + ", ".join(missing))
 
 
-def _activate(staging: Path, destination: Path = RUNTIME_TARGET) -> Path:
+def _activate(staging: Path, destination: Path | None = None) -> Path:
+    destination = RUNTIME_TARGET if destination is None else destination
     destination.parent.mkdir(parents=True, exist_ok=True)
     backup = destination.with_name(destination.name + ".previous")
     if backup.exists():

@@ -82,6 +82,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
+      - name: Install the application dependencies used by normal setup
+        shell: pwsh
+        run: python -m pip install -r requirements-ci.txt
       - name: Run the real provisioner transaction without GPU self-test
         shell: pwsh
         run: python tools\provision_dlss5_v3.py --yes --skip-selftest

@@ -20,5 +20,42 @@ jobs:
         run: python -m pip install -r requirements-ci.txt
       - name: Compile source
         run: python -m compileall -q src tools
+      - name: Verify public bootstrap release
+        shell: pwsh
+        run: |
+          @'
+          import hashlib
+          import tempfile
+          import urllib.request
+          import zipfile
+          from pathlib import Path
+
+          url = "https://github.com/jyu041/dlss-rtxsr-upscaler/releases/download/v0.1.0-beta.2/NVIDIA-Video-Enhancer-v0.1.0-beta.2.zip"
+          archive_sha = "F32F8D9586D3A3006D5E26549D9BAB74DD33E10326157D5AEE4620C9DD0006C8"
+          expected = {
+              "NVIDIA-Video-Enhancer-v0.1.0-beta.2/runtime/dlssg_sm86_offline/dlssg_sm86_offline.exe": "C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916",
+              "NVIDIA-Video-Enhancer-v0.1.0-beta.2/runtime/dlss-sr-host/dlss_sr_host.exe": "E23F3CD5BEB5E70001E9950C890027D46F84CEB4439A09CEA67E343AB34A34BB",
+              "NVIDIA-Video-Enhancer-v0.1.0-beta.2/runtime/dlss-sr-host/nvngx_dlss.dll": "3975567B8943C53ACCE397F2B72380092F84F162D00B0D2C7D08A1025C563983",
+          }
+          with tempfile.TemporaryDirectory() as td:
+              path = Path(td) / "beta2.zip"
+              request = urllib.request.Request(url, headers={"User-Agent": "NVIDIA-Video-Enhancer-CI"})
+              with urllib.request.urlopen(request, timeout=120) as response, path.open("wb") as output:
+                  while chunk := response.read(1024 * 1024):
+                      output.write(chunk)
+              digest = hashlib.sha256(path.read_bytes()).hexdigest().upper()
+              assert digest == archive_sha, (digest, archive_sha)
+              with zipfile.ZipFile(path) as archive:
+                  names = set(archive.namelist())
+                  for member, expected_sha in expected.items():
+                      assert member in names, member
+                      h = hashlib.sha256()
+                      with archive.open(member) as source:
+                          for block in iter(lambda: source.read(1024 * 1024), b""):
+                              h.update(block)
+                      actual = h.hexdigest().upper()
+                      assert actual == expected_sha, (member, actual, expected_sha)
+          print("public bootstrap release verified")
+          '@ | python -
       - name: Run ordinary tests
         run: python -m pytest -q

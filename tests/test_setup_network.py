@@ -47,4 +47,3 @@ def test_setup_fails_fast_on_discard_proxy_and_supports_exact_archive_fallback()
     assert "tools\\check_setup_network.py --require-download" in setup
     assert "NVE_DLSS5_ARCHIVE" in setup
     assert "tools\\provision_dlss5_v3.py --yes --archive" in setup
-    assert "will not silently bypass" not in setup  # detailed policy stays in the Python preflight

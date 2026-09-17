@@ -160,6 +160,7 @@ def test_ui_build_uses_saved_dlssg_controls_without_runtime_paths(tmp_path, monk
     assert "Official NGX runtime directory" not in fields
     assert "Runtime profile" not in fields
     assert fields["Frame multiplier"] == 4
+    assert webui.DEFAULT_DLSSG_PROFILE == "legacy"
 
 
 def test_preview_directory_keeps_recent_playable_clips(tmp_path, monkeypatch):
@@ -170,26 +171,26 @@ def test_preview_directory_keeps_recent_playable_clips(tmp_path, monkeypatch):
     assert created[-1].exists()
 
 
-def test_dlssg_backend_discovers_managed_candidate_when_no_override(tmp_path, monkeypatch):
+def test_dlssg_backend_discovers_managed_legacy_when_no_override(tmp_path, monkeypatch):
     from src.backends import dlssg
     monkeypatch.delenv("DLSSG_COMMUNITY_RUNTIME", raising=False)
     monkeypatch.delenv("DLSSG_OFFICIAL_RUNTIME_DIR", raising=False)
     monkeypatch.delenv("DLSSG_RUNTIME_PROFILE", raising=False)
-    monkeypatch.setattr(dlssg, "MANAGED_CANDIDATE_RUNTIME", tmp_path / "candidate" / "version.dll")
+    monkeypatch.setattr(dlssg, "MANAGED_COMMUNITY_RUNTIME", tmp_path / "legacy" / "version.dll")
     monkeypatch.setattr(dlssg, "MANAGED_OFFICIAL_RUNTIME_DIR", tmp_path / "official")
     backend = dlssg.DLSSGBackend()
-    assert backend.configuration.runtime_profile == "candidate-0.3.1"
-    assert backend.configuration.community_runtime == (tmp_path / "candidate" / "version.dll").resolve()
+    assert backend.configuration.runtime_profile == "legacy"
+    assert backend.configuration.community_runtime == (tmp_path / "legacy" / "version.dll").resolve()
     assert backend.configuration.official_runtime_dir == (tmp_path / "official").resolve()
 
 
-def test_dlssg_backend_still_allows_explicit_legacy_override(tmp_path, monkeypatch):
+def test_dlssg_backend_still_allows_explicit_candidate_override(tmp_path, monkeypatch):
     from src.backends import dlssg
     monkeypatch.delenv("DLSSG_COMMUNITY_RUNTIME", raising=False)
-    monkeypatch.setattr(dlssg, "MANAGED_COMMUNITY_RUNTIME", tmp_path / "legacy" / "version.dll")
-    backend = dlssg.DLSSGBackend(runtime_profile="legacy")
-    assert backend.configuration.runtime_profile == "legacy"
-    assert backend.configuration.community_runtime == (tmp_path / "legacy" / "version.dll").resolve()
+    monkeypatch.setattr(dlssg, "MANAGED_CANDIDATE_RUNTIME", tmp_path / "candidate" / "version.dll")
+    backend = dlssg.DLSSGBackend(runtime_profile="candidate-0.3.1")
+    assert backend.configuration.runtime_profile == "candidate-0.3.1"
+    assert backend.configuration.community_runtime == (tmp_path / "candidate" / "version.dll").resolve()
 
 
 def test_ui_has_no_redundant_processing_or_sr_workflow():

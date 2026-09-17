@@ -12,7 +12,7 @@ except ImportError as exc:
     pytest.skip(f"WebUI dependency is unavailable in this Python environment: {exc}", allow_module_level=True)
 
 from src.ui import app as webui
-from src.ui.app import build, mode_visibility
+from src.ui.app import build, default_mode, mode_visibility
 from src.core import user_presets
 
 
@@ -39,6 +39,7 @@ def test_dlss_sr_validation_is_reachable_before_ready(monkeypatch):
 
     monkeypatch.setattr(webui, "status_html", lambda: "status")
     monkeypatch.setattr(webui, "available_mode_choices", lambda: [("RTX VSR", "RTX VSR only"), ("DLSS 5", "DLSS 5 only")])
+    monkeypatch.setattr(webui, "default_mode", lambda: "RTX VSR only")
     monkeypatch.setattr(webui, "DLSSSRBackend", lambda: type("Backend", (), {"status": lambda self: Status()})())
     ui = build()
     components = ui.config["components"]
@@ -57,6 +58,7 @@ def test_dlss_sr_ready_state_adds_processing_choice(monkeypatch):
         reason = "current attestation"
 
     monkeypatch.setattr(webui, "DLSSSRBackend", lambda: type("Backend", (), {"status": lambda self: Status()})())
+    monkeypatch.setattr(webui, "default_mode", lambda: "RTX VSR only")
     ui = build()
     radios = [item for item in ui.config["components"] if item.get("type") == "radio" and item.get("props", {}).get("elem_id") == "enhancement-selector"]
     assert ("DLSS SR", "DLSS SR only") in radios[0]["props"]["choices"]
@@ -68,6 +70,7 @@ def test_dlss_sr_unavailable_states_are_visible_and_non_actionable(monkeypatch, 
         reason = "exact validated native files are required"
     Status.state = state
     monkeypatch.setattr(webui, "DLSSSRBackend", lambda: type("Backend", (), {"status": lambda self: Status()})())
+    monkeypatch.setattr(webui, "default_mode", lambda: "RTX VSR only")
     ui = build()
     components = ui.config["components"]
     button = next(item for item in components if item.get("type") == "button" and item.get("props", {}).get("value") == "Validate DLSS SR")
@@ -94,6 +97,7 @@ def test_dlss_sr_failed_validation_does_not_enable_processing(monkeypatch):
     assert "IDENTITY MISMATCH" in message
     assert ("DLSS SR", "DLSS SR only") not in update["choices"]
 
+
 def test_gradio_launch_configuration_matches_installed_api():
     blocks_params = inspect.signature(gr.Blocks).parameters
     launch_params = inspect.signature(gr.Blocks.launch).parameters
@@ -103,6 +107,7 @@ def test_gradio_launch_configuration_matches_installed_api():
     assert "analytics_enabled" not in launch_params
     assert "run_history" not in launch_params
     assert build() is not None
+
 
 def test_actual_local_webui_launch():
     process = subprocess.Popen([sys.executable, "app.py"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -137,15 +142,24 @@ def test_enhancement_selector_is_the_single_routing_source():
     assert mode_visibility("DLSS Frame Generation 2X") == (False, False, False, True)
 
 
-def test_ui_build_uses_saved_dlssg_values(tmp_path, monkeypatch):
+def test_default_mode_prefers_ready_rtx_vsr(monkeypatch):
+    class Ready:
+        available = True
+    monkeypatch.setattr(webui, "RTXVSRBackend", lambda: type("Backend", (), {"status": lambda self: Ready()})())
+    assert default_mode() == "RTX VSR only"
+
+
+def test_ui_build_uses_saved_dlssg_controls_without_runtime_paths(tmp_path, monkeypatch):
     settings = tmp_path / "settings.local.json"
     monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
-    user_presets.save_last_used("dlssg", {"community_runtime": "C:/saved/version.dll", "official_runtime_dir": "C:/saved/ngx", "motion_provider": "NVIDIA Optical Flow", "depth_mode": "Constant 0.5"})
+    user_presets.save_last_used("dlssg", {"motion_provider": "NVIDIA Optical Flow", "depth_mode": "Constant 0.5", "multiplier": 4})
+    monkeypatch.setattr(webui, "default_mode", lambda: "RTX VSR only")
     ui = build()
     fields = {component.get("props", {}).get("label"): component.get("props", {}).get("value") for component in ui.config["components"]}
-    assert fields["Community runtime (absolute version.dll path)"] == "C:/saved/version.dll"
-    assert fields["Official NGX runtime directory"] == "C:/saved/ngx"
-    assert fields["Frame multiplier"] == 2
+    assert "Community runtime (absolute version.dll path)" not in fields
+    assert "Official NGX runtime directory" not in fields
+    assert "Runtime profile" not in fields
+    assert fields["Frame multiplier"] == 4
 
 
 def test_preview_directory_keeps_recent_playable_clips(tmp_path, monkeypatch):
@@ -156,38 +170,26 @@ def test_preview_directory_keeps_recent_playable_clips(tmp_path, monkeypatch):
     assert created[-1].exists()
 
 
-def test_dlssg_startup_precedence_saved_then_environment_then_default(tmp_path, monkeypatch):
-    settings = tmp_path / "settings.local.json"
-    monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
-    monkeypatch.setenv("DLSSG_COMMUNITY_RUNTIME", "C:/env/version.dll")
-    monkeypatch.setenv("DLSSG_OFFICIAL_RUNTIME_DIR", "C:/env/ngx")
-    ui = build()
-    fields = {component.get("props", {}).get("label"): component.get("props", {}).get("value") for component in ui.config["components"]}
-    assert fields["Community runtime (absolute version.dll path)"] == "C:/env/version.dll"
-    user_presets.save_last_used("dlssg", {"community_runtime": "C:/saved/version.dll", "official_runtime_dir": "", "motion_provider": "NVIDIA Optical Flow", "depth_mode": "Constant 0.5"})
-    ui = build()
-    fields = {component.get("props", {}).get("label"): component.get("props", {}).get("value") for component in ui.config["components"]}
-    assert fields["Community runtime (absolute version.dll path)"] == "C:/saved/version.dll"
-    assert fields["Official NGX runtime directory"] == ""
-
-
-def test_dlssg_backend_discovers_managed_runtime_when_no_override(tmp_path, monkeypatch):
+def test_dlssg_backend_discovers_managed_candidate_when_no_override(tmp_path, monkeypatch):
     from src.backends import dlssg
     monkeypatch.delenv("DLSSG_COMMUNITY_RUNTIME", raising=False)
     monkeypatch.delenv("DLSSG_OFFICIAL_RUNTIME_DIR", raising=False)
-    monkeypatch.setattr(dlssg, "MANAGED_COMMUNITY_RUNTIME", tmp_path / "legacy" / "version.dll")
+    monkeypatch.delenv("DLSSG_RUNTIME_PROFILE", raising=False)
+    monkeypatch.setattr(dlssg, "MANAGED_CANDIDATE_RUNTIME", tmp_path / "candidate" / "version.dll")
     monkeypatch.setattr(dlssg, "MANAGED_OFFICIAL_RUNTIME_DIR", tmp_path / "official")
     backend = dlssg.DLSSGBackend()
-    assert backend.configuration.community_runtime == (tmp_path / "legacy" / "version.dll").resolve()
+    assert backend.configuration.runtime_profile == "candidate-0.3.1"
+    assert backend.configuration.community_runtime == (tmp_path / "candidate" / "version.dll").resolve()
     assert backend.configuration.official_runtime_dir == (tmp_path / "official").resolve()
 
 
-def test_dlssg_backend_candidate_profile_is_explicit(tmp_path, monkeypatch):
+def test_dlssg_backend_still_allows_explicit_legacy_override(tmp_path, monkeypatch):
     from src.backends import dlssg
     monkeypatch.delenv("DLSSG_COMMUNITY_RUNTIME", raising=False)
-    monkeypatch.setattr(dlssg, "MANAGED_CANDIDATE_RUNTIME", tmp_path / "candidate" / "version.dll")
-    backend = dlssg.DLSSGBackend(runtime_profile="candidate-0.3.1")
-    assert backend.configuration.community_runtime == (tmp_path / "candidate" / "version.dll").resolve()
+    monkeypatch.setattr(dlssg, "MANAGED_COMMUNITY_RUNTIME", tmp_path / "legacy" / "version.dll")
+    backend = dlssg.DLSSGBackend(runtime_profile="legacy")
+    assert backend.configuration.runtime_profile == "legacy"
+    assert backend.configuration.community_runtime == (tmp_path / "legacy" / "version.dll").resolve()
 
 
 def test_ui_has_no_redundant_processing_or_sr_workflow():
@@ -198,6 +200,8 @@ def test_ui_has_no_redundant_processing_or_sr_workflow():
     assert 'gr.Tab("Output")' not in source
     assert 'Load Last Render' in source
     assert 'show_label=False' in source
+    assert "Community runtime (absolute version.dll path)" not in source
+    assert "Official NGX runtime directory" not in source
     assert "2X Frame Generation, 3X Multi Frame Generation, and 4X Multi Frame Generation are hardware-validated" in source
 
 

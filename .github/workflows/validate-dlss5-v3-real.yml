@@ -71,3 +71,59 @@ jobs:
                   'defender': scan,
               }, indent=2))
           '@ | python -
+
+  validate-full-provision:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run the real provisioner transaction without GPU self-test
+        shell: pwsh
+        run: python tools\provision_dlss5_v3.py --yes --skip-selftest
+      - name: Verify activated runtime, approval manifest, and firewall gate
+        shell: pwsh
+        run: |
+          @'
+          import json
+          from tools.provision_dlss5_v3 import (
+              APPROVAL_PATH,
+              ARCHIVE_SHA256,
+              EXPECTED_RUNTIME_SHA256,
+              RUNTIME_DIR,
+              verify_runtime_files,
+          )
+          from src.backends.dlss5 import approval_runtime, firewall_status
+
+          hashes = verify_runtime_files(RUNTIME_DIR)
+          assert hashes == EXPECTED_RUNTIME_SHA256, hashes
+          assert APPROVAL_PATH.is_file(), APPROVAL_PATH
+          approval = json.loads(APPROVAL_PATH.read_text(encoding='utf-8'))
+          assert approval['approved'] is True
+          assert approval['approved_by_user'] is True
+          assert approval['archive_sha256'] == ARCHIVE_SHA256
+          assert approval['malware_scan']['status'] == 'passed'
+          assert approval['authenticode']['completed'] is True
+          assert len(approval['authenticode']['files']) == 5
+          assert approval['firewall']['verified'] is True
+          assert approval_runtime() == RUNTIME_DIR.resolve()
+          firewall = firewall_status(RUNTIME_DIR / 'nvngx.dll')
+          assert firewall['valid'] is True, firewall
+          print(json.dumps({
+              'runtime': str(RUNTIME_DIR),
+              'approval': str(APPROVAL_PATH),
+              'hashes': hashes,
+              'firewall': firewall,
+              'authenticode_tool': approval['authenticode']['tool'],
+          }, indent=2))
+          '@ | python -
+      - name: Cleanup validation firewall rule
+        if: always()
+        shell: pwsh
+        run: |
+          Get-NetFirewallRule -DisplayName 'NVIDIA Video Enhancer DLSS5 v3 outbound block' -ErrorAction SilentlyContinue |
+            Remove-NetFirewallRule -ErrorAction SilentlyContinue

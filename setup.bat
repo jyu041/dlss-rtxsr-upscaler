@@ -77,8 +77,20 @@ if not defined NVE_DLSS5_CHOICE (
 )
 if /I "%NVE_DLSS5_CHOICE%"=="Y" (
   echo The DLSS 5 provisioner may show a Windows UAC prompt to create the exact outbound worker firewall rule.
-  call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\provision_dlss5_v3.py --yes
-  if errorlevel 1 echo WARNING: DLSS 5 v3 provisioning or Feature-18 validation did not complete. Other backends remain usable; DLSS 5 stays unavailable until its gates pass.
+  if defined NVE_DLSS5_ARCHIVE (
+    echo Using the explicitly supplied DLSS 5 v3 archive: %NVE_DLSS5_ARCHIVE%
+    call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\provision_dlss5_v3.py --yes --archive "%NVE_DLSS5_ARCHIVE%"
+    if errorlevel 1 echo WARNING: DLSS 5 v3 provisioning or Feature-18 validation did not complete. Other backends remain usable; DLSS 5 stays unavailable until its gates pass.
+  ) else (
+    call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\check_setup_network.py --require-download
+    if errorlevel 1 (
+      echo WARNING: DLSS 5 v3 download was skipped because this shell is behind a blocked local proxy. Other backends remain usable.
+      echo Run setup.bat from a normal network-enabled shell, or set NVE_DLSS5_ARCHIVE to the exact pinned v3.0 ZIP and rerun setup.
+    ) else (
+      call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\provision_dlss5_v3.py --yes
+      if errorlevel 1 echo WARNING: DLSS 5 v3 provisioning or Feature-18 validation did not complete. Other backends remain usable; DLSS 5 stays unavailable until its gates pass.
+    )
+  )
 ) else (
   echo Skipping optional DLSS 5 v3 provisioning. You can run tools\provision_dlss5_v3.py later.
 )

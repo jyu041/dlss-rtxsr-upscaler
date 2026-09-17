@@ -99,12 +99,17 @@ jobs:
               ARCHIVE_SHA256,
               EXPECTED_RUNTIME_SHA256,
               RUNTIME_DIR,
-              verify_runtime_files,
+              sha256_file,
           )
           from src.backends.dlss5 import approval_runtime, firewall_status
 
-          hashes = verify_runtime_files(RUNTIME_DIR)
+          hashes = {
+              name: sha256_file(RUNTIME_DIR / name)
+              for name in EXPECTED_RUNTIME_SHA256
+          }
           assert hashes == EXPECTED_RUNTIME_SHA256, hashes
+          installed_files = {path.name for path in RUNTIME_DIR.iterdir() if path.is_file()}
+          assert installed_files == set(EXPECTED_RUNTIME_SHA256) | {'approval.json'}, installed_files
           assert APPROVAL_PATH.is_file(), APPROVAL_PATH
           approval = json.loads(APPROVAL_PATH.read_text(encoding='utf-8'))
           assert approval['approved'] is True
@@ -121,6 +126,7 @@ jobs:
               'runtime': str(RUNTIME_DIR),
               'approval': str(APPROVAL_PATH),
               'hashes': hashes,
+              'installed_files': sorted(installed_files),
               'firewall': firewall,
               'authenticode_tool': approval['authenticode']['tool'],
           }, indent=2))

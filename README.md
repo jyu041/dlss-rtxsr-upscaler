@@ -109,3 +109,75 @@ The detailed developer setup is documented in [`docs/DEVELOPMENT.md`](docs/DEVEL
 | DLSS 5 | Retained protocol client, separately obtained runtime, approved manifest, exact hashes, signed Feature-18 evidence, and the required Windows Firewall outbound block |
 
 Backend availability depends on the installed GPU, driver, and exact runtime combination. RTX 30/40/50-series hardware may expose different capabilities; DLSS 5 support must not be inferred from community experiments alone. See [`docs/DLSS5_APPROVAL.md`](docs/DLSS5_APPROVAL.md) for the approval contract.
+
+## Security Model
+
+This project is designed for local, explicit, auditable processing:
+
+- The UI binds to localhost and does not enable Gradio sharing.
+- `setup.bat` explicitly retrieves the pinned project-owned C55 worker and the validated DLSS SR host/runtime from this project's public release. Optional external DLSS-G and DLSS 5 runtimes are never silently downloaded at startup.
+- User-supplied runtimes are checked against configured provenance and hash rules where required.
+- DLSS 5 requires explicit approval and a firewall outbound block for the worker.
+- Missing, invalid, or unapproved runtimes fail closed with diagnostics.
+- The application does not silently resize, sharpen, switch backends, or fetch replacement runtime files.
+
+Read the full audit in [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md).
+
+## Limitations
+
+- The current pipeline targets SDR RGBA video.
+- DLSS SR uses estimated optical flow rather than engine-provided motion vectors and may fail around cuts, occlusion, hair, and transparency.
+- DLSS 5 is experimental, hardware- and runtime-dependent, and may alter semantic content.
+- Performance and output quality vary substantially by source media, codec, resolution, driver, and backend runtime.
+- NVIDIA runtimes and community worker binaries remain subject to their own licenses and are not covered by this repository's MIT license.
+
+## Tested Hardware
+
+Primary development and hardware validation has been performed on:
+
+- Phase 4C / beta.2 validation: NVIDIA GeForce RTX 3070 Ti 8 GB, Windows 11
+  build 26200, NVIDIA driver 610.62
+- Other development testing also includes RTX 3070 where separately documented.
+
+This is a development and validation configuration, not a minimum requirement or a claim of official NVIDIA support for every backend. Backend availability depends on the installed GPU, driver, and exact runtime combination; in particular, this does not establish official DLSS 5 support on RTX 30-series hardware. GPU smoke tests count as validation only when the relevant local runtime is actually present.
+
+For the validation classes and commands, see [`docs/TESTING.md`](docs/TESTING.md). A skipped hardware test is not a successful backend validation.
+
+## Project Structure
+
+```text
+src/                    Python application and video pipelines
+native/dlss_sr_host/    Standalone D3D12 DLSS SR host
+tests/                  Deterministic and explicit hardware tests
+docs/                   Installation, architecture, security, and approval notes
+third_party/            Retained protocol dependency and local SDK staging area
+setup.bat               Conda environment setup
+start.bat               Local UI launcher
+```
+
+## Documentation
+
+- [`docs/INSTALL.md`](docs/INSTALL.md) - installation and backend setup
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - pipeline and host architecture
+- [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md) - security and runtime policy
+- [`docs/DLSS5_APPROVAL.md`](docs/DLSS5_APPROVAL.md) - DLSS 5 provenance and approval
+- [`docs/TESTING.md`](docs/TESTING.md) - deterministic and hardware validation
+- [`docs/THIRD_PARTY.md`](docs/THIRD_PARTY.md) - dependency and retained-source licensing
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) - development and contribution guidelines
+
+## Acknowledgements
+
+This project uses the following software and technologies; acknowledgement does not imply endorsement:
+
+- NVIDIA for RTX Video Super Resolution, NGX DLSS, and related developer technologies
+- The maintainers of the retained [`ComfyUI-DLSS5-Enhancer`](third_party/ComfyUI-DLSS5-Enhancer) protocol client
+- FFmpeg for media decoding, encoding, and muxing
+- Gradio for the local UI
+- OpenCV for image and frame processing
+- PyTorch for tensor and CUDA operations
+
+Beta packaging may redistribute only the specifically validated DLSS SR application host and official REL runtime under the applicable NVIDIA terms. DLSS-G/community runtimes, DLSS5 runtimes, and model files remain user-supplied.
+
+## License
+
+Project-owned source is released under the [MIT License](LICENSE). Third-party components and proprietary runtimes retain their respective licenses. See [`docs/THIRD_PARTY.md`](docs/THIRD_PARTY.md) for the inventory.

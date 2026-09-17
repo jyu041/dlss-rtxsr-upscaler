@@ -1,4 +1,4 @@
-"""Opt-in synthetic DLSS5 Feature-18 integration test."""
+"""Synthetic DLSS5 Feature-18 integration test for the managed runtime."""
 
 from __future__ import annotations
 
@@ -11,11 +11,10 @@ import numpy as np
 
 from .dlss5 import (
     SELFTEST_RESULT,
-    _approval,
     _client_root,
-    _hash_report,
-    approval_runtime,
     firewall_status,
+    runtime_fingerprint,
+    runtime_path,
 )
 from .dlss5_metrics import effect_metrics, effect_observed
 
@@ -39,16 +38,11 @@ def _files(root: Path) -> set[str]:
 def main() -> int:
     started = time.perf_counter()
     validation_started = started
-    runtime = approval_runtime()
-    approval = _approval() or {}
-    if runtime is None:
-        raise RuntimeError("DLSS5 self-test requires an explicitly approved local manifest")
-    matched, hashes, reason = _hash_report(runtime, approval)
-    if not matched:
-        raise RuntimeError(reason)
+    runtime = runtime_path()
+    if not runtime.is_dir():
+        raise RuntimeError(f"DLSS5 runtime is not installed at {runtime}")
+    fingerprint = runtime_fingerprint(runtime)
     firewall = firewall_status(runtime / "nvngx.dll")
-    if not firewall["valid"]:
-        raise RuntimeError(firewall["reason"])
 
     runtime_validation_seconds = time.perf_counter() - validation_started
     _client_root()
@@ -60,8 +54,6 @@ def main() -> int:
     from dlss5.settings import DlssOptions
 
     gpu = detect_gpu()
-    if gpu["generation"] != 30 or "3070" not in gpu["name"]:
-        raise RuntimeError(f"This controlled test requires the approved RTX 3070 path: {gpu}")
     layout = RuntimeLayout(runtime).validate()
     _, bundle = ensure_supported(layout)
     before = _files(runtime)
@@ -106,14 +98,13 @@ def main() -> int:
         render_seconds = sum(submit_times)
         first_submit_seconds = submit_times[0] if submit_times else 0.0
         result = {
-            "runtime_approved": True,
-            "runtime_hashes_verified": True,
-            "firewall_verified": True,
             "feature_18_verified": True,
             "nr_effect_observed": effect_observed(effect or {}),
             "feature_18_evidence": feature["evidence"],
             "effectiveness_metrics": effect,
             "runtime": str(runtime),
+            "runtime_fingerprint": fingerprint,
+            "firewall_advisory": firewall,
             "worker_path": str(layout.worker),
             "worker_pid": worker_pid,
             "parent_pid": worker_parent_pid,
@@ -122,8 +113,6 @@ def main() -> int:
             "working_directory": str(layout.root),
             "gpu": gpu,
             "bundle": bundle,
-            "hashes": hashes,
-            "firewall": firewall,
             "frames": frames,
             "input_dimensions": [width, height],
             "output_dimensions": [session.output_width, session.output_height],

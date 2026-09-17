@@ -43,21 +43,28 @@ the validated host. It remains NVIDIA material under the applicable NVIDIA
 SDK/runtime terms, is not MIT-licensed, and must not be extracted or
 redistributed as a stand-alone runtime.
 
-The older validated community `version.dll` from `sdli1995/dlssg_for_sm86`
-commit `5f62ff44a9c08f9841fa605e7b7160f79ccd2c40` (tested SHA-256
-`C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2`) remains
-user-supplied and is retained only as an advanced legacy profile: its commit
-has GPLv3/proprietary notices but no standalone redistribution grant established
-here.
+The validated C55 direct-host DLSS-G profile uses `version.dll` and
+`dlssg_sm86.ini` from `sdli1995/dlssg_for_sm86` commit
+`5f62ff44a9c08f9841fa605e7b7160f79ccd2c40`. The tested `version.dll` SHA-256
+is `C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2`.
+That upstream commit carries GPLv3/source ancestry plus separate NVIDIA and
+third-party material notices; this repository does not claim a standalone
+redistribution grant for those binaries.
 
-The normal source setup instead uses the separately pinned SM86 0.3.1
-compatibility files and the pinned NVIDIA Streamline DLSS-G provider recorded in
-`src/runtime_manager/manifest.json`. Those external files are **not** committed
-to or redistributed by this source repository. On the user's explicit
-`setup.bat` action, the Runtime Manager downloads them directly from their
-recorded public upstream URLs, verifies the recorded hashes/sizes, and places
-them in the local managed runtime directory. Their upstream licenses and terms
-continue to apply.
+Accordingly, the source repository does **not** commit or redistribute that
+external runtime. On the user's explicit `setup.bat` action, Runtime Manager
+downloads the two exact files directly from their pinned public upstream commit,
+verifies their recorded hashes and sizes, and installs them locally under
+`runtime/dlssg/legacy/`. The `legacy` profile name is retained for identity
+compatibility; it is the normal validated C55 path because it has retained RTX
+3070 Ti 2X/3X/4X evidence.
+
+The pinned NVIDIA Streamline DLSS-G provider is handled through the same
+non-redistribution model: setup downloads it directly from the recorded public
+NVIDIA source and verifies its exact identity before use. The newer SM86 0.3.1
+proxy-generation files remain an explicit experimental candidate in Runtime
+Manager; they are not silently substituted for the validated C55 direct-host
+profile. All upstream licenses and terms continue to apply.
 
 The optional DLSS 5 v3 provisioner follows the same non-redistribution model.
 After explicit user opt-in it downloads `DLSS.5.Visual.Enhancer.v3.0.zip`

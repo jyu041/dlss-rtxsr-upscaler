@@ -43,12 +43,23 @@ the validated host. It remains NVIDIA material under the applicable NVIDIA
 SDK/runtime terms, is not MIT-licensed, and must not be extracted or
 redistributed as a stand-alone runtime.
 
-The community `version.dll` from `sdli1995/dlssg_for_sm86` commit
-`5f62ff44a9c08f9841fa605e7b7160f79ccd2c40` (tested SHA-256
+The older validated community `version.dll` from `sdli1995/dlssg_for_sm86`
+commit `5f62ff44a9c08f9841fa605e7b7160f79ccd2c40` (tested SHA-256
 `C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2`) remains
-user-supplied: its commit has GPLv3/proprietary notices but no standalone
-redistribution grant established here. The official DLSS-G feature runtime is
-also user-supplied. Neither the community runtime nor the official DLSS-G
-runtime is included or automatically downloaded.
+user-supplied and is retained only as an advanced legacy profile: its commit
+has GPLv3/proprietary notices but no standalone redistribution grant established
+here.
+
+The normal source setup instead uses the separately pinned SM86 0.3.1
+compatibility files and the pinned NVIDIA Streamline DLSS-G provider recorded in
+`src/runtime_manager/manifest.json`. Those external files are **not** committed
+to or redistributed by this source repository. On the user's explicit
+`setup.bat` action, the Runtime Manager downloads them directly from their
+recorded public upstream URLs, verifies the recorded hashes/sizes, and places
+them in the local managed runtime directory. Their upstream licenses and terms
+continue to apply.
+
+DLSS 5 execution runtimes remain separately gated and are not automatically
+promoted from static research candidates.
 
 FFmpeg/FFprobe and Python dependencies retain their own upstream licenses.

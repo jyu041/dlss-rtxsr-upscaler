@@ -64,31 +64,46 @@ not need access to `dlss-rtxsr-upscaler-resources`.
 
 ### DLSS Frame Generation
 
-Setup also provisions the normal DLSS-G runtime set through the manifest-driven
+Setup provisions the normal DLSS-G runtime set through the manifest-driven
 Runtime Manager:
 
 - the project C55 worker under `runtime/dlssg/worker/`;
-- the pinned SM86 0.3.1 compatibility runtime under
-  `runtime/dlssg/candidate-0.3.1/`;
-- the pinned official NVIDIA provider from the public Streamline release under
-  `runtime/dlssg/official/`.
+- the validated SM86 direct-host `version.dll` and `dlssg_sm86.ini` from pinned
+  upstream commit `5f62ff44a9c08f9841fa605e7b7160f79ccd2c40` under
+  `runtime/dlssg/legacy/`;
+- the pinned official NVIDIA 310.9.1 DLSS-G provider from the public Streamline
+  release under `runtime/dlssg/official/`.
 
-The external files are not redistributed by the source repository. `setup.bat`
-is an explicit user-initiated network action that downloads them directly from
-the public upstream URLs recorded in `src/runtime_manager/manifest.json` and
-checks the recorded identities before use.
+The `legacy` profile name is retained for identity compatibility; it is the
+normal validated C55 profile. The exact `version.dll` has SHA-256
+`C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2`
+and size 15,667,520 bytes. The exact INI has SHA-256
+`FD7F0722194E6E8D8C085327D9826EFFB411925A69A5E7549D70EFF26A9F18B5`
+and size 581 bytes. This runtime combination has retained RTX 3070 Ti evidence
+for 2X Frame Generation plus 3X/4X Multi Frame Generation.
 
-Setup then runs the bounded `tools/validate_dlssg_candidate.py` compatibility
-validation. On a compatible machine it records the current 2X/3X/4X attestation.
-If the validation does not pass, the verified files remain installed and the
-backend stays unavailable/needs validation. The user is not asked to browse for
-`version.dll` or `nvngx_dlssg.dll`.
+The external community/provider files are not redistributed by this source
+repository. `setup.bat` is an explicit user-initiated network action that
+downloads them directly from the public upstream URLs recorded in
+`src/runtime_manager/manifest.json` and checks the recorded hashes/sizes before
+activation.
 
-The generated `config/source_env.bat` records the canonical managed locations:
+Setup then runs a bounded local 2X/3X/4X validation through
+`tools/validate_dlssg_candidate.py --profile legacy`. It exercises both the
+external deterministic motion-vector path and NVIDIA Optical Flow. A validation
+failure is reported explicitly; setup does not silently swap to the newer proxy
+runtime or another backend.
+
+The newer SM86 `candidate-0.3.1` proxy generation remains available in Runtime
+Manager for explicit experimentation. It is not the normal C55 runtime because
+the tested candidate did not satisfy the same direct-host startup contract.
+
+The generated `config/source_env.bat` records the canonical normal locations:
 
 ```text
 runtime/dlssg/worker/dlssg_sm86_offline.exe
-runtime/dlssg/candidate-0.3.1/version.dll
+runtime/dlssg/legacy/version.dll
+runtime/dlssg/legacy/dlssg_sm86.ini
 runtime/dlssg/official/
 ```
 

@@ -16,10 +16,43 @@ conda run -n dlss-rtxsr-upscaler python tools\provision_dlss5_v3.py
 
 Set `NVE_SETUP_DLSS5=0` to skip the optional DLSS 5 step without a prompt.
 
-The provisioner downloads `DLSS.5.Visual.Enhancer.v3.0.zip` directly from the
-public Merserk upstream release. This repository does not redistribute the
-archive or its proprietary/third-party runtime files. The pinned archive
-identity is:
+The project Conda environment uses `conda-forge` plus `nodefaults`, so normal
+project bootstrap does not need the Anaconda `repo.anaconda.com` default
+channels or their local Terms-of-Service cache.
+
+At the beginning of setup, before Conda or any setup-time downloader is invoked,
+`setup.bat` checks the process environment for the known local discard-proxy
+pattern `127.0.0.1:9`/`localhost:9`/`::1:9`. This configuration is commonly
+injected by sandboxed automation shells to intentionally deny child-process
+network access. Setup does not bypass that security boundary; it exits
+immediately with an actionable message instead of spending minutes in Conda or
+urllib retries. Run setup again from a normal network-enabled terminal.
+
+For the normal DLSS 5 path, the exact verified upstream v3.0 ZIP is persisted at:
+
+```text
+runtime/cache/dlss5-v3/DLSS.5.Visual.Enhancer.v3.0.zip
+```
+
+A later provisioning, UAC, or Feature-18 self-test retry reuses that cache only
+if the archive still matches the pinned size and SHA-256. A corrupt cache entry
+is deleted and reacquired. This avoids repeatedly downloading the ~467 MB
+release after a later-stage failure.
+
+If the exact upstream v3.0 ZIP is already available, setup can use it directly:
+
+```bat
+set NVE_DLSS5_ARCHIVE=C:\path\to\DLSS.5.Visual.Enhancer.v3.0.zip
+setup.bat
+```
+
+This bypasses only the DLSS 5 archive download; the normal project bootstrap
+still requires whatever network access is needed for Conda and the other
+managed runtime components.
+
+The provisioner uses `DLSS.5.Visual.Enhancer.v3.0.zip` from the public Merserk
+upstream release. This repository does not redistribute the archive or its
+proprietary/third-party runtime files. The pinned archive identity is:
 
 - size: `466919995` bytes
 - SHA-256: `6F0590D81677484F4ECDFAA5C44FC2A0E1A3835D33EEFC59D656E6C3BCF35F6A`
@@ -37,11 +70,19 @@ file must match the previously validated identity exactly:
 | `dxgi.dll` | `0CEE63F9C9F13F3AC909C5B4903F4DBB4B719A7AB3B4F13B0DEAF83C814B94F7` |
 | `nvngx_dlss.dll` | `C85F971CE023C9F3492FC7455F0B01A24BA18EA39636407A846902C4360B0B7E` |
 
-The staged five-file payload is then inspected with Windows
-`Get-AuthenticodeSignature` and scanned with Microsoft Defender using
-`MpCmdRun.exe`. Authenticode is recorded as provenance information because not
-every component is expected to be signed; a clean malware-scan result is
-required for automatic approval.
+The staged five-file payload then receives one Windows Authenticode trust
+observation per file. The provisioner first uses PowerShell
+`Get-AuthenticodeSignature`; if `Microsoft.PowerShell.Security` is unavailable,
+it falls back to the native Windows `WinVerifyTrust` API with cache-only URL
+retrieval. An empty or partial result is an error. Authenticode is recorded as
+provenance information because not every component is expected to be signed;
+it is not used to pretend that unsigned third-party files are signed.
+
+The same payload is scanned with Microsoft Defender using `MpCmdRun.exe`, and a
+clean scan result is required for automatic approval. The exact five file hashes
+are rechecked after Authenticode inspection and again after the Defender scan so
+security tooling or other local changes cannot silently alter the staged files
+between verification and activation.
 
 After those checks pass, the provisioner atomically activates the runtime at:
 
@@ -49,10 +90,12 @@ After those checks pass, the provisioner atomically activates the runtime at:
 runtime/dlss5-v3/
 ```
 
-It then requests Windows elevation to create an enabled **Outbound / Block**
+The exact five file hashes are checked again after activation. The provisioner
+then requests Windows elevation to create an enabled **Outbound / Block**
 firewall rule for the exact installed `nvngx.dll` worker. The application
 independently verifies that exact program-path rule before allowing the backend
-to become ready.
+to become ready, and the provisioner performs another runtime hash check after
+the firewall operation.
 
 Only after the file, scan and firewall gates pass does the provisioner create
 the gitignored local `runtime/dlss5-v3/approval.json`. The approval records the
@@ -91,8 +134,8 @@ execution evidence before the project should promote them.
 
 ## Existing archive / offline import
 
-A user who already has the exact public v3.0 release ZIP can avoid the network
-download while retaining every other gate:
+A user who already has the exact public v3.0 release ZIP can avoid the DLSS 5
+archive network download while retaining every other gate:
 
 ```powershell
 conda run -n dlss-rtxsr-upscaler python tools\provision_dlss5_v3.py --archive C:\path\to\DLSS.5.Visual.Enhancer.v3.0.zip

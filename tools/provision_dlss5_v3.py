@@ -1,11 +1,10 @@
 """Managed provisioning for the validated experimental DLSS 5 v3 runtime.
 
-This module downloads the public Merserk DLSS 5 Visual Enhancer v3.0 release,
-verifies the complete archive and the exact five-file runtime identity previously
-validated by this project, scans the staged payload with Microsoft Defender,
-records Authenticode observations, installs an exact outbound firewall block for
-the worker, writes the local approval manifest, and optionally runs the existing
-Feature-18 hardware self-test.
+The provisioner downloads the public Merserk v3.0 release, verifies the pinned
+archive and exact five-file runtime identity, records Windows Authenticode trust
+observations, requires a clean Microsoft Defender scan, installs the runtime,
+creates/verifies an exact outbound firewall block for the worker, writes the
+local approval manifest, and optionally runs the existing Feature-18 self-test.
 
 The upstream archive is never redistributed by this repository.
 """
@@ -16,7 +15,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -30,6 +28,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
 RUNTIME_DIR = ROOT / "runtime" / "dlss5-v3"
 APPROVAL_PATH = RUNTIME_DIR / "approval.json"
 
@@ -65,10 +64,10 @@ DLSS 5 v3 is experimental.
 This action downloads the public DLSS 5 Visual Enhancer v3.0 archive directly
 from its upstream GitHub release ({ARCHIVE_SIZE_BYTES / 1_000_000:.0f} MB),
 verifies the pinned archive SHA-256 and the exact five runtime-file SHA-256
-values validated by this project, scans the staged runtime with Microsoft
-Defender, records Authenticode results, creates an outbound Windows Firewall
-block for the exact worker executable, and runs the synthetic Feature-18
-self-test.
+values validated by this project, performs Windows Authenticode trust
+inspection, scans the staged runtime with Microsoft Defender, creates an
+outbound Windows Firewall block for the exact worker executable, and runs the
+synthetic Feature-18 self-test.
 
 The files are not owned or redistributed by this repository. NVIDIA, ReShade,
 RenoDX, and upstream terms continue to apply. A successful setup enables the
@@ -118,12 +117,11 @@ def _runtime_relative(normalized: str) -> str | None:
 
 
 def select_runtime_members(archive: Path) -> dict[str, zipfile.ZipInfo]:
-    """Return the unique five validated runtime members from a pinned archive.
+    """Select the unique five validated runtime files from the pinned ZIP.
 
-    The release layout may contain a top-level directory, so matching is rooted
-    at the ``bin/runtime/`` marker rather than a guessed ZIP prefix. The entire
-    member namespace is still checked for path traversal, symlinks, and
-    case-insensitive collisions before any extraction occurs.
+    The complete ZIP namespace is inspected first. Path traversal, Windows
+    reserved names, symlinks and case-insensitive duplicate names are rejected
+    even when the offending member would not otherwise be extracted.
     """
 
     expected = {name.casefold(): name for name in EXPECTED_RUNTIME_SHA256}
@@ -170,6 +168,7 @@ def verify_runtime_files(runtime_dir: Path) -> dict[str, str]:
         actual[name] = digest
         if digest != expected:
             raise ValueError(f"DLSS5 v3 hash mismatch for {name}: {digest} != {expected}")
+
     extras = sorted(
         path.name
         for path in runtime_dir.iterdir()
@@ -193,7 +192,8 @@ def verify_archive(path: Path) -> None:
 def download_archive(target: Path) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     request = urllib.request.Request(
-        RELEASE_URL, headers={"User-Agent": "NVIDIA-Video-Enhancer-DLSS5-provisioner"}
+        RELEASE_URL,
+        headers={"User-Agent": "NVIDIA-Video-Enhancer-DLSS5-provisioner"},
     )
     temporary = target.with_suffix(target.suffix + ".download")
     temporary.unlink(missing_ok=True)
@@ -238,19 +238,146 @@ def extract_verified_runtime(archive: Path, destination: Path) -> dict[str, str]
     return verify_runtime_files(destination)
 
 
+def _validate_authenticode_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Require one trust observation for every exact runtime file."""
+
+    expected = {name.casefold(): name for name in EXPECTED_RUNTIME_SHA256}
+    seen: set[str] = set()
+    normalized: dict[str, dict[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            raise RuntimeError("Authenticode inspection returned a non-object record")
+        name = str(item.get("file") or "")
+        folded = name.casefold()
+        canonical = expected.get(folded)
+        if canonical is None or folded in seen:
+            raise RuntimeError(f"Authenticode inspection returned unexpected file record: {name!r}")
+        seen.add(folded)
+        normalized[canonical] = {**item, "file": canonical}
+
+    if seen != set(expected):
+        missing = [name for name in EXPECTED_RUNTIME_SHA256 if name.casefold() not in seen]
+        raise RuntimeError(
+            "Authenticode inspection did not return all required runtime files: "
+            + ", ".join(missing)
+        )
+    return [normalized[name] for name in EXPECTED_RUNTIME_SHA256]
+
+
+def _winverifytrust_record(path: Path) -> dict[str, Any]:
+    """Inspect an Authenticode signature through WinVerifyTrust without execution.
+
+    This is the fallback when the Microsoft.PowerShell.Security module is not
+    loadable. Provider URL retrieval is cache-only so the inspection does not
+    introduce an outbound-network dependency.
+    """
+
+    if os.name != "nt":
+        raise RuntimeError("WinVerifyTrust is available only on Windows")
+
+    import ctypes
+    from ctypes import wintypes
+
+    class GUID(ctypes.Structure):
+        _fields_ = [
+            ("Data1", wintypes.DWORD),
+            ("Data2", wintypes.WORD),
+            ("Data3", wintypes.WORD),
+            ("Data4", ctypes.c_ubyte * 8),
+        ]
+
+    class WINTRUST_FILE_INFO(ctypes.Structure):
+        _fields_ = [
+            ("cbStruct", wintypes.DWORD),
+            ("pcwszFilePath", wintypes.LPCWSTR),
+            ("hFile", wintypes.HANDLE),
+            ("pgKnownSubject", ctypes.c_void_p),
+        ]
+
+    class WINTRUST_DATA(ctypes.Structure):
+        _fields_ = [
+            ("cbStruct", wintypes.DWORD),
+            ("pPolicyCallbackData", wintypes.LPVOID),
+            ("pSIPClientData", wintypes.LPVOID),
+            ("dwUIChoice", wintypes.DWORD),
+            ("fdwRevocationChecks", wintypes.DWORD),
+            ("dwUnionChoice", wintypes.DWORD),
+            ("pFile", ctypes.c_void_p),
+            ("dwStateAction", wintypes.DWORD),
+            ("hWVTStateData", wintypes.HANDLE),
+            ("pwszURLReference", wintypes.LPCWSTR),
+            ("dwProvFlags", wintypes.DWORD),
+            ("dwUIContext", wintypes.DWORD),
+        ]
+
+    action = GUID(
+        0x00AAC56B,
+        0xCD44,
+        0x11D0,
+        (ctypes.c_ubyte * 8)(0x8C, 0xC2, 0x00, 0xC0, 0x4F, 0xC2, 0x95, 0xEE),
+    )
+    file_info = WINTRUST_FILE_INFO(
+        ctypes.sizeof(WINTRUST_FILE_INFO),
+        str(path.resolve()),
+        None,
+        None,
+    )
+    data = WINTRUST_DATA()
+    data.cbStruct = ctypes.sizeof(WINTRUST_DATA)
+    data.dwUIChoice = 2  # WTD_UI_NONE
+    data.fdwRevocationChecks = 0  # WTD_REVOKE_NONE
+    data.dwUnionChoice = 1  # WTD_CHOICE_FILE
+    data.pFile = ctypes.cast(ctypes.pointer(file_info), ctypes.c_void_p)
+    data.dwStateAction = 0  # WTD_STATEACTION_IGNORE
+    data.dwProvFlags = 0x1000  # WTD_CACHE_ONLY_URL_RETRIEVAL
+    data.dwUIContext = 0
+
+    winverifytrust = ctypes.WinDLL("wintrust", use_last_error=True).WinVerifyTrust
+    winverifytrust.argtypes = [wintypes.HWND, ctypes.POINTER(GUID), ctypes.POINTER(WINTRUST_DATA)]
+    winverifytrust.restype = ctypes.c_long
+    result = int(winverifytrust(None, ctypes.byref(action), ctypes.byref(data)))
+    code = result & 0xFFFFFFFF
+
+    labels = {
+        0x00000000: "Valid",
+        0x800B0100: "NotSigned",
+        0x80096010: "HashMismatch",
+        0x800B0109: "UntrustedRoot",
+        0x800B010A: "ChainingError",
+        0x800B0111: "ExplicitDistrust",
+    }
+    status = labels.get(code, "TrustError")
+    return {
+        "file": path.name,
+        "status": status,
+        "status_code": f"0x{code:08X}",
+        "status_message": "WinVerifyTrust returned " + (status if code else "success"),
+        "signer_subject": None,
+        "signer_thumbprint": None,
+    }
+
+
 def authenticode_report(runtime_dir: Path) -> dict[str, Any]:
-    files = [str((runtime_dir / name).resolve()) for name in EXPECTED_RUNTIME_SHA256]
-    literal_array = ",".join("'" + item.replace("'", "''") + "'" for item in files)
+    """Record exactly one Authenticode trust observation for each runtime file."""
+
+    paths = [(runtime_dir / name).resolve() for name in EXPECTED_RUNTIME_SHA256]
+    for path in paths:
+        if not path.is_file() or path.is_symlink():
+            raise RuntimeError(f"Authenticode inspection target is missing or invalid: {path}")
+
+    literal_array = ",".join("'" + str(path).replace("'", "''") + "'" for path in paths)
     script = (
-        f"$files=@({literal_array}); "
-        "$items=@($files | ForEach-Object { "
-        "$s=Get-AuthenticodeSignature -LiteralPath $_; "
-        "[pscustomobject]@{file=[IO.Path]::GetFileName($_);"
-        "status=$s.Status.ToString();"
-        "status_message=$s.StatusMessage;"
+        "$ErrorActionPreference='Stop'; "
+        "Import-Module Microsoft.PowerShell.Security -ErrorAction Stop; "
+        f"$files=@({literal_array}); $items=@(); "
+        "foreach($file in $files){ "
+        "if(-not (Test-Path -LiteralPath $file -PathType Leaf)){throw \"missing file: $file\"}; "
+        "$s=Get-AuthenticodeSignature -LiteralPath $file -ErrorAction Stop; "
+        "$items += [pscustomobject]@{file=[IO.Path]::GetFileName($file);"
+        "status=$s.Status.ToString();status_message=$s.StatusMessage;"
         "signer_subject=$(if($s.SignerCertificate){$s.SignerCertificate.Subject}else{$null});"
-        "signer_thumbprint=$(if($s.SignerCertificate){$s.SignerCertificate.Thumbprint}else{$null})} "
-        "}); $items | ConvertTo-Json -Compress"
+        "signer_thumbprint=$(if($s.SignerCertificate){$s.SignerCertificate.Thumbprint}else{$null})};"
+        "}; ConvertTo-Json -InputObject @($items) -Compress -Depth 4"
     )
     result = subprocess.run(
         ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
@@ -261,14 +388,44 @@ def authenticode_report(runtime_dir: Path) -> dict[str, Any]:
         timeout=30,
         check=False,
     )
-    if result.returncode:
-        raise RuntimeError(result.stderr.strip() or "Authenticode inspection failed")
+
+    powershell_error: str | None = None
+    if result.returncode == 0 and result.stdout.strip():
+        try:
+            parsed = json.loads(result.stdout.strip())
+            raw_items = parsed if isinstance(parsed, list) else [parsed]
+            items = _validate_authenticode_items(raw_items)
+            return {
+                "tool": "Get-AuthenticodeSignature",
+                "completed": True,
+                "files": items,
+            }
+        except (ValueError, RuntimeError) as exc:
+            powershell_error = f"PowerShell Authenticode output was unusable: {exc}"
+    else:
+        powershell_error = (
+            result.stderr.strip()
+            or result.stdout.strip()
+            or f"PowerShell Authenticode inspection exited with code {result.returncode}"
+        )
+
+    # Some Windows Server images cannot load Microsoft.PowerShell.Security even
+    # though WinVerifyTrust is available. Fall back to the native trust API and
+    # still require a complete five-file observation set.
     try:
-        parsed = json.loads(result.stdout.strip() or "[]")
-    except ValueError as exc:
-        raise RuntimeError("Authenticode inspection returned invalid JSON") from exc
-    items = parsed if isinstance(parsed, list) else [parsed]
-    return {"tool": "Get-AuthenticodeSignature", "completed": True, "files": items}
+        items = _validate_authenticode_items([_winverifytrust_record(path) for path in paths])
+    except Exception as exc:
+        raise RuntimeError(
+            "Authenticode inspection failed through both PowerShell and WinVerifyTrust. "
+            f"PowerShell: {powershell_error}. WinVerifyTrust: {exc}"
+        ) from exc
+
+    return {
+        "tool": "WinVerifyTrust",
+        "completed": True,
+        "powershell_fallback_reason": powershell_error,
+        "files": items,
+    }
 
 
 def _defender_candidates() -> list[Path]:
@@ -452,22 +609,31 @@ def provision(*, archive: Path | None = None, run_hardware_selftest: bool = True
     runtime_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="nve-dlss5-v3-", dir=runtime_root) as temporary:
         workspace = Path(temporary)
-        owned_archive = archive is None
         archive_path = archive.resolve() if archive else workspace / "DLSS.5.Visual.Enhancer.v3.0.zip"
-        if owned_archive:
+        if archive is None:
             download_archive(archive_path)
         else:
             verify_archive(archive_path)
 
         staged = workspace / "payload"
         hashes = extract_verified_runtime(archive_path, staged)
-        auth_report = authenticode_report(staged)
-        malware_scan = defender_scan(staged)
 
-        # Activate only after archive, per-file, Authenticode-inspection, and malware
-        # scan gates all complete. Approval is intentionally written later.
+        auth_report = authenticode_report(staged)
+        # Security tooling must not be able to remove or modify a file between
+        # the initial hash verification and activation without being detected.
+        verify_runtime_files(staged)
+
+        malware_scan = defender_scan(staged)
+        verify_runtime_files(staged)
+
+        # Activate only after archive, file identity, Authenticode observation,
+        # Defender and post-scan integrity gates all complete.
         activate_runtime(staged)
+        verify_runtime_files(RUNTIME_DIR)
+
         firewall = install_firewall_block(RUNTIME_DIR / "nvngx.dll")
+        verify_runtime_files(RUNTIME_DIR)
+
         payload = approval_payload(RUNTIME_DIR, hashes, auth_report, malware_scan, firewall)
         write_approval(payload)
 

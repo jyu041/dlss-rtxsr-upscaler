@@ -66,9 +66,59 @@ def test_select_runtime_members_rejects_unsafe_namespace(tmp_path):
         provision.select_runtime_members(archive_path)
 
 
+def test_authenticode_records_must_cover_all_five_files():
+    items = [
+        {"file": name, "status": "NotSigned", "status_message": "unsigned"}
+        for name in list(provision.EXPECTED_RUNTIME_SHA256)[:-1]
+    ]
+    with pytest.raises(RuntimeError, match="did not return all required runtime files"):
+        provision._validate_authenticode_items(items)
+
+
+def test_authenticode_falls_back_to_winverifytrust_when_powershell_is_unavailable(
+    tmp_path, monkeypatch
+):
+    for name in provision.EXPECTED_RUNTIME_SHA256:
+        (tmp_path / name).write_bytes(b"test")
+
+    class Result:
+        returncode = 1
+        stdout = ""
+        stderr = "Microsoft.PowerShell.Security could not be loaded"
+
+    monkeypatch.setattr(provision.subprocess, "run", lambda *args, **kwargs: Result())
+    monkeypatch.setattr(
+        provision,
+        "_winverifytrust_record",
+        lambda path: {
+            "file": path.name,
+            "status": "NotSigned",
+            "status_code": "0x800B0100",
+            "status_message": "test fallback",
+            "signer_subject": None,
+            "signer_thumbprint": None,
+        },
+    )
+
+    report = provision.authenticode_report(tmp_path)
+    assert report["completed"] is True
+    assert report["tool"] == "WinVerifyTrust"
+    assert "PowerShell.Security" in report["powershell_fallback_reason"]
+    assert [item["file"] for item in report["files"]] == list(
+        provision.EXPECTED_RUNTIME_SHA256
+    )
+
+
 def test_approval_payload_preserves_security_contract():
     hashes = dict(provision.EXPECTED_RUNTIME_SHA256)
-    auth = {"tool": "Get-AuthenticodeSignature", "completed": True, "files": []}
+    auth = {
+        "tool": "WinVerifyTrust",
+        "completed": True,
+        "files": [
+            {"file": name, "status": "NotSigned", "status_code": "0x800B0100"}
+            for name in provision.EXPECTED_RUNTIME_SHA256
+        ],
+    }
     scan = {"tool": "MpCmdRun.exe", "status": "passed", "exit_code": 0}
     firewall = {"rule_name": provision.FIREWALL_RULE_NAME, "verified": True}
     payload = provision.approval_payload(provision.RUNTIME_DIR, hashes, auth, scan, firewall)

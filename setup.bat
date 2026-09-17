@@ -6,9 +6,16 @@ set GRADIO_ANALYTICS_ENABLED=False
 if not defined NVE_CONDA_ENV set "NVE_CONDA_ENV=dlss-rtxsr-upscaler"
 if defined NVE_CONDA_PREFIX (set NVE_CONDA_TARGET=--prefix "%NVE_CONDA_PREFIX%") else (set NVE_CONDA_TARGET=--name "%NVE_CONDA_ENV%")
 if defined NVE_CONDA_PREFIX (if not exist "%NVE_CONDA_PREFIX%\conda-meta\history" (echo NVE_CONDA_PREFIX must point to an existing Conda environment.& exit /b 2)) else (echo(%NVE_CONDA_ENV%| %SystemRoot%\System32\findstr.exe /r /x "[A-Za-z0-9][A-Za-z0-9_.-]*" >nul || (echo NVE_CONDA_ENV must contain only letters, numbers, underscore, period, or hyphen.& exit /b 2))
+
+echo [1/10] Checking setup network/proxy and Conda
+powershell.exe -NoProfile -NonInteractive -Command "$bad=@(); foreach($n in @('HTTP_PROXY','HTTPS_PROXY','ALL_PROXY')){$v=[Environment]::GetEnvironmentVariable($n); if(-not $v){continue}; $candidate=$v; if($candidate -notmatch '://'){$candidate='http://'+$candidate}; try{$u=[Uri]$candidate}catch{continue}; if(($u.Host -in @('127.0.0.1','localhost','::1')) -and $u.Port -eq 9){$bad += ($n+'='+$v)}}; if($bad.Count -gt 0){Write-Host ('NETWORK BLOCKED: setup inherited a local discard proxy: '+($bad -join ', ')); exit 2}"
+if errorlevel 2 (
+  echo This shell intentionally blocks child-process network access through 127.0.0.1:9.
+  echo Run setup.bat from a normal network-enabled terminal. The project will not bypass a sandbox or automation security boundary.
+  exit /b 2
+)
 where conda >nul 2>nul || (echo Miniconda or Anaconda is required.& exit /b 1)
 
-echo [1/10] Checking Conda
 echo [2/10] Creating/updating Python environment
 call conda env update %NVE_CONDA_TARGET% -f environment.yml --prune || exit /b 1
 
@@ -77,8 +84,25 @@ if not defined NVE_DLSS5_CHOICE (
 )
 if /I "%NVE_DLSS5_CHOICE%"=="Y" (
   echo The DLSS 5 provisioner may show a Windows UAC prompt to create the exact outbound worker firewall rule.
-  call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\provision_dlss5_v3.py --yes
-  if errorlevel 1 echo WARNING: DLSS 5 v3 provisioning or Feature-18 validation did not complete. Other backends remain usable; DLSS 5 stays unavailable until its gates pass.
+  if defined NVE_DLSS5_ARCHIVE (
+    echo Using the explicitly supplied DLSS 5 v3 archive: %NVE_DLSS5_ARCHIVE%
+    call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\provision_dlss5_v3.py --yes --archive "%NVE_DLSS5_ARCHIVE%"
+    if errorlevel 1 echo WARNING: DLSS 5 v3 provisioning or Feature-18 validation did not complete. Other backends remain usable; DLSS 5 stays unavailable until its gates pass.
+  ) else (
+    call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\check_setup_network.py --require-download
+    if errorlevel 1 (
+      echo WARNING: DLSS 5 v3 download was skipped because this shell has no usable setup download path. Other backends remain usable.
+      echo Run setup.bat from a normal network-enabled shell and rerun setup.
+    ) else (
+      call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\cache_dlss5_v3_archive.py
+      if errorlevel 1 (
+        echo WARNING: DLSS 5 v3 archive download/cache verification failed. Other backends remain usable.
+      ) else (
+        call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\provision_dlss5_v3.py --yes --archive "%~dp0runtime\cache\dlss5-v3\DLSS.5.Visual.Enhancer.v3.0.zip"
+        if errorlevel 1 echo WARNING: DLSS 5 v3 provisioning or Feature-18 validation did not complete. The verified archive remains cached for a later retry.
+      )
+    )
+  )
 ) else (
   echo Skipping optional DLSS 5 v3 provisioning. You can run tools\provision_dlss5_v3.py later.
 )

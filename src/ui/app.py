@@ -32,7 +32,7 @@ os.environ.setdefault("GRADIO_ANALYTICS_ENABLED","False")
 CONTROLLER = JobController()
 RUNTIME_MANIFEST = Path(__file__).resolve().parents[1] / "runtime_manager" / "manifest.json"
 RUNTIME_ROOT = Path(__file__).resolve().parents[2] / "runtime"
-DEFAULT_DLSSG_PROFILE = "candidate-0.3.1"
+DEFAULT_DLSSG_PROFILE = "legacy"
 
 
 def runtime_action(runtime_id: str, action: str, archive_path: str | None = None) -> str:
@@ -424,7 +424,7 @@ def build():
                     sr_model = gr.Dropdown(["Default", "J", "K", "L", "M"], value=srlast.get("model_preset", "Default"), show_label=False)
                 with gr.Group(visible=dlssg_initial, elem_classes="backend-group") as dlssg_group:
                     gr.Markdown("### DLSS Frame Generation")
-                    gr.Markdown("`setup.bat` installs the pinned C55 worker, SM86 compatibility runtime, and official NVIDIA DLSS-G provider into managed project folders. Normal use does not require downloading DLLs or entering runtime paths.")
+                    gr.Markdown("`setup.bat` installs the pinned C55 worker, validated SM86 direct-host runtime, and official NVIDIA DLSS-G provider into managed project folders. Normal use does not require downloading DLLs or entering runtime paths.")
                     dlssg_multiplier = gr.Dropdown([("2X Frame Generation", 2), ("3X Multi Frame Generation", 3), ("4X Multi Frame Generation", 4)], value=dlssg_multiplier_default, label="Frame multiplier")
                     with gr.Row():
                         dlssg_check = gr.Button("Check DLSS-G readiness")

@@ -94,23 +94,27 @@
     },
     {
       "id": "dlssg-legacy-reference",
-      "name": "DLSS Frame Generation legacy reference",
+      "name": "DLSS Frame Generation validated legacy runtime",
       "backend": "dlssg",
       "version": "5f62ff44",
       "source": "https://github.com/sdli1995/dlssg_for_sm86",
-      "source_url": "https://github.com/sdli1995/dlssg_for_sm86",
+      "source_url": "https://github.com/sdli1995/dlssg_for_sm86/commit/5f62ff44a9c08f9841fa605e7b7160f79ccd2c40",
       "artifact_url": null,
       "sha256": null,
       "size_bytes": null,
-      "archive_type": "user-supplied",
+      "archive_type": "files",
       "allowlist": ["version.dll", "dlssg_sm86.ini"],
       "destination": "dlssg/legacy",
-      "policy": "USER_SUPPLIED",
+      "policy": "UPSTREAM_DOWNLOAD",
       "channel": "validated",
-      "license_name": "NVIDIA/third-party terms; direct user supplied",
+      "license_name": "GPLv3 source ancestry plus separate NVIDIA/third-party binary terms; downloaded directly from upstream",
       "redistributable": false,
-      "direct_user_download": false,
+      "direct_user_download": true,
       "required": false,
+      "files": [
+        {"path": "version.dll", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/5f62ff44a9c08f9841fa605e7b7160f79ccd2c40/version.dll", "sha256": "C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2", "size_bytes": 15667520},
+        {"path": "dlssg_sm86.ini", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/5f62ff44a9c08f9841fa605e7b7160f79ccd2c40/dlssg_sm86.ini", "sha256": "FD7F0722194E6E8D8C085327D9826EFFB411925A69A5E7549D70EFF26A9F18B5", "size_bytes": 581}
+      ],
       "constraints": {"multipliers": [2, 3, 4]}
     },
     {

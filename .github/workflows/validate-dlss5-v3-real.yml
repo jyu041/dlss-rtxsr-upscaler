@@ -17,12 +17,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Download and diagnose actual upstream v3 archive
+      - name: Validate actual upstream v3 archive with production security gates
         shell: pwsh
         run: |
           @'
           import json
-          import subprocess
           import tempfile
           from pathlib import Path
 
@@ -38,23 +37,6 @@ jobs:
               verify_runtime_files,
           )
 
-          def file_state(payload):
-              state = {}
-              for name in EXPECTED_RUNTIME_SHA256:
-                  path = payload / name
-                  state[name] = {
-                      'exists': path.is_file(),
-                      'size': path.stat().st_size if path.is_file() else None,
-                  }
-              return state
-
-          def ps(command):
-              result = subprocess.run(
-                  ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', command],
-                  capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60,
-              )
-              return {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
-
           with tempfile.TemporaryDirectory() as td:
               root = Path(td)
               archive = root / 'DLSS.5.Visual.Enhancer.v3.0.zip'
@@ -62,46 +44,30 @@ jobs:
 
               download_archive(archive)
               verify_archive(archive)
+              assert archive.stat().st_size == ARCHIVE_SIZE_BYTES
+
               hashes = extract_verified_runtime(archive, payload)
               assert hashes == EXPECTED_RUNTIME_SHA256, (hashes, EXPECTED_RUNTIME_SHA256)
               assert verify_runtime_files(payload) == EXPECTED_RUNTIME_SHA256
-              print('STATE_AFTER_HASH=' + json.dumps(file_state(payload), indent=2), flush=True)
-
-              worker = str((payload / 'nvngx.dll').resolve()).replace("'", "''")
-              direct = ps(
-                  "$ErrorActionPreference='Continue'; "
-                  "Get-Command Get-AuthenticodeSignature | Select-Object Name,Source | ConvertTo-Json -Compress; "
-                  f"$s=Get-AuthenticodeSignature -LiteralPath '{worker}'; "
-                  "$s | Select-Object Status,StatusMessage,@{n='Subject';e={$_.SignerCertificate.Subject}} | ConvertTo-Json -Compress"
-              )
-              print('DIRECT_AUTH=' + json.dumps(direct, indent=2), flush=True)
 
               auth = authenticode_report(payload)
-              print('AUTHENTICODE=' + json.dumps(auth, indent=2), flush=True)
-              print('STATE_AFTER_AUTH=' + json.dumps(file_state(payload), indent=2), flush=True)
+              assert auth['completed'] is True, auth
+              assert len(auth['files']) == 5, auth
+              assert {item['file'] for item in auth['files']} == set(EXPECTED_RUNTIME_SHA256), auth
+              # The hosted Server 2025 image cannot load Microsoft.PowerShell.Security,
+              # so this also proves the production WinVerifyTrust fallback.
+              assert auth['tool'] == 'WinVerifyTrust', auth
+              assert verify_runtime_files(payload) == EXPECTED_RUNTIME_SHA256
 
-              defender_status = ps(
-                  "Get-MpComputerStatus | Select-Object AntivirusEnabled,AntivirusSignatureVersion,"
-                  "RealTimeProtectionEnabled,BehaviorMonitorEnabled | ConvertTo-Json -Compress; "
-                  "Get-MpThreatDetection -ErrorAction SilentlyContinue | "
-                  "Select-Object ThreatID,InitialDetectionTime,Resources,ActionSuccess | ConvertTo-Json -Depth 5 -Compress"
-              )
-              print('DEFENDER_STATUS=' + json.dumps(defender_status, indent=2), flush=True)
+              scan = defender_scan(payload)
+              assert scan['status'] == 'passed', scan
+              assert verify_runtime_files(payload) == EXPECTED_RUNTIME_SHA256
 
-              try:
-                  scan = defender_scan(payload)
-                  print('DEFENDER_SCAN=' + json.dumps(scan, indent=2), flush=True)
-              except Exception as exc:
-                  print('DEFENDER_SCAN_ERROR=' + repr(exc), flush=True)
-              print('STATE_AFTER_SCAN=' + json.dumps(file_state(payload), indent=2), flush=True)
-
-              # The identity portion is already a hard assertion. This diagnostic
-              # run intentionally does not fail on Authenticode/Defender shape so
-              # the complete security-tool behavior is visible in one log.
               print(json.dumps({
                   'archive_size': archive.stat().st_size,
                   'archive_sha256': ARCHIVE_SHA256,
-                  'expected_archive_size': ARCHIVE_SIZE_BYTES,
                   'runtime_hashes': hashes,
+                  'authenticode': auth,
+                  'defender': scan,
               }, indent=2))
           '@ | python -

@@ -32,6 +32,7 @@ os.environ.setdefault("GRADIO_ANALYTICS_ENABLED","False")
 CONTROLLER = JobController()
 RUNTIME_MANIFEST = Path(__file__).resolve().parents[1] / "runtime_manager" / "manifest.json"
 RUNTIME_ROOT = Path(__file__).resolve().parents[2] / "runtime"
+DEFAULT_DLSSG_PROFILE = "candidate-0.3.1"
 
 
 def runtime_action(runtime_id: str, action: str, archive_path: str | None = None) -> str:
@@ -41,8 +42,7 @@ def runtime_action(runtime_id: str, action: str, archive_path: str | None = None
     if action in {"INSTALL", "UPDATE", "REPAIR"}:
         if spec.policy != "UPSTREAM_DOWNLOAD":
             return f"{action} blocked: {spec.policy} requires user-supplied configuration."
-        if action in {"INSTALL", "UPDATE", "REPAIR"}:
-            print(f"Explicit runtime download: {spec.source_url}", flush=True)
+        print(f"Explicit runtime download: {spec.source_url}", flush=True)
         method = "repair" if action in {"UPDATE", "REPAIR"} else "install"
         destination = getattr(manager, method)(runtime_id, target=Path(archive_path) if archive_path else None, progress=lambda done, total: print(f"runtime {done}/{total or '?'}", flush=True))
         return f"{action} complete: {destination}"
@@ -58,13 +58,15 @@ def runtime_action(runtime_id: str, action: str, archive_path: str | None = None
         destination = manager.import_zip(runtime_id, Path(archive_path))
         return f"IMPORT complete: {destination}"
     return f"Unknown runtime action: {action}"
+
+
 def status_html():
     d = collect()
     rtx_state = d["rtx_vsr"].get("state", "UNAVAILABLE")
     rtx = rtx_state if d["rtx_vsr"]["available"] else "Unavailable"
     dlss = "Experimental Ready" if d["dlss5"]["available"] else "Unavailable"
     sr = d["dlss_sr"]["state"]
-    fg = "Validated 2X/3X/4X" if d["dlssg"]["available"] else "Not configured"
+    fg = "Validated 2X/3X/4X" if d["dlssg"]["available"] else d["dlssg"].get("state", "Unavailable")
     ffmpeg = "Ready" if d["ffmpeg"] == "AVAILABLE" else "Unavailable"
     runtime_items = d.get("runtimes", [])
     runtime_text = " · ".join(
@@ -72,7 +74,7 @@ def status_html():
         f"{escape(str(item.get('action', 'REVIEW')))}"
         for item in runtime_items
     )
-    runtime_card = f"<div class=\"runtime-status\"><b>Optional runtimes</b>: {runtime_text or 'none listed'}</div>"
+    runtime_card = f"<div class=\"runtime-status\"><b>Managed components</b>: {runtime_text or 'none listed'}</div>"
     return f"<div class=\"app-header\"><h1>NVIDIA Video Enhancer</h1><p>RTX VSR + DLSS SR/NR + offline DLSS Frame Generation</p></div><div class=\"backend-status\"><span class=\"status-badge\">RTX VSR <b>● {rtx}</b></span><span class=\"status-badge\">DLSS SR <b>● {sr}</b></span><span class=\"status-badge\">DLSS 5 <b>● {dlss}</b></span><span class=\"status-badge\">DLSS-G 2X/3X/4X <b>● {fg}</b></span><span class=\"status-badge\">FFmpeg <b>● {ffmpeg}</b></span></div>{runtime_card}"
 
 
@@ -83,22 +85,30 @@ def runtime_cards_markdown() -> str:
             f"| {item.get('name', item.get('id', 'runtime'))} | {item.get('state', 'INVALID')} | "
             f"{item.get('action', 'REVIEW')} | {item.get('version', 'unknown')} | {item.get('policy', 'unknown')} |"
         )
-    lines.append("\nInstall actions are explicit and validate the pinned source before activation; user-supplied components require configuration.")
+    lines.append("\n`setup.bat` provisions the normal managed runtime set. Runtime Manager is for inspection, repair, updates, and experimental components.")
     return "\n".join(lines)
+
 
 def _tip(mapping, key, label):
     return gr.HTML(setting_label(label, mapping[key]), show_label=False, elem_classes="setting-label")
+
 
 def _save_last(backend, values):
     try:
         save_last_used(backend, values)
     except Exception:
         pass
-def save_dlssg_settings(community_runtime, official_runtime_dir, motion_provider, depth_mode, multiplier=2, runtime_profile="legacy"):
-    _save_last("dlssg", {"community_runtime": community_runtime or "", "official_runtime_dir": official_runtime_dir or "", "motion_provider": motion_provider, "depth_mode": depth_mode, "multiplier": int(multiplier), "runtime_profile": runtime_profile})
-    return "Runtime configuration saved locally."
-def check_dlssg_readiness(community_runtime, official_runtime_dir, runtime_profile="legacy"):
-    return "```text\n" + format_summary(assess(community_runtime=community_runtime, official_runtime_dir=official_runtime_dir, runtime_profile=runtime_profile)) + "\n```"
+
+
+def save_dlssg_settings(motion_provider, depth_mode, multiplier=2):
+    _save_last("dlssg", {"motion_provider": motion_provider, "depth_mode": depth_mode, "multiplier": int(multiplier), "runtime_profile": DEFAULT_DLSSG_PROFILE})
+    return "DLSS-G settings saved locally. Runtime paths are managed by setup.bat."
+
+
+def check_dlssg_readiness():
+    return "```text\n" + format_summary(assess(runtime_profile=DEFAULT_DLSSG_PROFILE)) + "\n```"
+
+
 def validate_dlss_sr():
     backend = DLSSSRBackend()
     try:
@@ -109,6 +119,8 @@ def validate_dlss_sr():
         status = backend.status()
         message = f"DLSS SR self-test failed: {exc}. Current state: {status.state} — {status.reason}"
     return status_html(), message, gr.update(choices=available_mode_choices())
+
+
 def inspect(path):
     if not path: return "<span class=\"muted\">No video selected.</span>", "No video selected."
     try:
@@ -117,6 +129,8 @@ def inspect(path):
         detail = format_info(i) + ("\n\nWARNING: HDR/high-bit-depth detected; DLSS5 path is SDR RGBA8 only." if i['hdr'] else "")
         return summary, detail
     except Exception as e: return f"<span class=\"error\">Inspection failed: {e}</span>", f"Inspection failed: {e}"
+
+
 def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", *dlssg_settings):
     if not path: return None, None, "Choose an input video."
     try:
@@ -163,13 +177,19 @@ def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_s
         del image,enhanced
         return str(source_frame), str(out), f"RTX VSR {vsr_mode} preview completed at {target[0]}x{target[1]}."
     except Exception as e: return None, None, str(e)
+
+
 def apply_preset(name):
     p=load_presets().get(name,{}); return [p.get(k) for k in ["dlss_preset","dlss_style","dlss_intensity","local_tone","local_structure","skin_structure","automatic_mask"]]
+
+
 def unavailable_action(mode, action):
     status = DLSS5Backend().status() if mode.startswith("DLSS") else RTXVSRBackend().status()
     if not status.available:
         return f"{action} blocked: {status.name} unavailable. {status.reason}"
     return f"{action} is gated until the installed SDK adapter passes its smoke test."
+
+
 def _dlss_options(backend, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model):
     return backend.options(upscaling_mode=dlss_scale, nr_preset=nrpreset, nr_style=style, nr_intensity=float(intensity), local_tone_strength=float(tone), local_structure_strength=float(structure), skin_structure_strength=float(skin), automatic_mask=mask == "On", dlss_model_preset=model, motion_mode="optical_flow")
 
@@ -187,6 +207,31 @@ def available_mode_choices():
     return choices
 
 
+def default_mode():
+    """Choose a practical first-run backend without requiring user configuration."""
+    try:
+        if RTXVSRBackend().status().available:
+            return "RTX VSR only"
+    except Exception:
+        pass
+    try:
+        if DLSSSRBackend().status().state == "READY":
+            return "DLSS SR only"
+    except Exception:
+        pass
+    try:
+        if DLSSGBackend().status().available:
+            return "DLSS Frame Generation 2X"
+    except Exception:
+        pass
+    try:
+        if DLSS5Backend().status().available:
+            return "DLSS 5 only"
+    except Exception:
+        pass
+    return "RTX VSR only"
+
+
 def load_last_render():
     path = load_last_successful_render()
     if not path:
@@ -197,15 +242,16 @@ def load_last_render():
         return None, '<span class="error">Previous render is not a readable video.</span>', detail, None, None, None, "Previous render is not a readable video.", gr.update(interactive=False)
     return path, summary, detail, None, None, None, f"Loaded last successful render: {Path(path).name}", gr.update(interactive=True)
 
-def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, codec_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", dlssg_runtime="", dlssg_official_runtime="", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5", dlssg_multiplier=2, dlssg_profile="legacy"):
+
+def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, codec_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5", dlssg_multiplier=2):
     if not path: return None, "Choose an input video."
     job = None
     try:
         job = CONTROLLER.start(); MONITOR.set_active(True); destination = output_path(Path(path), processing_mode, container_value, float(dlss_scale), int(dlssg_multiplier))
         if processing_mode == "DLSS Frame Generation 2X":
-            _save_last("dlssg", {"community_runtime": dlssg_runtime, "official_runtime_dir": dlssg_official_runtime, "motion_provider": dlssg_motion, "depth_mode": dlssg_depth, "multiplier": int(dlssg_multiplier), "runtime_profile": dlssg_profile})
+            _save_last("dlssg", {"motion_provider": dlssg_motion, "depth_mode": dlssg_depth, "multiplier": int(dlssg_multiplier), "runtime_profile": DEFAULT_DLSSG_PROFILE})
             if dlssg_motion != "NVIDIA Optical Flow" or dlssg_depth != "Constant 0.5": raise RuntimeError("Only NVIDIA Optical Flow + Constant 0.5 depth is implemented")
-            backend = DLSSGBackend(community_runtime=dlssg_runtime, official_runtime_dir=dlssg_official_runtime, runtime_profile=dlssg_profile)
+            backend = DLSSGBackend()
         elif processing_mode.startswith("DLSS SR"):
             backend = DLSSSRBackend(); status = backend.status()
             if status.state != "READY": raise RuntimeError(f"DLSS SR {status.state}: {status.reason}")
@@ -234,6 +280,7 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
         if job: MONITOR.set_active(False); CONTROLLER.finish("FAILED", str(exc))
         return None, f"Render failed: {exc}"
 
+
 def _preview_directory() -> Path:
     root = TEMP / "preview"; root.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix="clip-", dir=root))
@@ -241,7 +288,8 @@ def _preview_directory() -> Path:
     for item in old[:-3]: shutil.rmtree(item, ignore_errors=True)
     return directory
 
-def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, start_timestamp, duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", dlssg_runtime="", dlssg_official_runtime="", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5", dlssg_multiplier=2, dlssg_profile="legacy"):
+
+def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, start_timestamp, duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5", dlssg_multiplier=2):
     if not path: return None, None, "Choose an input video."
     job = None
     clip_source = None
@@ -251,8 +299,8 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
             clip_source = preview_dir / "source.mp4"
             result = __import__('subprocess').run([ffmpeg_executable(), "-y", "-v", "error", "-ss", str(float(start_timestamp)), "-t", str(float(duration)), "-i", str(path), "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(clip_source)], capture_output=True, text=True, check=False)
             if result.returncode: raise RuntimeError(result.stderr[-1000:])
-            _save_last("dlssg", {"community_runtime": dlssg_runtime, "official_runtime_dir": dlssg_official_runtime, "motion_provider": dlssg_motion, "depth_mode": dlssg_depth, "multiplier": int(dlssg_multiplier), "runtime_profile": dlssg_profile})
-            backend = DLSSGBackend(community_runtime=dlssg_runtime, official_runtime_dir=dlssg_official_runtime, runtime_profile=dlssg_profile)
+            _save_last("dlssg", {"motion_provider": dlssg_motion, "depth_mode": dlssg_depth, "multiplier": int(dlssg_multiplier), "runtime_profile": DEFAULT_DLSSG_PROFILE})
+            backend = DLSSGBackend()
             stats = render_dlssg(clip_source, destination, backend, multiplier=int(dlssg_multiplier), codec="h264_nvenc", cancel=job.cancel_event, progress=progress)
             stats["frames"] = stats["output_frames"]; stats["fps"] = stats["output_fps"]; stats["dimensions"] = (stats["width"], stats["height"])
         elif processing_mode.startswith("DLSS SR"):
@@ -278,6 +326,8 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
     except Exception as exc:
         if job: MONITOR.set_active(False); CONTROLLER.finish("FAILED", str(exc))
         return None, None, f"Preview failed: {exc}"
+
+
 def build():
     last = load_last_used()
     rlast = last.get("rtx_vsr", {})
@@ -295,15 +345,13 @@ def build():
         dlss_default_scale = 1.0
     srlast = last.get("dlss_sr", {})
     dlssglast = last.get("dlssg", {})
-    dlssg_runtime_default = dlssglast.get("community_runtime", os.environ.get("DLSSG_COMMUNITY_RUNTIME", ""))
-    dlssg_official_default = dlssglast.get("official_runtime_dir", os.environ.get("DLSSG_OFFICIAL_RUNTIME_DIR", ""))
-    dlssg_profile_default = dlssglast.get("runtime_profile", os.environ.get("DLSSG_RUNTIME_PROFILE", "legacy"))
-    if dlssg_profile_default not in {"legacy", "candidate-0.3.1"}: dlssg_profile_default = "legacy"
     dlssg_multiplier_default = dlssglast.get("multiplier", 2)
     if dlssg_multiplier_default not in {2, 3, 4}: dlssg_multiplier_default = 2
     previous_render = load_last_successful_render()
     sr_initial_status = DLSSSRBackend().status()
     sr_validation_enabled = sr_initial_status.state in {"SELFTEST REQUIRED", "READY"}
+    initial_mode = default_mode()
+    rtx_initial, dlss_initial, sr_initial, dlssg_initial = mode_visibility(initial_mode)
     with gr.Blocks(title="NVIDIA Video Enhancer", analytics_enabled=False) as ui:
         status = gr.HTML(status_html(), elem_classes="status-header")
         with gr.Accordion("Runtime Manager", open=False):
@@ -314,7 +362,7 @@ def build():
             runtime_archive = gr.Textbox(label="Local archive path (Import or archive-based repair)", visible=True)
             runtime_action_button = gr.Button("Run selected runtime action")
             runtime_action_result = gr.Markdown("No runtime action has been requested.")
-        gr.HTML('<details class="advanced-diagnostics"><summary>Advanced diagnostics</summary><div>DLSS SR uses a separate native D3D12 NGX host with optical-flow motion guidance. Video mode is SDR, has no renderer depth or jitter, and requires the approved local NVIDIA runtime.</div></details>')
+        gr.HTML('<details class="advanced-diagnostics"><summary>Advanced diagnostics</summary><div>Normal runtime paths are managed by setup.bat. DLSS SR uses a separate native D3D12 NGX host with optical-flow motion guidance. Video mode is SDR, has no renderer depth or jitter, and requires the approved local NVIDIA runtime.</div></details>')
         metrics = gr.HTML(metrics_html())
         progress_panel = gr.HTML(progress_html(CONTROLLER.snapshot()))
         refresh_timer = gr.Timer(0.5)
@@ -326,15 +374,15 @@ def build():
                 summary = gr.HTML('<span class="muted">No video selected.</span>')
                 with gr.Accordion("Media details", open=False):
                     info = gr.Textbox(value="No video selected.", show_label=False, lines=5, interactive=False)
-                state = gr.State("DLSS 5 only")
+                state = gr.State(initial_mode)
             with gr.Column(scale=35, min_width=360, elem_classes="settings-panel"):
                 gr.Markdown("## Enhancement")
-                mode = gr.Radio(available_mode_choices(), value="DLSS 5 only", show_label=False, elem_id="enhancement-selector", elem_classes="enhancement-selector")
+                mode = gr.Radio(available_mode_choices(), value=initial_mode, show_label=False, elem_id="enhancement-selector", elem_classes="enhancement-selector")
                 with gr.Group(visible=True, elem_classes="backend-readiness"):
                     gr.Markdown("### DLSS SR Readiness")
                     sr_readiness = gr.Markdown(f"Current state: {sr_initial_status.state} — {sr_initial_status.reason}")
                     sr_validate = gr.Button("Validate DLSS SR", interactive=sr_validation_enabled)
-                with gr.Group(visible=False, elem_classes="backend-group") as rtx_group:
+                with gr.Group(visible=rtx_initial, elem_classes="backend-group") as rtx_group:
                     gr.Markdown("### RTX VSR Settings")
                     _tip(RTX_TOOLTIPS, "mode", "Mode")
                     vsr_mode = gr.Dropdown(["Super Resolution", "High Bitrate", "Deblur", "Denoise"], value=rlast.get("mode", "Super Resolution"), show_label=False)
@@ -342,7 +390,7 @@ def build():
                     scale = gr.Dropdown([1.0, 1.5, 2.0, 2.5, 3.0, 4.0], value=rlast.get("scale", 2.0), show_label=False)
                     _tip(RTX_TOOLTIPS, "quality", "Quality")
                     quality = gr.Dropdown(["LOW", "MEDIUM", "HIGH", "ULTRA"], value=rlast.get("quality", "ULTRA"), show_label=False)
-                with gr.Group(visible=True, elem_classes="backend-group") as dlss_group:
+                with gr.Group(visible=dlss_initial, elem_classes="backend-group") as dlss_group:
                     gr.Markdown("### DLSS5 Settings")
                     _tip(DLSS5_TOOLTIPS, "builtin_preset", "Built-in preset")
                     preset = gr.Dropdown(list(load_presets()) + ["Default"], value="Photoreal Balanced", show_label=False)
@@ -368,22 +416,19 @@ def build():
                     skin = gr.Slider(-1, 2, dlast.get("skin_structure", .15), .05, show_label=False)
                     _tip(DLSS5_TOOLTIPS, "mask", "Automatic mask")
                     mask = gr.Dropdown(["Off", "On"], value="On" if dlast.get("automatic_mask", False) else "Off", show_label=False)
-                with gr.Group(visible=False, elem_classes="backend-group") as sr_group:
+                with gr.Group(visible=sr_initial, elem_classes="backend-group") as sr_group:
                     gr.Markdown("### DLSS SR Settings")
                     _tip(DLSS_SR_TOOLTIPS, "mode", "Mode")
                     sr_mode = gr.Dropdown(["DLAA", "Quality", "Balanced", "Performance", "Ultra Performance"], value=srlast.get("mode", "Quality"), show_label=False)
                     _tip(DLSS_SR_TOOLTIPS, "model_preset", "Model preset")
                     sr_model = gr.Dropdown(["Default", "J", "K", "L", "M"], value=srlast.get("model_preset", "Default"), show_label=False)
-                with gr.Group(visible=False, elem_classes="backend-group") as dlssg_group:
+                with gr.Group(visible=dlssg_initial, elem_classes="backend-group") as dlssg_group:
                     gr.Markdown("### DLSS Frame Generation")
-                    gr.Markdown("Offline frame interpolation. The community runtime is external and is never downloaded silently; an explicit Runtime Manager Install may fetch the exact pinned file from upstream. It is not redistributed by this app.")
+                    gr.Markdown("`setup.bat` installs the pinned C55 worker, SM86 compatibility runtime, and official NVIDIA DLSS-G provider into managed project folders. Normal use does not require downloading DLLs or entering runtime paths.")
                     dlssg_multiplier = gr.Dropdown([("2X Frame Generation", 2), ("3X Multi Frame Generation", 3), ("4X Multi Frame Generation", 4)], value=dlssg_multiplier_default, label="Frame multiplier")
-                    dlssg_profile = gr.Dropdown([("Legacy validated runtime", "legacy"), ("SM86 0.3.1 candidate", "candidate-0.3.1")], value=dlssg_profile_default, label="Runtime profile")
-                    dlssg_runtime = gr.Textbox(value=dlssg_runtime_default, label="Community runtime (absolute version.dll path)")
-                    dlssg_official_runtime = gr.Textbox(value=dlssg_official_default, label="Official NGX runtime directory")
                     with gr.Row():
                         dlssg_check = gr.Button("Check DLSS-G readiness")
-                    dlssg_readiness = gr.Markdown("Readiness has not been checked.")
+                    dlssg_readiness = gr.Markdown("Managed runtime readiness has not been refreshed.")
                     dlssg_motion = gr.Dropdown(["NVIDIA Optical Flow"], value=dlssglast.get("motion_provider", "NVIDIA Optical Flow"), label="Motion provider")
                     dlssg_depth = gr.Dropdown(["Constant 0.5"], value=dlssglast.get("depth_mode", "Constant 0.5"), label="Depth mode")
                     dlssg_saved = gr.Markdown()
@@ -434,10 +479,10 @@ def build():
         mode.change(lambda value: value, mode, state)
         mode.change(visibility, mode, [rtx_group, dlss_group, sr_group, dlssg_group])
         preset.change(apply_preset, preset, [nrpreset, style, intensity, tone, structure, skin, mask])
-        dlssg_inputs = [dlssg_runtime, dlssg_official_runtime, dlssg_motion, dlssg_depth, dlssg_multiplier, dlssg_profile]
+        dlssg_inputs = [dlssg_motion, dlssg_depth, dlssg_multiplier]
         for control in dlssg_inputs:
             control.change(save_dlssg_settings, dlssg_inputs, dlssg_saved, show_progress="hidden")
-        dlssg_check.click(check_dlssg_readiness, [dlssg_runtime, dlssg_official_runtime, dlssg_profile], dlssg_readiness, show_progress="hidden")
+        dlssg_check.click(check_dlssg_readiness, outputs=dlssg_readiness, show_progress="hidden")
         sr_validate.click(validate_dlss_sr, outputs=[status, sr_readiness, mode], show_progress="full")
         runtime_refresh.click(runtime_cards_markdown, outputs=runtime_cards, show_progress="hidden")
         runtime_action_button.click(runtime_action, [runtime_ids, runtime_action_choice, runtime_archive], runtime_action_result, show_progress="full")
@@ -458,7 +503,7 @@ def build():
         sr_load.click(load_dlss_sr, sr_saved, [sr_mode, sr_model, sr_message])
         sr_delete.click(delete_dlss_sr, sr_saved, [sr_saved, sr_message])
         sr_reset.click(lambda: ("Quality", "Default", "DLSS SR settings reset."), outputs=[sr_mode, sr_model, sr_message])
-        gr.Markdown("### Runtime notes\nA missing backend is never substituted with sharpening or another upscaler. Configure legitimate NVIDIA runtimes, then restart and refresh diagnostics.")
+        gr.Markdown("### Runtime notes\nNormal managed runtime paths are configured by `setup.bat`; a missing backend is never substituted with sharpening or another upscaler. Runtime Manager remains available for inspection, repair, updates, and experimental components.")
     return ui
 
 

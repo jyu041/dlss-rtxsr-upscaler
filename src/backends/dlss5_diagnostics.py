@@ -1,4 +1,4 @@
-"""Passive DLSS5 diagnostics and the explicit optional self-test command."""
+"""Passive DLSS5 diagnostics and optional functional self-test command."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .dlss5 import REQUIRED_HASHES, _approval, _hash_report, approval_runtime, firewall_status, ROOT
+from .dlss5 import REQUIRED_RUNTIME_FILES, ROOT, firewall_status, runtime_fingerprint, runtime_path
 
 
 def _hash(path: Path) -> str | None:
@@ -31,9 +31,16 @@ def _gpu() -> dict[str, Any]:
         result = subprocess.run(["nvidia-smi", "--query-gpu=name,driver_version,compute_cap", "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=10, check=False)
         values = [item.strip() for item in result.stdout.strip().split(",")]
         if result.returncode == 0 and len(values) >= 3:
-            architecture = "Ampere" if values[2].startswith("8.") else None
-            generation = 30 if architecture == "Ampere" else None
-            return {"name": values[0], "driver_version": values[1], "cuda_compute_capability": values[2], "architecture": architecture, "generation": generation}
+            compute = values[2]
+            architecture = None
+            generation = None
+            if compute.startswith("8.6"):
+                architecture, generation = "Ampere", 30
+            elif compute.startswith("8.9"):
+                architecture, generation = "Ada", 40
+            elif compute.startswith("12."):
+                architecture, generation = "Blackwell", 50
+            return {"name": values[0], "driver_version": values[1], "cuda_compute_capability": compute, "architecture": architecture, "generation": generation}
     except (OSError, subprocess.TimeoutExpired):
         pass
     return {"name": None, "driver_version": None, "cuda_compute_capability": None, "architecture": None, "generation": None}
@@ -56,27 +63,54 @@ def _file_metadata(path: Path) -> dict[str, Any]:
 
 
 def collect() -> dict[str, Any]:
-    approval = _approval() or {}
-    runtime = approval_runtime()
-    hashes = {}
-    expected = {key: str(approval.get(key, "")).upper() for key in REQUIRED_HASHES}
+    candidate = runtime_path()
+    runtime = candidate if candidate.is_dir() else None
     files = []
-    firewall = {"valid": False, "reason": "No approved runtime", "rules": []}
+    fingerprint = {}
+    integrity_ok = False
+    integrity_reason = f"Runtime is not installed at {candidate}"
+    firewall = {"valid": False, "reason": "Runtime not installed", "rules": []}
     worker = None
     if runtime is not None:
         worker = runtime / "nvngx.dll"
-        hashes_ok, hashes, hash_reason = _hash_report(runtime, approval)
+        for name in REQUIRED_RUNTIME_FILES.values():
+            files.append(_file_metadata(runtime / name))
+        try:
+            fingerprint = runtime_fingerprint(runtime)
+            integrity_ok = True
+            integrity_reason = "Required runtime files are present; fingerprint recorded automatically"
+        except RuntimeError as exc:
+            integrity_reason = str(exc)
         firewall = firewall_status(worker)
-        for names in REQUIRED_HASHES.values():
-            files.append(_file_metadata(runtime / names[0]))
-    else:
-        hashes_ok, hash_reason = False, "Runtime is not approved by the local manifest"
     try:
         from .dlss5 import SELFTEST_RESULT
         selftest = json.loads(SELFTEST_RESULT.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         selftest = {"feature_18_verified": False, "reason": "No local self-test report"}
-    return {"schema_version": 1, "timestamp": datetime.now().astimezone().isoformat(), "application": {"commit": _commit(), "python": sys.version, "windows": platform.platform()}, "gpu": _gpu(), "runtime_directory": str(runtime) if runtime else None, "runtime_files": files, "actual_sha256": hashes, "expected_sha256": expected, "hash_match": bool(hashes_ok), "hash_reason": hash_reason, "firewall": firewall, "worker_path": str(worker) if worker else None, "worker_protocol": {"client": "pinned Blueforcer ComfyUI-DLSS5-Enhancer", "submodule": "796ed5927a202ba50b5c929cd08e16b365041162"}, "feature_18": {"verified": bool(selftest.get("feature_18_verified")), "evidence": selftest.get("feature_18_evidence"), "nr_effect_observed": selftest.get("nr_effect_observed"), "effectiveness_metrics": selftest.get("effectiveness_metrics"), "timing": {key: selftest.get(key) for key in ("runtime_validation_seconds", "session_initialization_seconds", "first_submit_seconds", "render_seconds", "total_seconds")}}, "public_warning": "Local reports contain filesystem paths; redact paths before sharing publicly."}
+    selftest_current = bool(fingerprint) and selftest.get("runtime_fingerprint") == fingerprint
+    return {
+        "schema_version": 2,
+        "timestamp": datetime.now().astimezone().isoformat(),
+        "application": {"commit": _commit(), "python": sys.version, "windows": platform.platform()},
+        "gpu": _gpu(),
+        "runtime_directory": str(runtime) if runtime else None,
+        "runtime_files": files,
+        "runtime_fingerprint": fingerprint,
+        "runtime_integrity_ok": integrity_ok,
+        "runtime_integrity_reason": integrity_reason,
+        "firewall_advisory": firewall,
+        "worker_path": str(worker) if worker else None,
+        "worker_protocol": {"client": "pinned Blueforcer ComfyUI-DLSS5-Enhancer", "submodule": "796ed5927a202ba50b5c929cd08e16b365041162"},
+        "feature_18": {
+            "verified": bool(selftest.get("feature_18_verified")) and selftest_current,
+            "selftest_current": selftest_current,
+            "evidence": selftest.get("feature_18_evidence"),
+            "nr_effect_observed": selftest.get("nr_effect_observed"),
+            "effectiveness_metrics": selftest.get("effectiveness_metrics"),
+            "timing": {key: selftest.get(key) for key in ("runtime_validation_seconds", "session_initialization_seconds", "first_submit_seconds", "render_seconds", "total_seconds")},
+        },
+        "public_warning": "Local reports contain filesystem paths; redact paths before sharing publicly.",
+    }
 
 
 def _commit() -> str | None:
@@ -88,7 +122,7 @@ def _commit() -> str | None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Inspect DLSS5 state without modifying the system")
-    parser.add_argument("--self-test", action="store_true", help="run the existing approved hardware self-test")
+    parser.add_argument("--self-test", action="store_true", help="run the local Feature-18 functional self-test")
     args = parser.parse_args()
     if args.self_test:
         result = subprocess.run([sys.executable, "-m", "src.backends.dlss5_selftest"], cwd=ROOT, check=False)

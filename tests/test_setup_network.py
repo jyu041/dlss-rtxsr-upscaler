@@ -85,4 +85,9 @@ def test_setup_supports_exact_archive_fallback_and_managed_cache():
     assert "NVE_DLSS5_ARCHIVE" in setup
     assert "tools\\provision_dlss5_v3.py --yes --archive" in setup
     assert "tools\\cache_dlss5_v3_archive.py" in setup
-    assert "runtime\\cache\\dlss5-v3\\DLSS.5.Visual.Enhancer.v3.0.zip" in setup
+    cached = "%~dp0runtime\\cache\\dlss5-v3\\DLSS.5.Visual.Enhancer.v3.0.zip"
+    assert cached in setup
+    assert f'python tools\\provision_dlss5_v3.py --yes --archive "{cached}"' in setup
+    # Do not assign a variable and consume it with %VAR% inside the same
+    # parenthesized cmd.exe block: percent expansion occurs before SET executes.
+    assert "NVE_DLSS5_MANAGED_ARCHIVE" not in setup

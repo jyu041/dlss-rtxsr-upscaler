@@ -16,6 +16,25 @@ conda run -n dlss-rtxsr-upscaler python tools\provision_dlss5_v3.py
 
 Set `NVE_SETUP_DLSS5=0` to skip the optional DLSS 5 step without a prompt.
 
+The project Conda environment uses `conda-forge` plus `nodefaults`, so normal
+project bootstrap does not need the Anaconda `repo.anaconda.com` default
+channels or their local Terms-of-Service cache.
+
+Before the optional DLSS 5 download, setup also checks for the known local
+discard-proxy pattern `127.0.0.1:9`/`localhost:9`/`::1:9`. This configuration is
+commonly injected by sandboxed automation shells to intentionally deny child
+process network access. Setup does not bypass it. Instead, the DLSS 5 step fails
+fast and the rest of setup can continue. Run setup again from a normal
+network-enabled shell to use the normal automatic download.
+
+If the exact upstream v3.0 ZIP is already available, setup can use it without a
+network download:
+
+```bat
+set NVE_DLSS5_ARCHIVE=C:\path\to\DLSS.5.Visual.Enhancer.v3.0.zip
+setup.bat
+```
+
 The provisioner downloads `DLSS.5.Visual.Enhancer.v3.0.zip` directly from the
 public Merserk upstream release. This repository does not redistribute the
 archive or its proprietary/third-party runtime files. The pinned archive

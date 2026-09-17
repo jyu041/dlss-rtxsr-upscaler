@@ -17,11 +17,25 @@ _LOCK = threading.RLock()
 RTX_FIELDS = {"mode", "scale", "quality"}
 DLSS_FIELDS = {"scale", "nr_preset", "nr_style", "model_preset", "intensity", "local_tone", "local_structure", "skin_structure", "automatic_mask"}
 DLSS_SR_FIELDS = {"mode", "model_preset"}
-DLSSG_FIELDS = {"community_runtime", "official_runtime_dir", "motion_provider", "depth_mode", "multiplier", "runtime_profile"}
+DLSSG_FIELDS = {"motion_provider", "depth_mode", "multiplier"}
+LEGACY_DLSSG_FIELDS = {"community_runtime", "official_runtime_dir", "runtime_profile"}
 
 
 def _empty() -> dict:
     return {"schema_version": 1, "rtx_vsr": {}, "dlss5": {}, "dlss_sr": {}, "dlssg": {}}
+
+
+def _strip_legacy_dlssg(values: object) -> object:
+    """Drop runtime-location metadata that is now managed by setup.bat.
+
+    Schema v1 files written by older builds may contain absolute runtime paths
+    and a selectable runtime profile. Keep the schema version stable, but
+    migrate those records in memory so normal UI state contains only user
+    controls. The next write persists the cleaned representation.
+    """
+    if not isinstance(values, dict):
+        return values
+    return {key: value for key, value in values.items() if key not in LEGACY_DLSSG_FIELDS}
 
 
 def _read(path: Path, default: dict) -> dict:
@@ -33,8 +47,14 @@ def _read(path: Path, default: dict) -> dict:
         data.setdefault("dlss5", {})
         data.setdefault("dlss_sr", {})
         data.setdefault("dlssg", {})
+        if isinstance(data["dlssg"], dict):
+            data["dlssg"] = {
+                name: _strip_legacy_dlssg(values)
+                for name, values in data["dlssg"].items()
+            }
         if isinstance(data.get("last_used"), dict):
             data["last_used"].setdefault("dlssg", {})
+            data["last_used"]["dlssg"] = _strip_legacy_dlssg(data["last_used"]["dlssg"])
         return data
     except (OSError, ValueError):
         if path.is_file():
@@ -71,9 +91,12 @@ def _validate(backend: str, values: dict) -> dict:
     if not isinstance(values, dict):
         raise ValueError("Preset values must be an object")
     fields = RTX_FIELDS if key == "rtx_vsr" else DLSS_FIELDS if key == "dlss5" else DLSS_SR_FIELDS if key == "dlss_sr" else DLSSG_FIELDS
-    if not set(values).issubset(fields):
+    allowed = fields | LEGACY_DLSSG_FIELDS if key == "dlssg" else fields
+    if not set(values).issubset(allowed):
         raise ValueError("Preset contains fields for another backend")
     result = dict(values)
+    if key == "dlssg":
+        result = _strip_legacy_dlssg(result)
     if key == "rtx_vsr":
         if result.get("mode") not in {"Super Resolution", "High Bitrate", "Deblur", "Denoise"} or result.get("quality") not in {"LOW", "MEDIUM", "HIGH", "ULTRA"}:
             raise ValueError("Invalid RTX VSR preset")
@@ -93,20 +116,12 @@ def _validate(backend: str, values: dict) -> dict:
         if result.get("model_preset") not in {"Default", "J", "K", "L", "M"}:
             raise ValueError("Invalid DLSS SR model preset")
     else:
-        for field in ("community_runtime", "official_runtime_dir"):
-            if not isinstance(result.get(field), str):
-                raise ValueError(f"Invalid DLSS-G {field}")
-            result[field] = result[field].strip()
         if result.get("motion_provider") != "NVIDIA Optical Flow":
             raise ValueError("Invalid DLSS-G motion provider")
         if result.get("depth_mode") != "Constant 0.5":
             raise ValueError("Invalid DLSS-G depth mode")
         if result.get("multiplier", 2) not in {2, 3, 4}:
             raise ValueError("Invalid DLSS-G multiplier")
-        if "runtime_profile" in result:
-            if result["runtime_profile"] not in {"legacy", "candidate-0.3.1"}:
-                raise ValueError("Invalid DLSS-G runtime profile")
-            result["runtime_profile"] = result["runtime_profile"]
         result["multiplier"] = int(result.get("multiplier", 2))
     return result
 

@@ -1,6 +1,7 @@
 name: dlss-rtxsr-upscaler
 channels:
   - conda-forge
+  - nodefaults
 dependencies:
   - python=3.11.13
   - pip=26.2

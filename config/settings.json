@@ -1,5 +1,5 @@
 {
-  "mode": "DLSS 5 only",
+  "mode": "RTX VSR only",
   "vsr_scale": 2.0,
   "vsr_quality": "ULTRA",
   "dlss_preset": "Default",

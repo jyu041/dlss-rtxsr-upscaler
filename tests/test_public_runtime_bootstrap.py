@@ -36,13 +36,44 @@ def test_public_release_bootstrap_manifest_is_exact_and_public():
     assert sr.constraints["runtime_sha256"] == SR_RUNTIME_SHA256
 
 
-def test_setup_bootstraps_public_resources_and_persists_worker_path():
+def test_dlssg_managed_components_have_public_pinned_sources():
+    manager = RuntimeManager(MANIFEST, ROOT / "runtime")
+    provider = manager.specs["dlssg-official-provider-310.9.1"]
+    candidate = manager.specs["dlssg-sm86-0.3.1-candidate"]
+
+    assert provider.policy == "UPSTREAM_DOWNLOAD"
+    assert provider.direct_user_download is True
+    assert provider.destination == "dlssg/official"
+    assert provider.artifact_url and "NVIDIA-RTX/Streamline" in provider.artifact_url
+    assert provider.constraints["provider_sha256"]
+
+    assert candidate.policy == "UPSTREAM_DOWNLOAD"
+    assert candidate.direct_user_download is True
+    assert candidate.destination == "dlssg/candidate-0.3.1"
+    assert candidate.constraints["compatibility_test_required"] is True
+    assert candidate.files
+    assert all(item.url and "github" in item.url for item in candidate.files)
+
+
+def test_setup_bootstraps_managed_resources_and_persists_canonical_paths():
     setup = (ROOT / "setup.bat").read_text(encoding="utf-8")
-    assert "project-c55-worker-beta2" in setup
-    assert "project-dlss-sr-beta2" in setup
+    for runtime_id in (
+        "project-c55-worker-beta2",
+        "project-dlss-sr-beta2",
+        "dlssg-official-provider-310.9.1",
+        "dlssg-sm86-0.3.1-candidate",
+    ):
+        assert runtime_id in setup
     assert "tools\\manage_runtime.py install" in setup
+    assert "tools\\validate_dlssg_candidate.py" in setup
+    assert "tools\\check_dlss_sr_readiness.py --selftest" in setup
     assert "runtime\\dlssg\\worker\\dlssg_sm86_offline.exe" in setup
+    assert "runtime\\dlssg\\candidate-0.3.1\\version.dll" in setup
+    assert "runtime\\dlssg\\official" in setup
     assert "DLSSG_WORKER_EXE" in setup
+    assert "DLSSG_RUNTIME_PROFILE=candidate-0.3.1" in setup
+    assert "DLSSG_COMMUNITY_RUNTIME" in setup
+    assert "DLSSG_OFFICIAL_RUNTIME_DIR" in setup
     assert "dlss-rtxsr-upscaler-resources" not in setup
 
 

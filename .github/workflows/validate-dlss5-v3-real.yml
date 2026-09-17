@@ -49,10 +49,13 @@ jobs:
               assert verify_runtime_files(payload) == EXPECTED_RUNTIME_SHA256
 
               auth = authenticode_report(payload)
+              print('AUTHENTICODE=' + json.dumps(auth, indent=2), flush=True)
               assert auth['completed'] is True
-              assert len(auth['files']) == 5
+              assert isinstance(auth['files'], list), type(auth['files'])
+              assert len(auth['files']) == 5, auth
 
               scan = defender_scan(payload)
+              print('DEFENDER=' + json.dumps(scan, indent=2), flush=True)
               assert scan['status'] == 'passed', scan
 
               print(json.dumps({

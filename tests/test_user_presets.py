@@ -60,19 +60,42 @@ def test_clear_last_successful_render_preserves_last_used(tmp_path, monkeypatch)
 def test_dlssg_settings_roundtrip_and_validation(tmp_path, monkeypatch):
     settings = tmp_path / "settings.local.json"
     monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
-    values = {"community_runtime": "  C:/runtime/version.dll  ", "official_runtime_dir": "", "motion_provider": "NVIDIA Optical Flow", "depth_mode": "Constant 0.5"}
+    values = {"motion_provider": "NVIDIA Optical Flow", "depth_mode": "Constant 0.5"}
     user_presets.save_last_used("dlssg", values)
-    assert user_presets.load_last_used()["dlssg"] == {**values, "community_runtime": "C:/runtime/version.dll", "multiplier": 2}
+    assert user_presets.load_last_used()["dlssg"] == {**values, "multiplier": 2}
     with pytest.raises(ValueError):
         user_presets.save_last_used("dlssg", {**values, "motion_provider": "CPU"})
     with pytest.raises(ValueError):
         user_presets.save_last_used("dlssg", {**values, "depth_mode": "Depth"})
     with pytest.raises(ValueError):
         user_presets.save_last_used("dlssg", {**values, "multiplier": 5})
-    user_presets.save_last_used("dlssg", {**values, "runtime_profile": "candidate-0.3.1"})
-    assert user_presets.load_last_used()["dlssg"]["runtime_profile"] == "candidate-0.3.1"
     with pytest.raises(ValueError):
-        user_presets.save_last_used("dlssg", {**values, "runtime_profile": "untrusted"})
+        user_presets.save_last_used("dlssg", {**values, "scale": 2.0})
+
+
+def test_dlssg_legacy_runtime_fields_are_discarded(tmp_path, monkeypatch):
+    settings = tmp_path / "settings.local.json"
+    presets = tmp_path / "user_presets.json"
+    monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
+    monkeypatch.setattr(user_presets, "USER_PRESETS", presets)
+    controls = {"motion_provider": "NVIDIA Optical Flow", "depth_mode": "Constant 0.5", "multiplier": 4}
+    legacy = {
+        **controls,
+        "community_runtime": "C:/old/version.dll",
+        "official_runtime_dir": "C:/old/ngx",
+        "runtime_profile": "legacy",
+    }
+
+    user_presets.save_last_used("dlssg", legacy)
+    assert user_presets.load_last_used()["dlssg"] == controls
+    persisted = json.loads(settings.read_text(encoding="utf-8"))["last_used"]["dlssg"]
+    assert persisted == controls
+
+    settings.write_text(json.dumps({"schema_version": 1, "last_used": {"dlssg": legacy}}), encoding="utf-8")
+    assert user_presets.load_last_used()["dlssg"] == controls
+
+    presets.write_text(json.dumps({"schema_version": 1, "rtx_vsr": {}, "dlss5": {}, "dlss_sr": {}, "dlssg": {"old": legacy}}), encoding="utf-8")
+    assert user_presets.get_user_preset("dlssg", "old") == controls
 
 
 def test_schema_v1_without_dlssg_and_existing_backends_are_preserved(tmp_path, monkeypatch):
@@ -80,7 +103,7 @@ def test_schema_v1_without_dlssg_and_existing_backends_are_preserved(tmp_path, m
     monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
     original = {"schema_version": 1, "last_used": {"rtx_vsr": {"mode": "Super Resolution"}, "dlss5": {"scale": 1.0}, "dlss_sr": {"mode": "Quality"}}}
     settings.write_text(json.dumps(original), encoding="utf-8")
-    user_presets.save_last_used("dlssg", {"community_runtime": "", "official_runtime_dir": "", "motion_provider": "NVIDIA Optical Flow", "depth_mode": "Constant 0.5"})
+    user_presets.save_last_used("dlssg", {"motion_provider": "NVIDIA Optical Flow", "depth_mode": "Constant 0.5"})
     data = json.loads(settings.read_text(encoding="utf-8"))
     assert data["last_used"]["rtx_vsr"] == original["last_used"]["rtx_vsr"]
     assert data["last_used"]["dlss5"] == original["last_used"]["dlss5"]

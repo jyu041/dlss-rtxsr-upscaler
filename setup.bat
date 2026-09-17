@@ -54,11 +54,9 @@ if errorlevel 1 (
 )
 del /q "%NVE_DLSSG_PROVIDER_ARCHIVE%" >nul 2>nul
 
-set "NVE_DLSSG_CANDIDATE_READY=1"
-if not exist "%~dp0runtime\dlssg\candidate-0.3.1\version.dll" set "NVE_DLSSG_CANDIDATE_READY=0"
-if not exist "%~dp0runtime\dlssg\candidate-0.3.1\dlssg_sm86.ini" set "NVE_DLSSG_CANDIDATE_READY=0"
-if "%NVE_DLSSG_CANDIDATE_READY%"=="0" (
-  echo Installing pinned SM86 0.3.1 DLSS-G compatibility runtime from its public upstream source...
+call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\manage_runtime.py verify dlssg-sm86-0.3.1-candidate >nul 2>nul
+if errorlevel 1 (
+  echo Installing or repairing the pinned SM86 0.3.1 DLSS-G compatibility runtime from its public upstream source...
   call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\manage_runtime.py install dlssg-sm86-0.3.1-candidate || exit /b 1
 )
 

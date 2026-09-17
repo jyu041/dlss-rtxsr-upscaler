@@ -13,7 +13,7 @@ from src.core.dlssg_official_runtime import identity as official_runtime_identit
 from src.core.dlssg_readiness import sha256_file
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_WORKER = ROOT / "native" / "dlssg_sm86_offline" / "bin" / "dlssg_sm86_offline.exe"
+DEFAULT_WORKER = ROOT / "runtime" / "dlssg" / "worker" / "dlssg_sm86_offline.exe"
 MANAGED_COMMUNITY_RUNTIME = ROOT / "runtime" / "dlssg" / "legacy" / "version.dll"
 MANAGED_CANDIDATE_RUNTIME = ROOT / "runtime" / "dlssg" / "candidate-0.3.1" / "version.dll"
 MANAGED_OFFICIAL_RUNTIME_DIR = ROOT / "runtime" / "dlssg" / "official"

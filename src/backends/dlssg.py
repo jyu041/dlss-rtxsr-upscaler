@@ -17,6 +17,7 @@ DEFAULT_WORKER = ROOT / "runtime" / "dlssg" / "worker" / "dlssg_sm86_offline.exe
 MANAGED_COMMUNITY_RUNTIME = ROOT / "runtime" / "dlssg" / "legacy" / "version.dll"
 MANAGED_CANDIDATE_RUNTIME = ROOT / "runtime" / "dlssg" / "candidate-0.3.1" / "version.dll"
 MANAGED_OFFICIAL_RUNTIME_DIR = ROOT / "runtime" / "dlssg" / "official"
+DEFAULT_RUNTIME_PROFILE = "candidate-0.3.1"
 
 
 @dataclass(frozen=True)
@@ -38,7 +39,7 @@ class DLSSGBackend(Backend):
         official_runtime_dir: str | Path | None = None,
         runtime_profile: str | None = None,
     ):
-        profile_name = runtime_profile or os.environ.get("DLSSG_RUNTIME_PROFILE", "legacy")
+        profile_name = runtime_profile or os.environ.get("DLSSG_RUNTIME_PROFILE", DEFAULT_RUNTIME_PROFILE)
         configured_runtime = community_runtime or os.environ.get("DLSSG_COMMUNITY_RUNTIME")
         if profile_name not in {"legacy", "candidate-0.3.1"}:
             raise ValueError(f"Unknown DLSS-G runtime profile: {profile_name}")

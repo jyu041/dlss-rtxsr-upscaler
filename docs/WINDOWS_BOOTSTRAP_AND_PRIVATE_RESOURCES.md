@@ -11,11 +11,24 @@ The installed Visual Studio 2022 components were discovered through
 `C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe`;
 MSBuild/CMake are not independently available on PATH.
 
-## B. Original errors
+## B. Original errors and current mitigation
 
 The first `conda env update` attempted to use a localhost proxy (`127.0.0.1:9`)
 and failed reading the Anaconda terms cache with `CondaToSPermissionError`.
-With normal network access and accepted terms, the pinned environment completed.
+The project environment now declares `conda-forge` plus `nodefaults`, so normal
+project bootstrap does not need the `repo.anaconda.com` default channels or
+their terms cache. This keeps project package resolution on the channel the
+environment actually specifies rather than inheriting machine-level defaults.
+
+A `127.0.0.1:9` proxy is also a known pattern used by sandboxed/automation
+shells to intentionally block child-process network access. Setup does not
+silently bypass that security boundary. Before the optional DLSS 5 archive
+download it now detects that discard proxy and fails that optional step
+immediately with an actionable message instead of allowing repeated connection
+retries. Running setup from a normal network-enabled shell remains the standard
+path. An already-downloaded exact pinned v3.0 archive can alternatively be
+supplied through `NVE_DLSS5_ARCHIVE`.
+
 The initial Conda-forge FFmpeg 8.0.1 package installed files but both FFmpeg
 and FFprobe failed to launch from the environment, so it is not used as the
 project’s FFmpeg solution.
@@ -79,11 +92,11 @@ Optical Flow runtime is present at `C:\Windows\System32\nvofapi64.dll`.
 
 Worker self-test passed; package imports and `pip check` passed; Python tests
 passed (`69 passed, 2 skipped`); public commits `291f520`, `baf3fd7`, and
-`a61d24a` were pushed; private commits `9e94561`, `1ca9f63`, `b4e184b`, and
-`259e517` were pushed. A fresh
-clone simulation passed for clone, LFS retrieval, synchronization, worker
-self-test, and `git diff --check`. Full native rebuild, NVOF direction test,
-and true DLSS-G UI readiness still require the external SDK/runtime inputs.
+`a61d24a` were pushed; private commits `1ca9f63`, `b4e184b`, and `259e517` were
+pushed. A fresh clone simulation passed for clone, LFS retrieval,
+synchronization, worker self-test, and `git diff --check`. Full native rebuild,
+NVOF direction test, and true DLSS-G UI readiness still require the external
+SDK/runtime inputs.
 
 ## N–O. Remaining manual actions and primary result
 

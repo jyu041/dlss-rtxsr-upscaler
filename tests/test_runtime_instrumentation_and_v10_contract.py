@@ -96,8 +96,9 @@ def test_instrumented_workflow_requires_explicit_gpu_validation_switch():
     assert "[switch]$Validate256" in workflow
     assert "[switch]$ValidatePractical" in workflow
     assert "[switch]$ValidatePracticalGrid4" in workflow
+    assert "[switch]$ValidatePracticalGridAB" in workflow
     assert "$matrixSwitches.Count -gt 1" in workflow
-    assert "if (-not $Validate256 -and -not $ValidatePractical -and -not $ValidatePracticalGrid4)" in workflow
+    assert "if (-not $Validate256 -and -not $ValidatePractical -and -not $ValidatePracticalGrid4 -and -not $ValidatePracticalGridAB)" in workflow
     assert "GPU_VALIDATION_SKIPPED" in workflow
     assert "bin-instrumented" in workflow
     assert "validate_dlssg_instrumented.py" in workflow
@@ -190,3 +191,13 @@ def test_nvof_coarse_grid_is_explicit_opt_in_and_dense_default_is_preserved():
     assert 'uint2 source = id.xy / grid;' in shader
     assert '"DLSSG_NVOF_OUTPUT_GRID": str(nvof_output_grid)' in validator
     assert 'expected_grid_marker = f"NVOF_OUTPUT_GRID_SELECTED={nvof_output_grid} "' in validator
+
+
+def test_instrumented_child_extended_samples_are_explicit_and_bounded():
+    child = (ROOT / "tools" / "validate_dlssg_candidate.py").read_text(encoding="utf-8")
+    validator = (ROOT / "tools" / "validate_dlssg_instrumented.py").read_text(encoding="utf-8")
+    assert 'parser.add_argument("--timing-frames", type=int, default=3)' in child
+    assert 'timing_frames < 3 or timing_frames > 12' in child
+    assert 'non-default timing frame count requires --instrumented-timing' in child
+    assert '"--timing-frames"' in validator
+    assert '"timing_frames": 8' in validator

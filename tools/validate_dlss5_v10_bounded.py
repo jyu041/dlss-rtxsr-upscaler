@@ -172,7 +172,7 @@ def run_bounded(
     *,
     gpu_ordinal: int,
 ) -> dict[str, object]:
-    validate_preflight_report(runtime, preflight)
+    preflight_evidence = validate_preflight_report(runtime, preflight)
     python = Path(sys.executable).resolve()
     rule_name = f"NVE DLSS5 v10 bounded test {__import__('os').getpid()}"
     firewall_installed = False
@@ -191,6 +191,8 @@ def run_bounded(
         "normal_backend_changed": False,
         "runtime": str(runtime.resolve()),
         "preflight": str(preflight.resolve()),
+        "preflight_age_seconds": preflight_evidence.get("preflight_age_seconds"),
+        "defender": preflight_evidence.get("malware_scan"),
         "python": str(python),
         "gpu_ordinal": gpu_ordinal,
         "dimensions": [256, 256],

@@ -34,5 +34,7 @@ $bytes = [IO.File]::ReadAllBytes($cso); $lines = [Text.StringBuilder]::new()
 [void]$lines.AppendLine('#pragma once'); [void]$lines.AppendLine('static const unsigned char kFlowConvertBytecode[] = {')
 for ($i=0; $i -lt $bytes.Length; $i += 16) { $end = [Math]::Min($i + 16, $bytes.Length); $values = ($i..($end-1) | ForEach-Object { '0x{0:X2}' -f $bytes[$_] }) -join ', '; [void]$lines.AppendLine("    $values,") }
 [void]$lines.AppendLine('};'); [void]$lines.AppendLine('static const unsigned int kFlowConvertBytecodeSize = sizeof(kFlowConvertBytecode);')
-[IO.File]::WriteAllText((Join-Path $PSScriptRoot 'flow_convert_bytecode.h'), $lines.ToString(), [Text.UTF8Encoding]::new($false))
-cl /nologo /std:c++17 /O2 /EHsc /W4 /Zi /MD /I"$inc" /I"$NvApi" /I"$NvOfSdk" /Fe:"$Output\dlssg_sm86_offline.exe" "$PSScriptRoot\dlssg_sm86_offline.cpp" "$PSScriptRoot\resource_pipeline.cpp" "$PSScriptRoot\community_run2x.cpp" "$PSScriptRoot\nvof_d3d12.cpp" /link /DEBUG /LIBPATH:"$lib" nvsdk_ngx_d.lib d3d12.lib dxgi.lib version.lib advapi32.lib user32.lib bcrypt.lib
+$generatedHeader = Join-Path $Output 'flow_convert_bytecode.h'
+[IO.File]::WriteAllText($generatedHeader, $lines.ToString(), [Text.UTF8Encoding]::new($false))
+cl /nologo /std:c++17 /O2 /EHsc /W4 /Zi /MD /I"$Output" /I"$inc" /I"$NvApi" /I"$NvOfSdk" /Fe:"$Output\dlssg_sm86_offline.exe" "$PSScriptRoot\dlssg_sm86_offline.cpp" "$PSScriptRoot\resource_pipeline.cpp" "$PSScriptRoot\community_run2x.cpp" "$PSScriptRoot\nvof_d3d12.cpp" /link /DEBUG /LIBPATH:"$lib" nvsdk_ngx_d.lib d3d12.lib dxgi.lib version.lib advapi32.lib user32.lib bcrypt.lib
+if ($LASTEXITCODE -ne 0) { throw "native worker compilation failed with exit code $LASTEXITCODE" }

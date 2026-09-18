@@ -8,6 +8,17 @@ import pytest
 import tools.capture_mfg_grid_quality_ab as capture
 
 
+
+def test_evidence_root_namespaces_source_identity_and_multiplier(tmp_path):
+    base = tmp_path / "quality"
+    source = tmp_path / "My Clip.mp4"
+    root2 = capture.evidence_root(base, source, "ABCDEF0123456789", 2)
+    root4 = capture.evidence_root(base, source, "ABCDEF0123456789", 4)
+    assert root2.parent.name == "My Clip-ABCDEF012345"
+    assert root2.name == "2x"
+    assert root4.name == "4x"
+    assert root2 != root4
+
 def test_grid_environment_is_restored(monkeypatch):
     monkeypatch.setenv("DLSSG_NVOF_DIRECTION", "both")
     monkeypatch.delenv("DLSSG_NVOF_GPU_FLOW", raising=False)

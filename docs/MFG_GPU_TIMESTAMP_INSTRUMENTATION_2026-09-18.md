@@ -270,3 +270,86 @@ powershell -ExecutionPolicy Bypass -File .\tools\build_validate_dlssg_instrument
 
 The expected evidence file is
 `runtime/audit/mfg-instrumented-practical-validation.json`.
+
+
+## Practical-resolution 1x1 NVOF hardware evidence
+
+The RTX 3070 Ti practical matrix completed successfully on research head
+`017499a600d988172f643aec68718431aca2c91f`.
+
+Experimental worker SHA-256:
+
+`79DA7749897462884F17B9ED549C7714380AA680017671BF5CBC2D7599C43E34`
+
+The legacy community runtime and NVIDIA provider identities remained unchanged.
+All eight cells passed:
+
+- 1280x720: 2X external, 2X NVOF, 4X external, 4X NVOF;
+- 1920x1080: 2X external, 2X NVOF, 4X external, 4X NVOF.
+
+No device-removal failure was observed.
+
+Representative steady-state medians:
+
+| Geometry / path | group_total | NVOF bracket | NVOF conversion | input upload | output copy |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 720p 2X external | 1.708 ms | n/a | n/a | 0.286 ms | 0.139 ms |
+| 720p 2X NVOF | 1.580 ms | 6.915 ms | 0.035 ms | 0.144 ms | 0.138 ms |
+| 720p 4X external | 3.617 ms | n/a | n/a | 0.283 ms | 0.138 ms |
+| 720p 4X NVOF | 3.501 ms | 7.136 ms | 0.035 ms | 0.146 ms | 0.138 ms |
+| 1080p 2X external | 2.651 ms | n/a | n/a | 0.634 ms | 0.313 ms |
+| 1080p 2X NVOF | 2.345 ms | 13.712 ms | 0.063 ms | 0.319 ms | 0.313 ms |
+| 1080p 4X external | 4.894 ms | n/a | n/a | 0.635 ms | 0.313 ms |
+| 1080p 4X NVOF | 4.574 ms | 13.784 ms | 0.065 ms | 0.319 ms | 0.313 ms |
+
+The first measured sample in some cells carries a clear warm-up cost and is not
+used to infer steady-state scaling.
+
+### Interpretation
+
+The NVOF cross-engine bracket is resolution-dependent, not predominantly fixed
+handoff overhead. Moving from 1280x720 to 1920x1080 increases the steady-state
+bracket from about 7.0 ms to about 13.7-13.8 ms, roughly 1.9x while pixel count
+increases 2.25x.
+
+The direct-queue flow conversion is not a material bottleneck. It remains around
+0.035 ms at 720p and 0.064 ms at 1080p. Output-copy cost is also much smaller
+than the NVOF bracket.
+
+Therefore the next optimization experiment targets NVOFA work density rather
+than conversion-shader micro-optimization or output-copy elimination.
+
+## Opt-in 4x4 NVOF output-grid experiment
+
+NVIDIA documents Ampere support for 4x4, 2x2, and 1x1 NVOFA output grids and
+describes coarser blockwise flow as suitable for software upsampling to a dense
+flow map.
+
+The research worker now supports an explicitly opt-in environment setting:
+
+`DLSSG_NVOF_OUTPUT_GRID=4`
+
+Default remains 1x1.
+
+For the 4x4 experiment:
+
+- NVOFA still receives full-resolution input frames;
+- the NVOFA output resource is allocated at
+  `ceil(width/4) x ceil(height/4)`;
+- the existing GPU conversion stage expands each block vector to the
+  corresponding full-resolution 4x4 pixel region;
+- vector magnitude is not multiplied by four because NVOFA flow values remain
+  input-pixel displacement values;
+- the full-resolution DLSS-G motion resource and protocol contract are
+  unchanged;
+- CPU/readback flow paths remain restricted to the existing 1x1 mode.
+
+The explicit comparison command is:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\build_validate_dlssg_instrumented.ps1 -ValidatePracticalGrid4
+```
+
+This is a research-only performance experiment. It is not a production default
+and must be followed by withheld-frame/perceptual quality comparison before any
+promotion could be considered.

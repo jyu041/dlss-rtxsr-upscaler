@@ -208,6 +208,11 @@ struct NvofD3D12::Impl {
     ID3D12PipelineState *conversionPso = nullptr;
     ID3D12CommandAllocator *conversionAllocator = nullptr;
     ID3D12GraphicsCommandList *conversionList = nullptr;
+    ID3D12QueryHeap *timingHeap = nullptr;
+    ID3D12Resource *timingReadback = nullptr;
+    uint64_t timingFrequency = 0;
+    bool timingEnabled = false;
+    bool timingPending = false;
     D3D12_CPU_DESCRIPTOR_HANDLE conversionCpu{};
     D3D12_GPU_DESCRIPTOR_HANDLE conversionGpu{};
     NvOFGPUBufferHandle previousHandle = nullptr;
@@ -439,6 +444,24 @@ bool NvofD3D12::Initialize(ID3D12Device *device, ID3D12CommandQueue *queue, uint
     state.eventHandle = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     if (!state.eventHandle) return false;
 
+    if (DiagnosticLoggingEnabled()) {
+        D3D12_QUERY_HEAP_DESC timingDesc{};
+        timingDesc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
+        timingDesc.Count = 3;
+        if (SUCCEEDED(queue->GetTimestampFrequency(&state.timingFrequency)) && state.timingFrequency &&
+            SUCCEEDED(device->CreateQueryHeap(&timingDesc, IID_PPV_ARGS(&state.timingHeap)))) {
+            state.timingReadback = CreateBuffer(
+                device,
+                3 * sizeof(uint64_t),
+                D3D12_HEAP_TYPE_READBACK,
+                D3D12_RESOURCE_STATE_COPY_DEST);
+            state.timingEnabled = state.timingReadback != nullptr;
+        }
+        Log("NVOF_GPU_TIMESTAMP_INIT available=%d frequency=%llu",
+            state.timingEnabled ? 1 : 0,
+            static_cast<unsigned long long>(state.timingFrequency));
+    }
+
     state.previous = CreateTexture(device, width, height, DXGI_FORMAT_B8G8R8A8_UNORM, D3D12_RESOURCE_STATE_COMMON);
     state.current = CreateTexture(device, width, height, DXGI_FORMAT_B8G8R8A8_UNORM, D3D12_RESOURCE_STATE_COMMON);
     state.forward = CreateTexture(device, width, height, DXGI_FORMAT_R16G16_SINT, D3D12_RESOURCE_STATE_COMMON);
@@ -483,6 +506,9 @@ bool NvofD3D12::ComputeForwardGpu(const uint8_t *currentRgba, ID3D12Resource *mo
     if (!state.ResetList()) { Log("NVOF_GPU_STAGE_UPLOAD_LIST_RESET_FAILED"); return false; }
     Log("NVOF_GPU_STAGE_UPLOAD_LIST_RESET_OK");
     state.RecordUpload(state.currentUpload, state.current);
+    if (state.timingEnabled) {
+        state.list->EndQuery(state.timingHeap, D3D12_QUERY_TYPE_TIMESTAMP, 0);
+    }
     const HRESULT uploadCloseHr = state.list->Close();
     if (FAILED(uploadCloseHr)) { LogDeviceFailure(state.device, "GPU_UPLOAD_LIST_CLOSE", uploadCloseHr); return false; }
     Log("NVOF_GPU_STAGE_UPLOAD_CLOSE_OK");
@@ -521,6 +547,9 @@ bool NvofD3D12::ComputeForwardGpu(const uint8_t *currentRgba, ID3D12Resource *mo
     const HRESULT conversionListHr = state.conversionList->Reset(state.conversionAllocator, state.conversionPso);
     if (FAILED(conversionListHr)) { LogDeviceFailure(state.device, "GPU_CONVERSION_LIST_RESET", conversionListHr); return false; }
     Log("NVOF_GPU_CONVERSION_LIST_RESET_OK");
+    if (state.timingEnabled) {
+        state.conversionList->EndQuery(state.timingHeap, D3D12_QUERY_TYPE_TIMESTAMP, 1);
+    }
     ID3D12DescriptorHeap *heaps[] = {state.conversionHeap}; state.conversionList->SetDescriptorHeaps(1, heaps);
     state.conversionList->SetComputeRootSignature(state.conversionRoot);
     state.conversionList->SetComputeRootDescriptorTable(0, state.conversionGpu);
@@ -542,6 +571,17 @@ bool NvofD3D12::ComputeForwardGpu(const uint8_t *currentRgba, ID3D12Resource *mo
     D3D12_RESOURCE_BARRIER uavBarrier{}; uavBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
     state.conversionList->ResourceBarrier(1, &uavBarrier);
     Transition(state.conversionList, state.conversionMotion, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    if (state.timingEnabled) {
+        state.conversionList->EndQuery(state.timingHeap, D3D12_QUERY_TYPE_TIMESTAMP, 2);
+        state.conversionList->ResolveQueryData(
+            state.timingHeap,
+            D3D12_QUERY_TYPE_TIMESTAMP,
+            0,
+            3,
+            state.timingReadback,
+            0);
+        state.timingPending = true;
+    }
     const HRESULT conversionCloseHr = state.conversionList->Close();
     if (FAILED(conversionCloseHr)) { LogDeviceFailure(state.device, "GPU_CONVERSION_LIST_CLOSE", conversionCloseHr); return false; }
     Log("NVOF_GPU_CONVERSION_LIST_CLOSE_OK");
@@ -763,6 +803,37 @@ bool NvofD3D12::ComputeBackward(const uint8_t *previousRgba, const uint8_t *curr
     return true;
 }
 
+bool NvofD3D12::ConsumeGpuTimings(NvofGpuTimings *timings) {
+    if (!timings || !impl_) return false;
+    *timings = {};
+    auto &state = *impl_;
+    if (!state.timingEnabled || !state.timingPending || !state.timingReadback || !state.timingFrequency) {
+        return false;
+    }
+
+    uint64_t *ticks = nullptr;
+    D3D12_RANGE range{0, 3 * sizeof(uint64_t)};
+    const HRESULT mapped = state.timingReadback->Map(0, &range, reinterpret_cast<void **>(&ticks));
+    if (FAILED(mapped) || !ticks) {
+        Log("NVOF_GPU_TIMESTAMP_READBACK_FAILED hr=0x%08X", static_cast<unsigned>(mapped));
+        return false;
+    }
+    const auto elapsed = [&](uint32_t begin, uint32_t end) {
+        return ticks[end] >= ticks[begin]
+            ? static_cast<double>(ticks[end] - ticks[begin]) * 1000.0 /
+                static_cast<double>(state.timingFrequency)
+            : 0.0;
+    };
+    timings->valid = true;
+    timings->bracketMs = elapsed(0, 1);
+    timings->conversionMs = elapsed(1, 2);
+    timings->frequency = state.timingFrequency;
+    D3D12_RANGE written{0, 0};
+    state.timingReadback->Unmap(0, &written);
+    state.timingPending = false;
+    return true;
+}
+
 void NvofD3D12::Shutdown() {
     if (!impl_) return;
     auto &state = *impl_;
@@ -801,6 +872,11 @@ void NvofD3D12::Shutdown() {
     Release(state.conversionMotion);
     Release(state.flowCopy);
     Release(state.conversionList);
+    Release(state.timingReadback);
+    Release(state.timingHeap);
+    state.timingEnabled = false;
+    state.timingPending = false;
+    state.timingFrequency = 0;
     Release(state.conversionAllocator);
     Release(state.conversionPso);
     Release(state.conversionRoot);

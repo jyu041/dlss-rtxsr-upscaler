@@ -196,7 +196,7 @@ def test_nvof_coarse_grid_is_explicit_opt_in_and_dense_default_is_preserved():
 def test_instrumented_child_extended_samples_are_explicit_and_bounded():
     child = (ROOT / "tools" / "validate_dlssg_candidate.py").read_text(encoding="utf-8")
     validator = (ROOT / "tools" / "validate_dlssg_instrumented.py").read_text(encoding="utf-8")
-    assert 'parser.add_argument("--timing-frames", type=int, default=3)' in child
+    assert 'parser.add_argument("--timing-frames", type=int, default=3, help=argparse.SUPPRESS)' in child
     assert 'timing_frames < 3 or timing_frames > 12' in child
     assert 'non-default timing frame count requires --instrumented-timing' in child
     assert '"--timing-frames"' in validator

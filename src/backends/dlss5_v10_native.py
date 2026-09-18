@@ -14,10 +14,14 @@ from typing import Any, Callable
 
 from .dlss5_v10_contract import (
     BRIDGE_ABI_VERSION,
+    FORMAT_RGBA8,
+    MEMORY_HOST,
+    MEMORY_NONE,
     FrameDescriptorV1,
     FrameResultV1,
     RenderParametersV6,
 )
+from .dlss5_v10_protocol import CreateRequest, rgba_bytes
 from .dlss5_v10_static import V10_EXPECTED_FILES, inspect_v10_runtime
 
 
@@ -138,6 +142,80 @@ def bind_required_exports(library: Any) -> None:
     if release is not None:
         release.argtypes = []
         release.restype = ctypes.c_int
+
+
+def build_host_rgba_descriptors(
+    request: CreateRequest,
+    source_bytes: bytearray,
+    destination_bytes: bytearray,
+    *,
+    timestamp: int,
+) -> tuple[FrameDescriptorV1, FrameDescriptorV1, tuple[Any, Any]]:
+    """Build source/destination ABI descriptors without invoking native code."""
+    request.validate()
+    output_width, output_height = request.output_size
+    expected_source = rgba_bytes(request.input_width, request.input_height)
+    expected_destination = rgba_bytes(output_width, output_height)
+    if len(source_bytes) != expected_source:
+        raise ValueError(
+            f"source RGBA8 buffer is {len(source_bytes)} bytes; expected {expected_source}"
+        )
+    if len(destination_bytes) != expected_destination:
+        raise ValueError(
+            f"destination RGBA8 buffer is {len(destination_bytes)} bytes; expected {expected_destination}"
+        )
+
+    source_owner = (ctypes.c_ubyte * len(source_bytes)).from_buffer(source_bytes)
+    destination_owner = (ctypes.c_ubyte * len(destination_bytes)).from_buffer(destination_bytes)
+
+    source = FrameDescriptorV1.empty()
+    source.memory_type = MEMORY_HOST
+    source.pixel_format = FORMAT_RGBA8
+    source.width = request.input_width
+    source.height = request.input_height
+    source.planes[0] = ctypes.addressof(source_owner)
+    source.strides[0] = request.input_width * 4
+    source.timestamp = int(timestamp)
+
+    destination = FrameDescriptorV1.empty()
+    destination.memory_type = MEMORY_HOST
+    destination.pixel_format = FORMAT_RGBA8
+    destination.width = output_width
+    destination.height = output_height
+    destination.planes[0] = ctypes.addressof(destination_owner)
+    destination.strides[0] = output_width * 4
+    destination.timestamp = int(timestamp)
+
+    return source, destination, (source_owner, destination_owner)
+
+
+def build_render_parameters(
+    request: CreateRequest,
+    *,
+    reset: bool,
+) -> RenderParametersV6:
+    request.validate()
+    value = RenderParametersV6.defaults()
+    value.style = request.style
+    value.intensity = float(request.intensity)
+    value.tone = float(request.local_tone)
+    value.structure = float(request.local_structure)
+    value.skin = float(request.skin_structure)
+    value.automask = int(request.automatic_mask)
+    value.reset = int(bool(reset))
+    value.color_strength = float(request.color_strength)
+    value.tone_preservation = float(request.tone_preservation)
+    value.face_skin_protection = float(request.face_skin_protection)
+    value.grain_preservation = float(request.grain_preservation)
+    value.nr_passes = request.nr_passes
+    value.shimmer_suppression = float(request.shimmer_suppression)
+    value.prefer_nvof = int(request.prefer_nvof)
+    value.mask_memory_type = MEMORY_NONE
+    value.mask_width = 0
+    value.mask_height = 0
+    value.mask_stride = 0
+    value.mask_plane = 0
+    return value
 
 
 def verify_runtime_before_load(runtime_dir: str | Path) -> Path:

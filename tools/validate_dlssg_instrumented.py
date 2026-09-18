@@ -48,6 +48,13 @@ MATRICES: dict[str, dict[str, object]] = {
         "geometries": ((1280, 720), (1920, 1080)),
         "multipliers": (2, 4),
         "timeout": PRACTICAL_CELL_TIMEOUT,
+        "nvof_output_grid": 1,
+    },
+    "practical-grid4": {
+        "geometries": ((1280, 720), (1920, 1080)),
+        "multipliers": (2, 4),
+        "timeout": PRACTICAL_CELL_TIMEOUT,
+        "nvof_output_grid": 4,
     },
 }
 
@@ -119,6 +126,7 @@ def _run_cell(
     width: int,
     height: int,
     timeout: int,
+    nvof_output_grid: int = 1,
 ) -> dict[str, object]:
     command = [
         sys.executable,
@@ -155,6 +163,7 @@ def _run_cell(
             "DLSSG_GPU_TIMESTAMPS": "1",
             "DLSSG_NVOF_DIRECTION": "forward",
             "DLSSG_NVOF_GPU_FLOW": "1",
+            "DLSSG_NVOF_OUTPUT_GRID": str(nvof_output_grid),
         },
     )
     elapsed = time.monotonic() - started
@@ -186,6 +195,7 @@ def _run_cell(
         "height": height,
         "multiplier": multiplier,
         "motion_mode": motion_mode,
+        "nvof_output_grid": nvof_output_grid,
         "elapsed_seconds": elapsed,
         "gpu_timestamps": timestamp_summary,
         "gpu_timestamp_lines": timestamp_lines,
@@ -217,6 +227,7 @@ def main() -> int:
 
     matrix = MATRICES[args.matrix]
     timeout = args.timeout if args.timeout is not None else int(matrix["timeout"])
+    nvof_output_grid = int(matrix.get("nvof_output_grid", 1))
     results = []
     for width, height in matrix["geometries"]:
         for multiplier in matrix["multipliers"]:
@@ -226,7 +237,8 @@ def main() -> int:
                     flush=True,
                 )
                 result = _run_cell(
-                    worker, runtime, official, multiplier, motion_mode, width, height, timeout
+                    worker, runtime, official, multiplier, motion_mode, width, height, timeout,
+                    nvof_output_grid=nvof_output_grid,
                 )
                 result["path"] = label
                 results.append(result)
@@ -247,6 +259,7 @@ def main() -> int:
         "validation_geometries": [list(item) for item in matrix["geometries"]],
         "validation_multipliers": list(matrix["multipliers"]),
         "cell_timeout_seconds": timeout,
+        "nvof_output_grid": nvof_output_grid,
         "results": results,
     }
     if args.output:

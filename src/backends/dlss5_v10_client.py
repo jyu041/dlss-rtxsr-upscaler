@@ -204,7 +204,7 @@ class V10ProtocolClient:
         self._create = request
         return value
 
-    def process(self, frame: FrameRequest) -> OutputEvidence:
+    def process_frame(self, frame: FrameRequest) -> OutputEvidence:
         if self._create is None:
             raise V10ProtocolError("FRAME requires CREATE")
         payload = frame.encode(self._create.input_width, self._create.input_height)

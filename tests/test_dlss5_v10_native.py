@@ -111,15 +111,21 @@ def test_v10_native_fake_load_rejects_wrong_runtime_abi(monkeypatch, tmp_path):
         )
 
 
-def test_v10_production_host_does_not_import_native_binding_module():
+def test_v10_native_binding_is_only_reachable_inside_experimental_host_function():
     source = (
         Path(__file__).resolve().parents[1]
         / "src"
         / "backends"
         / "dlss5_v10_host.py"
     ).read_text(encoding="utf-8")
-    assert "dlss5_v10_native" not in source
-    assert "load_bridge" not in source
+    function = source.index("def experimental_native_server")
+    native_import = source.index("from .dlss5_v10_native import V10NativeSession, load_bridge")
+    assert native_import > function
+    top_level = source[:function]
+    assert "dlss5_v10_native" not in top_level
+    assert "load_bridge" not in top_level
+    assert 'if args.serve:' in source
+    assert "return 78" in source
 
 
 def test_v10_host_descriptor_builder_matches_upstream_host_rgba_contract():

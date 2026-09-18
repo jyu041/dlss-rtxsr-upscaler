@@ -173,6 +173,13 @@ def _run_cell(
             f"{width}x{height} {multiplier}X motion_mode={motion_mode} failed with exit "
             f"{completed.returncode}: {merged[-4000:]}"
         )
+    if motion_mode == 2:
+        expected_grid_marker = f"NVOF_OUTPUT_GRID_SELECTED={nvof_output_grid} "
+        if expected_grid_marker not in merged:
+            raise RuntimeError(
+                f"{width}x{height} {multiplier}X NVOF did not confirm requested "
+                f"output grid {nvof_output_grid}"
+            )
 
     timestamp_lines = [
         line.removeprefix("WORKER ")

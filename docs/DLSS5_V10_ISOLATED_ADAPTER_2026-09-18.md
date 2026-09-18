@@ -267,3 +267,18 @@ Before implementing the native-load portion:
 
 Only then should the host gain a native-load code path, and that path should
 remain opt-in for a bounded 256x256, one-frame, 1.0x RTX 3070 Ti validation.
+
+## Additional bounded-hardware gate hardening
+
+Before the first RTX 3070/3070 Ti native run, the bounded validator now also:
+
+- requires the Defender/static preflight report to be no older than 24 hours;
+- rejects missing, timezone-naive, stale, or unexpectedly future preflight timestamps;
+- rechecks the exact runtime identity at execution time as before;
+- records preflight age and Defender scan evidence in the hardware report;
+- inspects the isolated host process tree after HELLO, CREATE, and the one FRAME;
+- fails the experiment if the native host has spawned any descendant process.
+
+The descendant-process check is an additional containment signal, not a general
+sandbox. Direct network activity in the host process remains blocked by the
+temporary exact-interpreter outbound firewall rule during the bounded run.

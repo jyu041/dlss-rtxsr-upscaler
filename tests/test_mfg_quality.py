@@ -144,6 +144,8 @@ def test_summary_keeps_generated_indices_separate():
     assert summary["by_generated_index"]["1"]["count"] == 2
     assert summary["by_generated_index"]["1"]["mean_psnr_db"] == pytest.approx(25.0)
     assert summary["by_generated_index"]["2"]["identical_count"] == 1
+    assert summary["overall"]["mean_edge_mae"] is None
+    assert summary["overall"]["mean_edge_pixel_percent"] is None
 
 
 def test_quality_metrics_require_uint8_equal_rgb_geometry():

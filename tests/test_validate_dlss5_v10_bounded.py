@@ -7,6 +7,7 @@ import tools.validate_dlss5_v10_bounded as bounded
 class FakeClient:
     def __init__(self, **kwargs):
         self.aborted = False
+        self.pid = 4242
 
     def start_native_experimental(self, runtime, preflight, *, acknowledgement):
         assert acknowledgement == bounded.EXPERIMENT_ACK
@@ -83,6 +84,11 @@ def test_bounded_v10_fake_pass_installs_and_removes_firewall(monkeypatch, tmp_pa
     monkeypatch.setattr(bounded, "V10ProtocolClient", FakeClient)
     monkeypatch.setattr(
         bounded,
+        "assert_no_host_descendants",
+        lambda pid, stage: {"stage": stage, "host_pid": pid, "descendant_count": 0, "descendants": []},
+    )
+    monkeypatch.setattr(
+        bounded,
         "install_temporary_firewall_block",
         lambda program, name: calls.append(("install", str(program), name)),
     )
@@ -121,6 +127,11 @@ def test_bounded_v10_failure_before_create_keeps_native_executed_false(monkeypat
     monkeypatch.setattr(bounded, "V10ProtocolClient", FailingClient)
     monkeypatch.setattr(
         bounded,
+        "assert_no_host_descendants",
+        lambda pid, stage: {"stage": stage, "host_pid": pid, "descendant_count": 0, "descendants": []},
+    )
+    monkeypatch.setattr(
+        bounded,
         "install_temporary_firewall_block",
         lambda program, name: calls.append(("install", name)),
     )
@@ -139,6 +150,23 @@ def test_bounded_v10_failure_before_create_keeps_native_executed_false(monkeypat
     assert calls[-1][0] == "remove"
 
 
+
+def test_bounded_v10_rejects_spawned_descendant(monkeypatch):
+    class Child:
+        pid = 99
+        def is_running(self):
+            return True
+        def name(self):
+            return "unexpected.exe"
+
+    class Root:
+        def children(self, recursive=True):
+            return [Child()]
+
+    monkeypatch.setattr(bounded.psutil, "Process", lambda pid: Root())
+    with pytest.raises(RuntimeError, match="unexpected child process"):
+        bounded.assert_no_host_descendants(1234, "after_create")
+
 def test_bounded_v10_rejects_non_3070_path(monkeypatch, tmp_path):
     class OtherGpuClient(FakeClient):
         def create(self, request):
@@ -153,6 +181,11 @@ def test_bounded_v10_rejects_non_3070_path(monkeypatch, tmp_path):
 
     monkeypatch.setattr(bounded, "validate_preflight_report", lambda *args: {})
     monkeypatch.setattr(bounded, "V10ProtocolClient", OtherGpuClient)
+    monkeypatch.setattr(
+        bounded,
+        "assert_no_host_descendants",
+        lambda pid, stage: {"stage": stage, "host_pid": pid, "descendant_count": 0, "descendants": []},
+    )
     monkeypatch.setattr(
         bounded, "install_temporary_firewall_block", lambda program, name: None
     )

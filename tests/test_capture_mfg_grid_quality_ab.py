@@ -1,0 +1,130 @@
+import json
+import os
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+import tools.capture_mfg_grid_quality_ab as capture
+
+
+def test_grid_environment_is_restored(monkeypatch):
+    monkeypatch.setenv("DLSSG_NVOF_DIRECTION", "both")
+    monkeypatch.delenv("DLSSG_NVOF_GPU_FLOW", raising=False)
+    monkeypatch.delenv("DLSSG_NVOF_OUTPUT_GRID", raising=False)
+    with capture.nvof_grid_environment(4):
+        assert os.environ["DLSSG_NVOF_DIRECTION"] == "forward"
+        assert os.environ["DLSSG_NVOF_GPU_FLOW"] == "1"
+        assert os.environ["DLSSG_NVOF_OUTPUT_GRID"] == "4"
+    assert os.environ["DLSSG_NVOF_DIRECTION"] == "both"
+    assert "DLSSG_NVOF_GPU_FLOW" not in os.environ
+    assert "DLSSG_NVOF_OUTPUT_GRID" not in os.environ
+
+
+def test_quality_delta_direction():
+    grid1 = {
+        "summary": {
+            "overall": {
+                "mean_mae": 10.0,
+                "mean_rmse": 12.0,
+                "mean_psnr_db": 25.0,
+                "mean_ssim_rgb": 0.90,
+            }
+        }
+    }
+    grid4 = {
+        "summary": {
+            "overall": {
+                "mean_mae": 11.0,
+                "mean_rmse": 13.5,
+                "mean_psnr_db": 24.0,
+                "mean_ssim_rgb": 0.88,
+            }
+        }
+    }
+    delta = capture._quality_delta(grid1, grid4)
+    assert delta["grid4_minus_grid1_mean_mae"] == pytest.approx(1.0)
+    assert delta["grid4_minus_grid1_mean_rmse"] == pytest.approx(1.5)
+    assert delta["grid4_minus_grid1_mean_psnr_db"] == pytest.approx(-1.0)
+    assert delta["grid4_minus_grid1_mean_ssim_rgb"] == pytest.approx(-0.02)
+
+
+def test_capture_grid_writes_shared_reference_manifest(tmp_path, monkeypatch):
+    width, height, multiplier, groups = 1280, 720, 2, 1
+    frames = [
+        np.zeros((height, width, 4), dtype=np.uint8),
+        np.ones((height, width, 4), dtype=np.uint8),
+        np.full((height, width, 4), 2, dtype=np.uint8),
+    ]
+
+    class Result:
+        reset_only = True
+        outputs = ()
+        generated_count = 0
+
+    class Generated:
+        reset_only = False
+        generated_count = 1
+        outputs = (bytes([7]) * (width * height * 4),)
+
+    class FakeWorker:
+        def __init__(self, *args, **kwargs):
+            self.calls = 0
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return None
+        def create(self, *args, **kwargs):
+            return {}
+        def process(self, *args, **kwargs):
+            self.calls += 1
+            return Result() if self.calls == 1 else Generated()
+
+    monkeypatch.setattr(capture, "DlssgWorker", FakeWorker)
+    manifest = capture.capture_grid(
+        grid=4,
+        frames=frames,
+        multiplier=multiplier,
+        groups=groups,
+        worker=tmp_path / "worker.exe",
+        runtime=tmp_path / "version.dll",
+        official=tmp_path / "official",
+        output_root=tmp_path / "quality",
+    )
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    assert data["nvof_output_grid"] == 4
+    assert data["multiplier"] == 2
+    assert len(data["samples"]) == 1
+    sample = data["samples"][0]
+    assert sample["reference"] == "references/g000_i1.png"
+    assert sample["generated"] == "grid4/generated/g000_i1.png"
+    assert (tmp_path / "quality" / sample["reference"]).is_file()
+    assert (tmp_path / "quality" / sample["generated"]).is_file()
+
+
+@pytest.mark.parametrize("geometry", [(640, 360), (3840, 2160)])
+def test_decode_source_rejects_unbounded_geometry(tmp_path, monkeypatch, geometry):
+    # Source decoding itself is covered elsewhere; keep this test on the
+    # explicit geometry contract by substituting a tiny fake PyAV container.
+    width, height = geometry
+
+    class Frame:
+        def to_ndarray(self, format):
+            return np.zeros((height, width, 4), dtype=np.uint8)
+
+    class Stream:
+        average_rate = 60
+        base_rate = 60
+
+    class Container:
+        streams = type("Streams", (), {"video": [Stream()]})()
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return None
+        def decode(self, stream):
+            yield Frame()
+
+    monkeypatch.setattr(capture.av, "open", lambda *_args, **_kwargs: Container())
+    with pytest.raises(RuntimeError, match="bounded to 1280x720 or 1920x1080"):
+        capture.decode_source(tmp_path / "fake.mp4", 1)

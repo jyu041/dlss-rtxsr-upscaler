@@ -11,6 +11,7 @@ from src.backends.dlss5_v10_protocol import (
     CLOSE,
     HEADER,
     MAGIC,
+    MAX_PAYLOAD,
     PROTOCOL_VERSION,
     CreateRequest,
     FrameRequest,
@@ -271,7 +272,66 @@ def test_v10_protocol_rejects_unknown_command_and_oversized_declared_payload():
         PROTOCOL_VERSION,
         FRAME,
         1,
-        64 * 1024 * 1024 + 1,
+        MAX_PAYLOAD + 1,
     )
     with pytest.raises(V10ProtocolError, match="safety limit"):
         read_message(BytesIO(oversized))
+
+
+def test_v10_protocol_cap_can_carry_maximum_rgba8_geometry():
+    from src.backends.dlss5_v10_protocol import FRAME_META, OUTPUT_META, rgba_bytes
+
+    maximum = rgba_bytes(7680, 4320)
+    assert maximum + FRAME_META.size <= MAX_PAYLOAD
+    assert maximum + OUTPUT_META.size <= MAX_PAYLOAD
+
+
+def test_v10_protocol_client_roundtrip_uses_simulator_only():
+    from src.backends.dlss5_v10_client import V10ProtocolClient
+    from src.backends.dlss5_v10_host import SIMULATED_NATIVE_RESULT
+
+    rgba = bytes([1, 2, 3, 255]) * (64 * 64)
+    client = V10ProtocolClient(frame_timeout=5.0)
+    hello = client.start_protocol_selftest()
+    try:
+        assert hello["native_loaded"] is False
+        assert hello["execution_allowed"] is False
+        created = client.create(CreateRequest(64, 64, processing_scale=1.0))
+        assert created["native_loaded"] is False
+        assert created["output_size"] == [64, 64]
+        output = client.process(FrameRequest(timestamp=5, reset=True, rgba=rgba))
+        assert output.rgba == rgba
+        assert output.ngx_create_result == SIMULATED_NATIVE_RESULT
+        assert output.ngx_evaluate_result == SIMULATED_NATIVE_RESULT
+        assert output.cuda_result == SIMULATED_NATIVE_RESULT
+        assert output.scene_reset == 1
+        assert client.close() == "CLOSED"
+    finally:
+        client.abort()
+
+
+def test_v10_protocol_client_native_start_is_blocked():
+    from src.backends.dlss5_v10_client import V10ProtocolClient
+
+    client = V10ProtocolClient()
+    with pytest.raises(adapter.V10ExecutionDisabled, match="Native DLSS5 v10 host start remains disabled"):
+        client.start()
+
+
+def test_v10_protocol_client_poison_terminates_owned_simulator():
+    from src.backends.dlss5_v10_client import V10ProtocolClient
+
+    rgba = bytes([0, 0, 0, 255]) * (64 * 64)
+    client = V10ProtocolClient(frame_timeout=5.0)
+    client.start_protocol_selftest()
+    client.create(CreateRequest(64, 64, processing_scale=2.0))
+    try:
+        with pytest.raises(V10ProtocolError, match="selftest FRAME supports 1.0x"):
+            client.process(FrameRequest(timestamp=1, reset=False, rgba=rgba))
+        assert client.poisoned is True
+        result = client.close()
+        assert result == "TERMINATED_POISONED"
+        assert client.process is not None
+        assert client.process.poll() is not None
+    finally:
+        client.abort()

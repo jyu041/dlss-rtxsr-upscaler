@@ -36,6 +36,20 @@ LEGACY_RUNTIME_SHA256 = "C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C7369
 OFFICIAL_PROVIDER_SHA256 = "FF6E90EB78B827927DFF5B4ECC6B1C870C2E9BCA29ED9F48C7D348CC9E170B82"
 SELFTEST_TIMEOUT = 15
 CELL_TIMEOUT = 60
+PRACTICAL_CELL_TIMEOUT = 120
+
+MATRICES: dict[str, dict[str, object]] = {
+    "bounded": {
+        "geometries": ((256, 256),),
+        "multipliers": (2, 3, 4),
+        "timeout": CELL_TIMEOUT,
+    },
+    "practical": {
+        "geometries": ((1280, 720), (1920, 1080)),
+        "multipliers": (2, 4),
+        "timeout": PRACTICAL_CELL_TIMEOUT,
+    },
+}
 
 
 def sha256_file(path: Path) -> str:
@@ -102,6 +116,8 @@ def _run_cell(
     official: Path,
     multiplier: int,
     motion_mode: int,
+    width: int,
+    height: int,
     timeout: int,
 ) -> dict[str, object]:
     command = [
@@ -120,6 +136,10 @@ def _run_cell(
         str(multiplier),
         "--motion-mode",
         str(motion_mode),
+        "--width",
+        str(width),
+        "--height",
+        str(height),
         "--instrumented-timing",
     ]
     started = time.monotonic()
@@ -141,7 +161,7 @@ def _run_cell(
     merged = "\n".join(part for part in (completed.stdout, completed.stderr) if part)
     if completed.returncode != 0:
         raise RuntimeError(
-            f"{multiplier}X motion_mode={motion_mode} failed with exit "
+            f"{width}x{height} {multiplier}X motion_mode={motion_mode} failed with exit "
             f"{completed.returncode}: {merged[-4000:]}"
         )
 
@@ -158,10 +178,12 @@ def _run_cell(
     missing_stages = sorted(required_stages - observed_stages)
     if missing_stages:
         raise RuntimeError(
-            f"{multiplier}X motion_mode={motion_mode} is missing GPU timestamp stages: "
+            f"{width}x{height} {multiplier}X motion_mode={motion_mode} is missing GPU timestamp stages: "
             + ", ".join(missing_stages)
         )
     return {
+        "width": width,
+        "height": height,
         "multiplier": multiplier,
         "motion_mode": motion_mode,
         "elapsed_seconds": elapsed,
@@ -180,7 +202,8 @@ def main() -> int:
     )
     parser.add_argument("--runtime", type=Path, default=LEGACY_RUNTIME)
     parser.add_argument("--official", type=Path, default=OFFICIAL_RUNTIME)
-    parser.add_argument("--timeout", type=int, default=CELL_TIMEOUT)
+    parser.add_argument("--timeout", type=int)
+    parser.add_argument("--matrix", choices=tuple(MATRICES), default="bounded")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
@@ -192,26 +215,38 @@ def main() -> int:
     identities = require_runtime_identity(runtime, official)
     selftest = run_selftest(worker)
 
+    matrix = MATRICES[args.matrix]
+    timeout = args.timeout if args.timeout is not None else int(matrix["timeout"])
     results = []
-    for multiplier in (2, 3, 4):
-        for label, motion_mode in (("external", 1), ("nvof", 2)):
-            print(f"START multiplier={multiplier} path={label}", flush=True)
-            result = _run_cell(
-                worker, runtime, official, multiplier, motion_mode, args.timeout
-            )
-            result["path"] = label
-            results.append(result)
-            print(f"PASS multiplier={multiplier} path={label}", flush=True)
+    for width, height in matrix["geometries"]:
+        for multiplier in matrix["multipliers"]:
+            for label, motion_mode in (("external", 1), ("nvof", 2)):
+                print(
+                    f"START geometry={width}x{height} multiplier={multiplier} path={label}",
+                    flush=True,
+                )
+                result = _run_cell(
+                    worker, runtime, official, multiplier, motion_mode, width, height, timeout
+                )
+                result["path"] = label
+                results.append(result)
+                print(
+                    f"PASS geometry={width}x{height} multiplier={multiplier} path={label}",
+                    flush=True,
+                )
 
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": "PASS",
+        "matrix": args.matrix,
         "worker": str(worker),
         "worker_sha256": worker_sha,
         "production_c55_sha256": C55_WORKER_SHA256,
         **identities,
         "selftest": selftest,
-        "validation_geometry": [256, 256],
+        "validation_geometries": [list(item) for item in matrix["geometries"]],
+        "validation_multipliers": list(matrix["multipliers"]),
+        "cell_timeout_seconds": timeout,
         "results": results,
     }
     if args.output:

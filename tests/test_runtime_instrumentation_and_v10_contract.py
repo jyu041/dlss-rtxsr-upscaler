@@ -108,10 +108,18 @@ def test_nvof_gpu_timestamp_is_labeled_as_cross_engine_bracket():
     assert "stage=nvof_execute" not in worker
 
 
-def test_dlssg_gpu_timestamp_instrumentation_is_diagnostic_only_and_protocol_v4():
+def test_dlssg_gpu_timestamp_instrumentation_is_explicit_opt_in_and_protocol_v4():
     source = (ROOT / "native" / "dlssg_sm86_offline" / "community_run2x.cpp").read_text(encoding="utf-8")
     protocol = (ROOT / "native" / "dlssg_sm86_offline" / "worker_protocol.h").read_text(encoding="utf-8")
-    assert "gpuTimestamps_.Initialize(device_, queue_, diagnosticMode_)" in source
+    validator = (ROOT / "tools" / "validate_dlssg_instrumented.py").read_text(encoding="utf-8")
+    child = (ROOT / "tools" / "validate_dlssg_candidate.py").read_text(encoding="utf-8")
+    assert 'GetEnvironmentVariableW(L"DLSSG_GPU_TIMESTAMPS"' in source
+    assert "gpuTimestamps_.Initialize(device_, queue_, gpuTimestampsEnabled_)" in source
     assert 'RunLog("GPU_TIMESTAMP frame=%llu stage=%s index=%u ms=%.6f frequency=%llu"' in source
+    assert '"DLSSG_GPU_TIMESTAMPS": "1"' in validator
+    assert '"DLSSG_NVOF_DIRECTION": "forward"' in validator
+    assert '"DLSSG_NVOF_GPU_FLOW": "1"' in validator
+    assert '"--instrumented-timing"' in validator
+    assert "diagnostic_mode=not instrumented_timing" in child
     assert "constexpr uint16_t kVersion = 4;" in protocol
     assert "static_assert(sizeof(ProcessResponse) == 160);" in protocol

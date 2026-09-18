@@ -973,6 +973,17 @@ public:
         response.gpuWaitMs = Milliseconds(waitStart, Clock::now()); ++groupWaitCount_;
         ++totalCpuWaitCount_;
         if (!gpuTimestamps_.LogGroup(request.frameId, count)) return Status::NativeFailure;
+        if (gpuFlow && !effectiveReset) {
+            NvofGpuTimings nvofGpu{};
+            if (nvof_.ConsumeGpuTimings(&nvofGpu) && nvofGpu.valid) {
+                RunLog("GPU_TIMESTAMP frame=%llu stage=nvof_bracket index=0 ms=%.6f frequency=%llu",
+                    static_cast<unsigned long long>(request.frameId), nvofGpu.bracketMs,
+                    static_cast<unsigned long long>(nvofGpu.frequency));
+                RunLog("GPU_TIMESTAMP frame=%llu stage=nvof_conversion index=0 ms=%.6f frequency=%llu",
+                    static_cast<unsigned long long>(request.frameId), nvofGpu.conversionMs,
+                    static_cast<unsigned long long>(nvofGpu.frequency));
+            }
+        }
         if (diagnosticMode_) RunLog("WORKER_GROUP_SYNC frame=%llu generatedCount=%u commandSubmissions=1 outputCopies=%u disableCopies=%u slotsUsed=%u blockingCpuWaits=1 gpuWaitMs=%.3f",
             request.frameId, count, count, count, count, response.gpuWaitMs);
         response.uploadMs = Milliseconds(uploadStart, uploadEnd); response.nvofUploadMs = nvofTimings.uploadMs;

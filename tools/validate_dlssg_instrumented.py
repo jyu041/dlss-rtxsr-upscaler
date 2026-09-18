@@ -55,6 +55,15 @@ MATRICES: dict[str, dict[str, object]] = {
         "multipliers": (2, 4),
         "timeout": PRACTICAL_CELL_TIMEOUT,
         "nvof_output_grid": 4,
+        "timing_frames": 3,
+    },
+    "practical-grid-ab": {
+        "geometries": ((1280, 720), (1920, 1080)),
+        "multipliers": (2, 4),
+        "timeout": PRACTICAL_CELL_TIMEOUT,
+        "nvof_output_grids": (1, 4),
+        "timing_frames": 8,
+        "nvof_only": True,
     },
 }
 
@@ -127,6 +136,7 @@ def _run_cell(
     height: int,
     timeout: int,
     nvof_output_grid: int = 1,
+    timing_frames: int = 3,
 ) -> dict[str, object]:
     command = [
         sys.executable,
@@ -149,6 +159,8 @@ def _run_cell(
         "--height",
         str(height),
         "--instrumented-timing",
+        "--timing-frames",
+        str(timing_frames),
     ]
     started = time.monotonic()
     completed = subprocess.run(
@@ -203,6 +215,7 @@ def _run_cell(
         "multiplier": multiplier,
         "motion_mode": motion_mode,
         "nvof_output_grid": nvof_output_grid,
+        "timing_frames": timing_frames,
         "elapsed_seconds": elapsed,
         "gpu_timestamps": timestamp_summary,
         "gpu_timestamp_lines": timestamp_lines,
@@ -234,23 +247,32 @@ def main() -> int:
 
     matrix = MATRICES[args.matrix]
     timeout = args.timeout if args.timeout is not None else int(matrix["timeout"])
-    nvof_output_grid = int(matrix.get("nvof_output_grid", 1))
+    timing_frames = int(matrix.get("timing_frames", 3))
+    default_grid = int(matrix.get("nvof_output_grid", 1))
+    grid_options = tuple(int(item) for item in matrix.get("nvof_output_grids", (default_grid,)))
+    nvof_only = bool(matrix.get("nvof_only", False))
     results = []
     for width, height in matrix["geometries"]:
         for multiplier in matrix["multipliers"]:
-            for label, motion_mode in (("external", 1), ("nvof", 2)):
+            cells = []
+            if not nvof_only:
+                cells.append(("external", 1, default_grid))
+            for grid in grid_options:
+                cells.append((f"nvof-grid{grid}", 2, grid))
+            for label, motion_mode, grid in cells:
                 print(
-                    f"START geometry={width}x{height} multiplier={multiplier} path={label}",
+                    f"START geometry={width}x{height} multiplier={multiplier} path={label} grid={grid}",
                     flush=True,
                 )
                 result = _run_cell(
                     worker, runtime, official, multiplier, motion_mode, width, height, timeout,
-                    nvof_output_grid=nvof_output_grid,
+                    nvof_output_grid=grid,
+                    timing_frames=timing_frames,
                 )
                 result["path"] = label
                 results.append(result)
                 print(
-                    f"PASS geometry={width}x{height} multiplier={multiplier} path={label}",
+                    f"PASS geometry={width}x{height} multiplier={multiplier} path={label} grid={grid}",
                     flush=True,
                 )
 
@@ -266,7 +288,8 @@ def main() -> int:
         "validation_geometries": [list(item) for item in matrix["geometries"]],
         "validation_multipliers": list(matrix["multipliers"]),
         "cell_timeout_seconds": timeout,
-        "nvof_output_grid": nvof_output_grid,
+        "timing_frames": timing_frames,
+        "nvof_output_grids": list(grid_options),
         "results": results,
     }
     if args.output:

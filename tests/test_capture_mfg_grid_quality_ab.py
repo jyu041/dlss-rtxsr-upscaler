@@ -61,7 +61,8 @@ def test_quality_runner_input_alias_binds_before_native_build(tmp_path):
     combined = (result.stdout + result.stderr).lower()
     assert result.returncode != 0
     assert "empty string" not in combined
-    assert str(missing).lower() in combined
+    assert "cannot find path" in combined
+    assert "pathnotfound" in combined
 
 
 def test_evidence_root_namespaces_source_identity_and_multiplier(tmp_path):

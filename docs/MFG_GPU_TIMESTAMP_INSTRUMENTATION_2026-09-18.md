@@ -204,6 +204,69 @@ Findings:
 No protocol-v4 layout, validated runtime identity, or normal application startup
 path changed as part of these hardening edits.
 
-At this point the next MFG gate is a **local compile + GPU-free selftest** using
-`tools/build_validate_dlssg_instrumented.ps1` without `-Validate256`. The
-256x256 six-cell GPU matrix should only follow if that build/selftest succeeds.
+The local compile, GPU-free selftest, and bounded 256x256 six-cell matrix have
+now passed. Practical-resolution timing is the next MFG measurement gate.
+
+
+## First bounded hardware timestamp evidence
+
+The local RTX 3070 Ti development machine completed the isolated six-cell
+256x256 matrix after the native source compiled and the GPU-free selftest
+passed.
+
+Evidence from the successful run:
+
+- experimental worker SHA-256:
+  `CF4471AC5D3543403A4DAB331ADAC9FA537648666B67135E1BC95E502A97F257`;
+- legacy community runtime SHA-256 remained
+  `C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2`;
+- NVIDIA provider SHA-256 remained
+  `FF6E90EB78B827927DFF5B4ECC6B1C870C2E9BCA29ED9F48C7D348CC9E170B82`;
+- 2X, 3X, and 4X all passed with both external motion and GPU-resident NVOF;
+- every cell emitted the required direct-queue timestamp stages;
+- NVOF cells additionally emitted `nvof_bracket` and `nvof_conversion`;
+- no device-removed error was reported.
+
+Representative medians from this bounded run:
+
+| Cell | group_total | NVOF bracket | NVOF conversion | output copy |
+| --- | ---: | ---: | ---: | ---: |
+| 2X external | 0.436 ms | n/a | n/a | 0.009 ms |
+| 2X NVOF | 1.046 ms | 4.485 ms | 0.009 ms | 0.010 ms |
+| 3X external | 1.325 ms | n/a | n/a | 0.010 ms |
+| 3X NVOF | 1.318 ms | 4.742 ms | 0.009 ms | 0.010 ms |
+| 4X external | 2.209 ms | n/a | n/a | 0.009 ms |
+| 4X NVOF | 2.215 ms | 4.546 ms | 0.009 ms | 0.009 ms |
+
+The 2X NVOF first measured bracket was 19.427 ms, while the subsequent two
+samples were 4.485 and 4.464 ms. It is therefore treated as warm-up evidence,
+not as the steady-state Optical Flow bracket.
+
+The bounded result changes the optimization priority. At 256x256, output-copy
+and flow-conversion GPU time are negligible compared with DLSS-G Evaluate and
+the cross-engine NVOF bracket. No production architecture change is justified
+from this small-resolution run alone; the next measurement gate is practical
+resolution.
+
+## Practical-resolution research gate
+
+The instrumented validator now has a separate `practical` matrix. It is not
+reachable through normal C55 validation. The matrix is intentionally limited to:
+
+- 1280x720: 2X external, 2X NVOF, 4X external, 4X NVOF;
+- 1920x1080: 2X external, 2X NVOF, 4X external, 4X NVOF.
+
+The practical path retains the exact legacy runtime/provider identity gates,
+instrumented-worker isolation, selftest, timestamp-stage requirements, and a
+per-cell timeout. Its purpose is to determine whether the approximately
+4.5-ms NVOF cross-engine bracket is primarily fixed overhead or scales with
+resolution, and how DLSS-G Evaluate scales relative to that bracket.
+
+The one-command entry point is:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\build_validate_dlssg_instrumented.ps1 -ValidatePractical
+```
+
+The expected evidence file is
+`runtime/audit/mfg-instrumented-practical-validation.json`.

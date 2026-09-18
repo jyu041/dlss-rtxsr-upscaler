@@ -251,3 +251,27 @@ def test_v10_create_wire_rejects_unknown_fields_and_non_host_memory():
     value["memory_type"] = "cuda"
     with pytest.raises(V10ProtocolError, match="host-memory RGBA8"):
         CreateRequest.from_wire(value)
+
+
+def test_v10_protocol_rejects_truncated_header_and_payload():
+    with pytest.raises(EOFError):
+        read_message(BytesIO(b"NR10"))
+    message = encode_message(FRAME, 1, b"abc")
+    with pytest.raises(EOFError):
+        read_message(BytesIO(message[:-1]))
+
+
+def test_v10_protocol_rejects_unknown_command_and_oversized_declared_payload():
+    unknown = HEADER.pack(MAGIC, PROTOCOL_VERSION, 99, 1, 0)
+    with pytest.raises(V10ProtocolError, match="unknown"):
+        read_message(BytesIO(unknown))
+
+    oversized = HEADER.pack(
+        MAGIC,
+        PROTOCOL_VERSION,
+        FRAME,
+        1,
+        64 * 1024 * 1024 + 1,
+    )
+    with pytest.raises(V10ProtocolError, match="safety limit"):
+        read_message(BytesIO(oversized))

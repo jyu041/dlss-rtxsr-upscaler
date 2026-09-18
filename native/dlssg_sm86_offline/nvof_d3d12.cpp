@@ -6,7 +6,7 @@
 #include <nvOpticalFlowD3D12.h>
 
 #include "nvof_d3d12.h"
-#include "flow_convert_bytecode.h"
+#include <flow_convert_bytecode.h>
 
 #include <algorithm>
 #include <array>
@@ -506,6 +506,10 @@ bool NvofD3D12::ComputeForwardGpu(const uint8_t *currentRgba, ID3D12Resource *mo
         static_cast<void *>(motionResource), static_cast<void *>(state.conversionMotion), static_cast<void *>(state.conversionPso));
     if (!state.forwardOnly || !state.historyValid || !currentRgba ||
         motionResource != state.conversionMotion || !state.conversionPso) { Log("NVOF_GPU_PRECONDITION_FAILED"); return false; }
+    if (state.timingEnabled && state.timingPending) {
+        Log("NVOF_GPU_TIMESTAMP_PENDING_UNCONSUMED");
+        return false;
+    }
     const auto uploadStart = Clock::now();
     if (!state.MapUpload(state.currentUpload, currentRgba)) { Log("NVOF_GPU_STAGE_MAP_UPLOAD_FAILED"); return false; }
     Log("NVOF_GPU_STAGE_MAP_UPLOAD_OK");

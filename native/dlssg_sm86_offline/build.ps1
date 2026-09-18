@@ -2,7 +2,7 @@ param(
     [string]$NgxSdk = 'C:\Users\mark\AppData\Local\Temp\dlssg-phase3-research\DLSS',
     [string]$NvApi = 'C:\Users\mark\Desktop\dlss-community-research\renodx\external\NVAPI',
     [string]$NvOfSdk = $env:NVOF_SDK,
-    [string]$Output = "$PSScriptRoot\bin"
+    [string]$Output = "$PSScriptRoot\bin-instrumented"
 )
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force -Path $Output | Out-Null

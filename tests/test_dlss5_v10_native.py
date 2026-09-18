@@ -210,3 +210,73 @@ def test_v10_host_descriptor_builder_rejects_wrong_buffer_lengths():
             bytearray(64 * 64 * 4),
             timestamp=0,
         )
+
+
+def test_v10_native_session_fake_lifecycle_never_requires_shutdown(tmp_path):
+    library = FakeLibrary()
+    library.dlss5nr_init.result = 1
+    library.dlss5nr_process_frame_v6.result = 1
+    library.dlss5nr_release_session.result = 1
+    bound = native.BoundBridge(
+        library=library,
+        version="fake-v10",
+        frame_abi_version=6,
+        gpu_name="Fake GPU",
+        adapter_luid="fake-luid",
+    )
+    request = CreateRequest(64, 64, gpu_ordinal=3)
+    session = native.V10NativeSession(bound, tmp_path, request)
+
+    initialized = session.initialize()
+    assert initialized["gpu_ordinal"] == 3
+    assert initialized["bridge_abi_version"] == 6
+
+    frame = native.FrameRequest(
+        timestamp=77,
+        reset=True,
+        rgba=bytes([10, 20, 30, 255]) * (64 * 64),
+    )
+    output = session.process_frame(frame)
+    assert (output.width, output.height) == (64, 64)
+    assert output.timestamp == 77
+    assert output.ngx_create_result == 0
+    assert output.ngx_evaluate_result == 0
+    assert output.cuda_result == 0
+    assert output.rgba == bytes(64 * 64 * 4)
+    assert session.close() == "CLOSED_RELEASED"
+
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "backends"
+        / "dlss5_v10_native.py"
+    ).read_text(encoding="utf-8")
+    assert "NVSDK_NGX_D3D12_Shutdown" not in source
+    assert "FreeLibrary" not in source
+
+
+def test_v10_native_session_poison_skips_release(tmp_path):
+    library = FakeLibrary()
+    library.dlss5nr_init.result = 0
+    release_calls = {"count": 0}
+
+    def release():
+        release_calls["count"] += 1
+        return 1
+
+    library.dlss5nr_release_session = release
+    bound = native.BoundBridge(
+        library=library,
+        version="fake-v10",
+        frame_abi_version=6,
+        gpu_name="Fake GPU",
+        adapter_luid="fake-luid",
+    )
+    session = native.V10NativeSession(
+        bound, tmp_path, CreateRequest(64, 64)
+    )
+    with pytest.raises(native.V10NativeSessionError, match="initialization failed"):
+        session.initialize()
+    assert session.poisoned is True
+    assert session.close() == "CLOSED_POISONED_RELEASE_SKIPPED"
+    assert release_calls["count"] == 0

@@ -90,7 +90,7 @@
         {"path": "version.dll", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/5f62ff44a9c08f9841fa605e7b7160f79ccd2c40/version.dll", "sha256": "C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2", "size_bytes": 15667520},
         {"path": "dlssg_sm86.ini", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/5f62ff44a9c08f9841fa605e7b7160f79ccd2c40/dlssg_sm86.ini", "sha256": "FD7F0722194E6E8D8C085327D9826EFFB411925A69A5E7549D70EFF26A9F18B5", "size_bytes": 581}
       ],
-      "constraints": {"multipliers": [2, 3, 4], "compatibility_test_required": false, "status": "validated C55 direct-host runtime; RTX 3070 Ti 2X/3X/4X evidence retained"}
+      "constraints": {"multipliers": [2, 3, 4], "compatibility_test_required": false, "ignored_generated_files": ["dlssg_sm86/logs/*.jsonl"], "status": "validated C55 direct-host runtime; RTX 3070 Ti 2X/3X/4X evidence retained"}
     },
     {
       "id": "dlssg-sm86-0.3.1-candidate",

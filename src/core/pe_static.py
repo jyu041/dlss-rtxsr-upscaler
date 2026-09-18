@@ -128,6 +128,7 @@ def inspect_pe(path: str | Path) -> dict[str, object]:
         raise PeFormatError(f"{label} RVA 0x{rva:X} does not map to a section")
 
     imports: list[str] = []
+    import_symbols: dict[str, list[str]] = {}
     import_rva, import_size = directory(1)
     if import_rva and import_size:
         descriptor = rva_to_offset(import_rva, "import directory")
@@ -138,9 +139,43 @@ def inspect_pe(path: str | Path) -> dict[str, object]:
             fields = struct.unpack_from("<IIIII", data, offset)
             if fields == (0, 0, 0, 0, 0):
                 break
-            name_rva = fields[3]
+            lookup_rva, _timestamp, _forwarder, name_rva, first_thunk_rva = fields
             name = _cstring(data, rva_to_offset(name_rva, f"import name {index}"), f"import name {index}")
             imports.append(name)
+
+            thunk_rva = lookup_rva or first_thunk_rva
+            symbols: list[str] = []
+            if thunk_rva:
+                thunk_offset = rva_to_offset(thunk_rva, f"import thunk table {index}")
+                thunk_size = 8 if pe32_plus else 4
+                ordinal_flag = 0x8000000000000000 if pe32_plus else 0x80000000
+                value_mask = 0x7FFFFFFFFFFFFFFF if pe32_plus else 0x7FFFFFFF
+                unpack = "<Q" if pe32_plus else "<I"
+                for symbol_index in range(65536):
+                    entry_offset = thunk_offset + symbol_index * thunk_size
+                    _need(data, entry_offset, thunk_size, f"import thunk {index}:{symbol_index}")
+                    value = struct.unpack_from(unpack, data, entry_offset)[0]
+                    if value == 0:
+                        break
+                    if value & ordinal_flag:
+                        symbols.append(f"#{value & 0xFFFF}")
+                        continue
+                    hint_name_rva = value & value_mask
+                    hint_name = rva_to_offset(
+                        hint_name_rva,
+                        f"import hint/name {index}:{symbol_index}",
+                    )
+                    _need(data, hint_name, 2, f"import hint {index}:{symbol_index}")
+                    symbols.append(
+                        _cstring(
+                            data,
+                            hint_name + 2,
+                            f"import symbol {index}:{symbol_index}",
+                        )
+                    )
+                else:
+                    raise PeFormatError("import thunk table is not terminated")
+            import_symbols[name] = sorted(set(symbols))
         else:
             raise PeFormatError("import descriptor table is not terminated")
 
@@ -172,5 +207,9 @@ def inspect_pe(path: str | Path) -> dict[str, object]:
         "pe32_plus": pe32_plus,
         "sections": sections,
         "imports": sorted(set(imports), key=str.casefold),
+        "import_symbols": {
+            name: import_symbols[name]
+            for name in sorted(import_symbols, key=str.casefold)
+        },
         "exports": sorted(set(exports)),
     }

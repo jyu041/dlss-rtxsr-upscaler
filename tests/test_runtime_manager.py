@@ -280,4 +280,5 @@ def test_manifest_loads_dlss5_v10_static_candidate():
     )
     assert candidate.constraints["static_only"] is True
     assert candidate.constraints["feature_id_observed"] == 18
+    assert candidate.constraints["processing_scale_is_lanczos_pre_resize"] is True
     assert candidate.constraints["native_output_scaling_unverified"] is True

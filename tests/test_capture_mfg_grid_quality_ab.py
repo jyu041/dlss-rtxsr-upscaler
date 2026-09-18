@@ -15,6 +15,10 @@ def test_quality_runner_builds_selftests_then_invokes_capture_tool():
     source = (root / "tools" / "run_mfg_grid_quality_ab.ps1").read_text(encoding="utf-8")
     assert "build_validate_dlssg_instrumented.ps1" in source
     assert "capture_mfg_grid_quality_ab.py" in source
+    assert "[Alias('Input')]" in source
+    assert "[string]$InputPath" in source
+    assert "[string]$Input," not in source
+    assert "(Resolve-Path -LiteralPath $InputPath).Path" in source
     assert "[ValidateSet(2,4)]" in source
     assert "[ValidateRange(1,24)]" in source
     assert "[ValidateRange(0,1000000)]" in source
@@ -22,6 +26,42 @@ def test_quality_runner_builds_selftests_then_invokes_capture_tool():
     assert "'--worker', $worker" in source
     assert "'--runtime', $runtime" in source
     assert "'--official', $official" in source
+
+
+
+def test_quality_runner_input_alias_binds_before_native_build(tmp_path):
+    if os.name != "nt":
+        pytest.skip("PowerShell wrapper regression is Windows-only")
+
+    root = Path(__file__).resolve().parents[1]
+    script = root / "tools" / "run_mfg_grid_quality_ab.ps1"
+    missing = tmp_path / "definitely-missing-input.mp4"
+    result = subprocess.run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script),
+            "-Input",
+            str(missing),
+            "-Multiplier",
+            "2",
+            "-Groups",
+            "1",
+            "-StartFrame",
+            "0",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    combined = (result.stdout + result.stderr).lower()
+    assert result.returncode != 0
+    assert "empty string" not in combined
+    assert str(missing).lower() in combined
+
 
 def test_evidence_root_namespaces_source_identity_and_multiplier(tmp_path):
     base = tmp_path / "quality"

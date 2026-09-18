@@ -8,13 +8,14 @@ param(
     [string]$PracticalEvidence = "$PSScriptRoot\..\runtime\audit\mfg-instrumented-practical-validation.json",
     [switch]$Validate256,
     [switch]$ValidatePractical,
-    [switch]$ValidatePracticalGrid4
+    [switch]$ValidatePracticalGrid4,
+    [switch]$ValidatePracticalGridAB
 )
 
 $ErrorActionPreference = 'Stop'
-$matrixSwitches = @($Validate256, $ValidatePractical, $ValidatePracticalGrid4) | Where-Object { $_ }
+$matrixSwitches = @($Validate256, $ValidatePractical, $ValidatePracticalGrid4, $ValidatePracticalGridAB) | Where-Object { $_ }
 if ($matrixSwitches.Count -gt 1) {
-    throw 'Choose only one GPU validation matrix: -Validate256, -ValidatePractical, or -ValidatePracticalGrid4.'
+    throw 'Choose only one GPU validation matrix: -Validate256, -ValidatePractical, -ValidatePracticalGrid4, or -ValidatePracticalGridAB.'
 }
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $native = Join-Path $root 'native\dlssg_sm86_offline'
@@ -79,16 +80,19 @@ Write-Host "BUILD_PASS worker=$worker"
 Write-Host "WORKER_SHA256=$workerHash"
 Write-Host 'SELFTEST_PASS'
 
-if (-not $Validate256 -and -not $ValidatePractical -and -not $ValidatePracticalGrid4) {
-    Write-Host 'GPU_VALIDATION_SKIPPED: pass -Validate256, -ValidatePractical, or -ValidatePracticalGrid4 explicitly.'
+if (-not $Validate256 -and -not $ValidatePractical -and -not $ValidatePracticalGrid4 -and -not $ValidatePracticalGridAB) {
+    Write-Host 'GPU_VALIDATION_SKIPPED: pass -Validate256, -ValidatePractical, -ValidatePracticalGrid4, or -ValidatePracticalGridAB explicitly.'
     exit 0
 }
 
 $python = Get-Command python -ErrorAction Stop
 $validator = Join-Path $root 'tools\validate_dlssg_instrumented.py'
-if ($ValidatePracticalGrid4) {
+if ($ValidatePracticalGridAB) {
+    $matrix = 'practical-grid-ab'
+    $validationEvidence = Join-Path ([IO.Path]::GetDirectoryName($PracticalEvidence)) 'mfg-instrumented-practical-grid-ab-validation.json'
+} elseif ($ValidatePracticalGrid4) {
     $matrix = 'practical-grid4'
-    $validationEvidence = [IO.Path]::ChangeExtension($PracticalEvidence, $null) + '-grid4.json'
+    $validationEvidence = Join-Path ([IO.Path]::GetDirectoryName($PracticalEvidence)) 'mfg-instrumented-practical-grid4-validation.json'
 } elseif ($ValidatePractical) {
     $matrix = 'practical'
     $validationEvidence = $PracticalEvidence

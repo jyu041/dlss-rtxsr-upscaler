@@ -458,5 +458,5 @@ def test_decode_source_rejects_unbounded_geometry(tmp_path, monkeypatch, geometr
             yield Frame()
 
     monkeypatch.setattr(capture.av, "open", lambda *_args, **_kwargs: Container())
-    with pytest.raises(RuntimeError, match="bounded to 1280x720 or 1920x1080"):
+    with pytest.raises(RuntimeError, match="bounded to 640x480, 1280x720, or 1920x1080"):
         capture.decode_source(tmp_path / "fake.mp4", 1)

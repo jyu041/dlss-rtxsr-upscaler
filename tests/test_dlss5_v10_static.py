@@ -10,6 +10,18 @@ def _write_runtime(root: Path):
         (root / name).write_bytes((name + "-bytes").encode("ascii"))
 
 
+def _pin_fake_runtime(monkeypatch, root: Path):
+    pinned = {}
+    for name in v10.V10_FILES:
+        path = root / name
+        pinned[name] = {
+            "size_bytes": path.stat().st_size,
+            "sha256": v10._sha256(path),
+            "authenticode": "NotSigned",
+        }
+    monkeypatch.setattr(v10, "V10_EXPECTED_FILES", pinned)
+
+
 def _pe(exports=()):
     return {
         "machine": "0x8664",
@@ -22,23 +34,25 @@ def _pe(exports=()):
     }
 
 
-def test_v10_static_boundary_requires_pinned_hashes(monkeypatch, tmp_path):
+def test_v10_static_boundary_uses_pinned_hashes_by_default(monkeypatch, tmp_path):
     runtime = tmp_path / "v10"
     _write_runtime(runtime)
+    _pin_fake_runtime(monkeypatch, runtime)
     monkeypatch.setattr(
         v10,
         "inspect_pe",
         lambda path: _pe(REQUIRED_EXPORTS if path.name == "neuroframe_engine_neural_rendering.dll" else ()),
     )
     status = v10.inspect_v10_runtime(runtime)
-    assert status.state == "STATIC_IDENTITY_REQUIRED"
-    assert status.valid is False
+    assert status.state == "STATIC_AUDIT_COMPLETE"
+    assert status.valid is True
     assert status.execution_allowed is False
 
 
 def test_v10_static_boundary_passes_only_with_exact_hashes(monkeypatch, tmp_path):
     runtime = tmp_path / "v10"
     _write_runtime(runtime)
+    _pin_fake_runtime(monkeypatch, runtime)
     monkeypatch.setattr(
         v10,
         "inspect_pe",
@@ -58,6 +72,7 @@ def test_v10_static_boundary_passes_only_with_exact_hashes(monkeypatch, tmp_path
 def test_v10_static_boundary_rejects_missing_bridge_exports(monkeypatch, tmp_path):
     runtime = tmp_path / "v10"
     _write_runtime(runtime)
+    _pin_fake_runtime(monkeypatch, runtime)
     monkeypatch.setattr(v10, "inspect_pe", lambda path: _pe(()))
     status = v10.inspect_v10_runtime(runtime)
     assert status.state == "ABI_MISMATCH"
@@ -67,6 +82,7 @@ def test_v10_static_boundary_rejects_missing_bridge_exports(monkeypatch, tmp_pat
 def test_v10_static_boundary_rejects_wrong_architecture(monkeypatch, tmp_path):
     runtime = tmp_path / "v10"
     _write_runtime(runtime)
+    _pin_fake_runtime(monkeypatch, runtime)
     def inspect(path):
         report = _pe(REQUIRED_EXPORTS if path.name == "neuroframe_engine_neural_rendering.dll" else ())
         report["architecture"] = "x86"
@@ -80,6 +96,7 @@ def test_v10_static_boundary_rejects_wrong_architecture(monkeypatch, tmp_path):
 def test_v10_static_boundary_requires_review_for_sensitive_imports(monkeypatch, tmp_path):
     runtime = tmp_path / "v10"
     _write_runtime(runtime)
+    _pin_fake_runtime(monkeypatch, runtime)
 
     def inspect(path):
         report = _pe(REQUIRED_EXPORTS if path.name == "neuroframe_engine_neural_rendering.dll" else ())

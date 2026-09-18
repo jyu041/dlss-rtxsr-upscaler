@@ -31,7 +31,9 @@ ground-truth target at the intended temporal position.
 - mean absolute error (MAE);
 - root mean square error (RMSE);
 - PSNR;
-- global per-channel RGB SSIM averaged across the three channels.
+- global per-channel RGB SSIM averaged across the three channels;
+- reference-edge MAE over pixels whose Rec.709 luma has a one-pixel
+  horizontal/vertical gradient of at least 20 code values.
 
 Alpha is intentionally ignored.
 
@@ -155,3 +157,19 @@ No automatic pass/fail quality threshold is encoded yet. A metric delta is
 evidence, not a promotion rule. Temporal flicker, motion boundaries,
 occlusion/disocclusion, text/UI, thin detail, scene cuts, faces and hands still
 require targeted perceptual review.
+
+
+### Pairing contract
+
+Grid 1 and grid 4 reports must contain exactly the same
+`(group, generated_index)` sample keys. The combined report fails closed if
+they differ. For each paired frame, the report retains grid4-minus-grid1 deltas
+for MAE, RMSE, PSNR, SSIM, and edge MAE.
+
+Metric direction is explicit:
+
+- lower is better: MAE, RMSE, edge MAE;
+- higher is better: PSNR, SSIM.
+
+No aggregate quality threshold is currently encoded. This avoids turning one
+small or content-specific capture into an unsupported promotion rule.

@@ -288,6 +288,68 @@ class V10ProtocolError(RuntimeError):
     pass
 
 
+class V10SessionPoisoned(V10ProtocolError):
+    pass
+
+
+@dataclass
+class SessionGuard:
+    created: bool = False
+    closed: bool = False
+    poisoned: bool = False
+    poison_reason: str | None = None
+    next_request_id: int = 1
+
+    def _require_live(self) -> None:
+        if self.closed:
+            raise V10ProtocolError("v10 session is already closed")
+        if self.poisoned:
+            raise V10SessionPoisoned(
+                f"v10 session is poisoned: {self.poison_reason or 'unknown reason'}"
+            )
+
+    def _consume(self, request_id: int) -> None:
+        if request_id != self.next_request_id:
+            raise V10ProtocolError(
+                f"request_id {request_id} != expected {self.next_request_id}"
+            )
+        self.next_request_id += 1
+
+    def accept_create(self, request_id: int) -> None:
+        self._require_live()
+        if self.created:
+            raise V10ProtocolError("CREATE is only valid once per v10 host process")
+        self._consume(request_id)
+        self.created = True
+
+    def accept_frame(self, request_id: int) -> None:
+        self._require_live()
+        if not self.created:
+            raise V10ProtocolError("FRAME requires a successful CREATE first")
+        self._consume(request_id)
+
+    def accept_close(self, request_id: int) -> None:
+        if self.closed:
+            raise V10ProtocolError("v10 session is already closed")
+        if request_id != self.next_request_id:
+            raise V10ProtocolError(
+                f"request_id {request_id} != expected {self.next_request_id}"
+            )
+        self.next_request_id += 1
+        self.closed = True
+
+    def poison(self, reason: str) -> None:
+        if self.closed:
+            return
+        self.poisoned = True
+        self.poison_reason = str(reason)[:1024] or "unspecified failure"
+
+
+HOST_START_TIMEOUT_SECONDS = 15.0
+FRAME_TIMEOUT_SECONDS = 30.0
+CLOSE_GRACE_SECONDS = 1.0
+
+
 def encode_message(command: int, request_id: int, payload: bytes = b"") -> bytes:
     if command not in {HELLO, CREATE, FRAME, OUTPUT, CLOSE, ERROR}:
         raise ValueError(f"unknown v10 protocol command: {command}")

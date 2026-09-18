@@ -303,6 +303,9 @@ def main() -> int:
     args.runtime = args.runtime.resolve()
     args.official = args.official.resolve()
 
+    if args.instrumented_timing and not args.child:
+        raise SystemExit("BLOCKED: --instrumented-timing is reserved for bounded child validation")
+
     if args.child:
         return _child(
             args.worker,

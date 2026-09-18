@@ -155,7 +155,7 @@
       "license_name": "Merserk Source License 1.0 for project-owned v10 material; NVIDIA and other archive materials retain their respective terms",
       "redistributable": false,
       "direct_user_download": true,
-      "constraints": {"static_only": true, "feature_id_observed": 18, "host_architecture": "in-process D3D12/NGX bridge plus caller shim", "processing_scales": [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0], "native_output_scaling_unverified": true, "status": "static-only; exact extracted file identities, ABI/import audit, native adapter, and RTX30 compatibility test required before execution"}
+      "constraints": {"static_only": true, "feature_id_observed": 18, "host_architecture": "in-process D3D12/NGX bridge plus caller shim", "processing_scales": [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0], "processing_scale_is_lanczos_pre_resize": true, "native_output_scaling_unverified": true, "status": "static-only; exact extracted file identities, ABI/import audit, native adapter, and RTX30 compatibility test required before execution"}
     }
   ]
 }

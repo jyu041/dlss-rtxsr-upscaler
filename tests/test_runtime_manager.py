@@ -282,3 +282,14 @@ def test_manifest_loads_dlss5_v10_static_candidate():
     assert candidate.constraints["feature_id_observed"] == 18
     assert candidate.constraints["processing_scale_is_lanczos_pre_resize"] is True
     assert candidate.constraints["native_output_scaling_unverified"] is True
+    audit = candidate.constraints["static_audit"]
+    assert audit["workflow_run_id"] == 35311872691
+    assert audit["executed"] is False
+    assert audit["all_runtime_dlls_x86_64"] is True
+    assert audit["all_runtime_dlls_authenticode"] == "NotSigned"
+    assert audit["direct_network_imports_observed"] is False
+    assert audit["direct_process_launch_imports_observed"] is False
+    files = candidate.constraints["extracted_files"]
+    assert files["nvngx_dlssnr.dll"]["sha256"] == "6EB209E764F39872625DEBD6ABAF45E2BB6322F6F270F781F70C059AE30B3927"
+    assert files["neuroframe_engine_neural_rendering.dll"]["sha256"] == "F657D20E569F97DEC25E02141F64354CD4B3E1DC51FA1DFE48ACEEBCC3CC43D5"
+    assert files["neuroframe_caller.dll"]["sha256"] == "B3611046837BC2F2E957A694CE0817E3C1B304BD653D0C7A193148E5BDD02437"

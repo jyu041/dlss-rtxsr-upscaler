@@ -64,6 +64,26 @@ def ssim_rgb(reference: np.ndarray, generated: np.ndarray) -> float:
     ]))
 
 
+def _reference_edge_mask(reference_rgb: np.ndarray) -> np.ndarray:
+    """Return a deterministic high-contrast reference-edge mask.
+
+    Luma uses Rec.709 coefficients. A pixel is considered edge-sensitive when
+    the maximum absolute one-pixel horizontal/vertical luma difference at that
+    pixel is at least 20 code values. The mask depends only on the real
+    withheld reference frame, never on the generated candidate.
+    """
+    luma = (
+        0.2126 * reference_rgb[..., 0]
+        + 0.7152 * reference_rgb[..., 1]
+        + 0.0722 * reference_rgb[..., 2]
+    )
+    dx = np.zeros_like(luma)
+    dy = np.zeros_like(luma)
+    dx[:, 1:] = np.abs(luma[:, 1:] - luma[:, :-1])
+    dy[1:, :] = np.abs(luma[1:, :] - luma[:-1, :])
+    return np.maximum(dx, dy) >= 20.0
+
+
 def frame_metrics(reference: np.ndarray, generated: np.ndarray) -> dict[str, object]:
     left = _rgb(reference)
     right = _rgb(generated)
@@ -72,11 +92,20 @@ def frame_metrics(reference: np.ndarray, generated: np.ndarray) -> dict[str, obj
     difference = left - right
     absolute = np.abs(difference)
     mse = float(np.mean(np.square(difference)))
+    edge_mask = _reference_edge_mask(left)
+    edge_pixels = int(np.count_nonzero(edge_mask))
+    edge_mae = (
+        float(np.mean(absolute[edge_mask]))
+        if edge_pixels
+        else None
+    )
     return {
         "mae": float(np.mean(absolute)),
         "rmse": float(math.sqrt(mse)),
         "psnr_db": None if mse == 0.0 else float(10.0 * math.log10((255.0 * 255.0) / mse)),
         "ssim_rgb": ssim_rgb(reference, generated),
+        "edge_mae": edge_mae,
+        "edge_pixel_percent": float(edge_pixels * 100.0 / edge_mask.size),
         "identical": bool(np.array_equal(left, right)),
     }
 
@@ -124,12 +153,19 @@ def summarize_samples(samples: Iterable[dict[str, object]]) -> dict[str, object]
             for row in group
             if row.get("psnr_db") is not None
         ]
+        edge_values = [
+            float(row["edge_mae"])
+            for row in group
+            if row.get("edge_mae") is not None
+        ]
         return {
             "count": len(group),
             "mean_mae": float(np.mean([float(row["mae"]) for row in group])),
             "mean_rmse": float(np.mean([float(row["rmse"]) for row in group])),
             "mean_psnr_db": float(np.mean(psnr_values)) if psnr_values else None,
             "mean_ssim_rgb": float(np.mean([float(row["ssim_rgb"]) for row in group])),
+            "mean_edge_mae": float(np.mean(edge_values)) if edge_values else None,
+            "mean_edge_pixel_percent": float(np.mean([float(row["edge_pixel_percent"]) for row in group])),
             "identical_count": sum(bool(row.get("identical")) for row in group),
         }
 

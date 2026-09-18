@@ -79,6 +79,12 @@ def test_dlss5_v10_lifetime_contract_does_not_reuse_v3_shutdown_assumptions():
     assert LIFETIME_CONTRACT["normal_close_unloads_driver_modules"] is False
 
 
+def test_dlssg_instrumented_build_does_not_default_to_validated_worker_directory():
+    build = (ROOT / "native" / "dlssg_sm86_offline" / "build.ps1").read_text(encoding="utf-8")
+    assert '[string]$Output = "$PSScriptRoot\\bin-instrumented"' in build
+    assert '[string]$Output = "$PSScriptRoot\\bin"' not in build
+
+
 def test_dlssg_gpu_timestamp_instrumentation_is_diagnostic_only_and_protocol_v4():
     source = (ROOT / "native" / "dlssg_sm86_offline" / "community_run2x.cpp").read_text(encoding="utf-8")
     protocol = (ROOT / "native" / "dlssg_sm86_offline" / "worker_protocol.h").read_text(encoding="utf-8")

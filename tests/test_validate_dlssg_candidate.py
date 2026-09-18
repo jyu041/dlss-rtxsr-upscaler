@@ -1,8 +1,11 @@
 from types import SimpleNamespace
+import subprocess
+import sys
+import threading
 
 import pytest
 
-from tools.validate_dlssg_candidate import validate_group, validate_reset
+from tools.validate_dlssg_candidate import _drain_child_output, validate_group, validate_reset
 
 
 def result(count=1, outputs=None, disable=0, width=64, height=64, pixel_format=28, reset_only=False):
@@ -35,3 +38,35 @@ def test_group_rejects_disabled_or_bad_shape_format_and_bytes():
 def test_4x_requires_three_outputs():
     validate_group(result(count=3), 4, 64, 64)
     with pytest.raises(RuntimeError): validate_group(result(count=1), 4, 64, 64)
+
+
+def test_child_output_drainer_prevents_large_pipe_deadlock():
+    payload_lines = 5000
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            (
+                "for i in range(5000):\n"
+                "    print(f'{i:05d}:' + 'x' * 120, flush=True)\n"
+            ),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    assert process.stdout is not None
+    lines = []
+    reader = threading.Thread(
+        target=_drain_child_output,
+        args=(process.stdout, lines),
+        kwargs={"echo": False},
+        daemon=True,
+    )
+    reader.start()
+    assert process.wait(timeout=10) == 0
+    reader.join(timeout=5)
+    assert not reader.is_alive()
+    assert len(lines) == payload_lines
+    assert lines[0].startswith("00000:")
+    assert lines[-1].startswith("04999:")

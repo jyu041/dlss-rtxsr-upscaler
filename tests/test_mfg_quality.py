@@ -19,6 +19,8 @@ def test_identical_frame_quality_is_perfect():
     assert metrics["rmse"] == 0.0
     assert metrics["psnr_db"] is None
     assert metrics["ssim_rgb"] == pytest.approx(1.0)
+    assert metrics["edge_mae"] is None
+    assert metrics["edge_pixel_percent"] == 0.0
     assert psnr_db(frame, frame) is None
     assert ssim_rgb(frame, frame) == pytest.approx(1.0)
 
@@ -38,6 +40,48 @@ def test_quality_metrics_ignore_alpha_and_detect_rgb_error():
     assert metrics["psnr_db"] is not None
     assert metrics["ssim_rgb"] < 1.0
 
+
+
+def test_edge_metric_focuses_on_reference_high_contrast_boundaries():
+    reference = np.zeros((8, 8, 4), dtype=np.uint8)
+    reference[..., 3] = 255
+    reference[:, 4:, :3] = 255
+
+    generated = reference.copy()
+    generated[:, 4, :3] = 0
+
+    metrics = frame_metrics(reference, generated)
+    assert metrics["edge_pixel_percent"] > 0.0
+    assert metrics["edge_mae"] is not None
+    assert metrics["edge_mae"] > metrics["mae"]
+
+
+def test_summary_aggregates_edge_metrics_without_requiring_edges():
+    rows = [
+        {
+            "generated_index": 1,
+            "mae": 1.0,
+            "rmse": 2.0,
+            "psnr_db": 30.0,
+            "ssim_rgb": 0.9,
+            "edge_mae": 5.0,
+            "edge_pixel_percent": 10.0,
+            "identical": False,
+        },
+        {
+            "generated_index": 1,
+            "mae": 2.0,
+            "rmse": 3.0,
+            "psnr_db": 29.0,
+            "ssim_rgb": 0.8,
+            "edge_mae": None,
+            "edge_pixel_percent": 0.0,
+            "identical": False,
+        },
+    ]
+    summary = summarize_samples(rows)["overall"]
+    assert summary["mean_edge_mae"] == pytest.approx(5.0)
+    assert summary["mean_edge_pixel_percent"] == pytest.approx(5.0)
 
 def test_withheld_group_plan_for_4x():
     assert withheld_groups(13, 4) == [

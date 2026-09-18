@@ -179,3 +179,55 @@ Metric direction is explicit:
 
 No aggregate quality threshold is currently encoded. This avoids turning one
 small or content-specific capture into an unsupported promotion rule.
+
+## Temporal consistency and review artifacts
+
+The quality A/B harness now evaluates temporal evolution in addition to
+per-frame spatial metrics.
+
+For each consecutive source-frame transition, it compares the real RGB temporal
+derivative with the reconstructed candidate sequence's temporal derivative.
+Anchors use the original source frames; withheld positions use the generated
+grid-1 or grid-4 frame. The report includes:
+
+- mean temporal-delta MAE;
+- p95 temporal-delta MAE;
+- maximum temporal-delta MAE;
+- mean temporal-delta RMSE;
+- per-transition evidence;
+- grid4-minus-grid1 mean temporal-delta MAE.
+
+This is still a deterministic signal rather than a complete flicker metric, but
+it detects cases where individual generated frames are spatially reasonable
+while their frame-to-frame evolution is less faithful.
+
+The combined report also ranks the worst grid-4 spatial regressions, prioritizing
+reference-edge MAE, then SSIM and global MAE. For each ranked sample the harness
+writes a review triptych with:
+
+1. withheld real reference;
+2. grid-1 output;
+3. grid-4 output.
+
+These review images are written under the evidence run's `review/` directory.
+
+## One-command local quality gate
+
+The PowerShell wrapper:
+
+`tools/run_mfg_grid_quality_ab.ps1`
+
+first rebuilds and GPU-free self-tests the isolated instrumented worker, then
+runs the real-clip grid quality A/B with the pinned legacy/runtime identities.
+
+Example:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run_mfg_grid_quality_ab.ps1 `
+  -Input "C:\path\to\high-fps-test.mp4" `
+  -Multiplier 2 `
+  -Groups 8
+```
+
+The wrapper performs no production-profile promotion and invokes no practical
+timing matrix. It exists only to make the real quality gate reproducible.

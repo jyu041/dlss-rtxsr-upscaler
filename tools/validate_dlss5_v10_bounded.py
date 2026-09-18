@@ -17,6 +17,7 @@ import tempfile
 import time
 
 import numpy as np
+import psutil
 
 from src.backends.dlss5_metrics import effect_metrics, effect_observed
 from src.backends.dlss5_v10_client import EXPERIMENT_ACK, V10ProtocolClient
@@ -121,6 +122,38 @@ def remove_temporary_firewall_block(rule_name: str) -> None:
     _run_elevated_script(script)
 
 
+def assert_no_host_descendants(pid: int | None, stage: str) -> dict[str, object]:
+    if pid is None:
+        raise RuntimeError(f"v10 host PID unavailable at {stage}")
+    try:
+        root = psutil.Process(pid)
+        descendants = [
+            process
+            for process in root.children(recursive=True)
+            if process.is_running()
+        ]
+    except (psutil.Error, OSError) as exc:
+        raise RuntimeError(f"could not inspect v10 host process tree at {stage}: {exc}") from exc
+    evidence = {
+        "stage": stage,
+        "host_pid": pid,
+        "descendant_count": len(descendants),
+        "descendants": [
+            {
+                "pid": process.pid,
+                "name": process.name(),
+            }
+            for process in descendants
+        ],
+    }
+    if descendants:
+        raise RuntimeError(
+            f"unexpected child process spawned by v10 host at {stage}: "
+            + ", ".join(f"{item['name']}({item['pid']})" for item in evidence["descendants"])
+        )
+    return evidence
+
+
 def synthetic_frame() -> np.ndarray:
     width = height = 256
     y, x = np.mgrid[0:height, 0:width]
@@ -164,6 +197,7 @@ def run_bounded(
         "processing_scale": 1.0,
         "frame_count": 1,
         "firewall_rule": rule_name,
+        "process_tree_checks": [],
     }
 
     try:
@@ -177,6 +211,9 @@ def run_bounded(
             acknowledgement=EXPERIMENT_ACK,
         )
         report["hello"] = hello
+        report["process_tree_checks"].append(
+            assert_no_host_descendants(client.pid, "after_hello")
+        )
 
         create = client.create(
             CreateRequest(
@@ -201,6 +238,9 @@ def run_bounded(
         )
         report["create"] = create
         report["native_executed"] = bool(create.get("native_loaded") is True)
+        report["process_tree_checks"].append(
+            assert_no_host_descendants(client.pid, "after_create")
+        )
 
         initialization = create.get("initialization", {})
         gpu_name = str(initialization.get("gpu_name", ""))
@@ -215,6 +255,9 @@ def run_bounded(
             FrameRequest(timestamp=0, reset=True, rgba=source.tobytes())
         )
         report["frame_roundtrip_seconds"] = time.perf_counter() - frame_started
+        report["process_tree_checks"].append(
+            assert_no_host_descendants(client.pid, "after_frame")
+        )
         report["feature_evidence"] = {
             "ngx_create_result": output.ngx_create_result,
             "ngx_evaluate_result": output.ngx_evaluate_result,

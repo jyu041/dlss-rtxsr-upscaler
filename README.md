@@ -202,7 +202,7 @@ Read the full audit in [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md).
 - DLSS-G behavior remains hardware/runtime dependent; the normal Ampere path is pinned to the exact C55-validated direct-host runtime, while the newer 0.3.1 proxy generation is experimental rather than an automatic upgrade.
 - DLSS 5 is experimental, hardware- and runtime-dependent, and may alter semantic content.
 - The currently validated RTX 3070-family/Ampere v3 path is restricted to 1.0× output; higher v3 output scales remain blocked because the tested pairing reproducibly fell back with NGX `InvalidParameter (0xBAD00005)`.
-- The newer Neuroframe v9 package remains static-only research and is not substituted for the validated v3 Feature-18 execution path.
+- Visual Enhancer v10 is the newest Neuroframe static-only research candidate and is not substituted for the validated v3 Feature-18 execution path; the earlier v9 candidate is retained as historical static-audit evidence.
 - Performance and output quality vary substantially by source media, codec, resolution, driver, and backend runtime.
 - NVIDIA runtimes and community runtime files remain subject to their own licenses and are not covered by this repository's MIT license.
 
@@ -259,7 +259,7 @@ This project uses the following software and technologies; acknowledgement does 
 - OpenCV for image and frame processing
 - PyTorch for tensor and CUDA operations
 
-Beta packaging may redistribute only the specifically validated DLSS SR application host and official REL runtime under the applicable NVIDIA terms. The source repository does not redistribute the managed external DLSS-G direct-host/provider files, the optional 0.3.1 candidate, or the DLSS 5 v3 release archive; `setup.bat` and Runtime Manager retrieve pinned files directly from their public upstream sources after explicit user action. The v9 Neuroframe runtime remains separately gated as static-only research.
+Beta packaging may redistribute only the specifically validated DLSS SR application host and official REL runtime under the applicable NVIDIA terms. The source repository does not redistribute the managed external DLSS-G direct-host/provider files, the optional 0.3.1 candidate, or the DLSS 5 v3 release archive; `setup.bat` and Runtime Manager retrieve pinned files directly from their public upstream sources after explicit user action. The v10 Neuroframe runtime remains separately gated as static-only research; v9 is retained as historical static-audit evidence.
 
 ## License
 

@@ -5,6 +5,8 @@ param(
     [int]$Multiplier = 2,
     [ValidateRange(1,24)]
     [int]$Groups = 8,
+    [ValidateRange(0,1000000)]
+    [int]$StartFrame = 0,
     [string]$NgxSdk = 'C:\Users\mark\AppData\Local\Temp\dlssg-phase3-research\DLSS',
     [string]$NvApi = '',
     [string]$NvOfSdk = $env:NVOF_SDK,
@@ -37,6 +39,7 @@ $qualityArgs = @(
     '--input', $inputPath,
     '--multiplier', $Multiplier,
     '--groups', $Groups,
+    '--start-frame', $StartFrame,
     '--worker', $worker,
     '--runtime', $runtime,
     '--official', $official,

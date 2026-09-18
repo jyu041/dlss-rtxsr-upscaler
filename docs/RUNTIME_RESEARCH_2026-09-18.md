@@ -106,6 +106,27 @@ D3D12/NGX Feature-18 runtime with:
 This is materially different from the validated v3 package's
 ReShade/RenoDX-style five-file execution environment.
 
+Further source audit of v10 establishes:
+
+- bridge ABI version: `6`;
+- Feature ID remains `18`;
+- the bridge supports host and CUDA memory paths plus RGBA8/NV12/P010 frame
+  descriptors;
+- normal session close deliberately does **not** call
+  `NVSDK_NGX_D3D12_Shutdown` or unload the driver modules because upstream
+  reports those teardown operations can wedge after successful Feature-18
+  evaluation;
+- `neuroframe_engine_neural_rendering.dll` and `neuroframe_caller.dll` are
+  identified by upstream as Merserk-owned components, while
+  `nvngx_dlssnr.dll` remains NVIDIA runtime material;
+- candidate staging therefore retains both
+  `LICENSE-Merserk.txt` and `LICENSE-NVIDIA-DLSS.txt` alongside the three
+  DLLs.
+
+The process-lifetime NGX policy is important for our adapter design: v10 must
+not be dropped into the existing v3 lifecycle and assumed to have identical
+shutdown semantics.
+
 ### What v10 does *not* prove yet
 
 The application exposes processing scales from 25% through 200%, but that must

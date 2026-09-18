@@ -9,10 +9,15 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_instrumented_matrices_are_bounded_and_explicit():
     bounded = MATRICES["bounded"]
     practical = MATRICES["practical"]
+    grid4 = MATRICES["practical-grid4"]
     assert bounded["geometries"] == ((256, 256),)
     assert bounded["multipliers"] == (2, 3, 4)
     assert practical["geometries"] == ((1280, 720), (1920, 1080))
     assert practical["multipliers"] == (2, 4)
+    assert practical["nvof_output_grid"] == 1
+    assert grid4["geometries"] == practical["geometries"]
+    assert grid4["multipliers"] == practical["multipliers"]
+    assert grid4["nvof_output_grid"] == 4
     assert int(practical["timeout"]) >= int(bounded["timeout"])
 
 
@@ -29,9 +34,11 @@ def test_instrumented_wrapper_requires_explicit_matrix_switch():
     source = (ROOT / "tools" / "build_validate_dlssg_instrumented.ps1").read_text(encoding="utf-8")
     assert "[switch]$Validate256" in source
     assert "[switch]$ValidatePractical" in source
-    assert "$Validate256 -and $ValidatePractical" in source
+    assert "[switch]$ValidatePracticalGrid4" in source
+    assert "$matrixSwitches.Count -gt 1" in source
     assert "'--matrix', $matrix" in source
     assert "mfg-instrumented-practical-validation.json" in source
+    assert "practical-grid4" in source
 
 
 def test_native_build_preflights_complete_sdk_header_sets():

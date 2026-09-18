@@ -18,6 +18,18 @@ from src.backends.dlss5_v10_contract import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_dlss5_v10_static_audit_workflow_pins_archive_and_never_executes_candidate():
+    workflow = (ROOT / "tools" / "audit_dlss5_v10.ps1").read_text(encoding="utf-8")
+    assert "690203043" in workflow
+    assert "394BED6FBB3CCA1A994AE02A0A1152213D43030D6761437F86ABAA863C33D515" in workflow
+    assert "Visual.Enhancer.v10.0.zip" in workflow
+    assert "audit_runtime_candidate.py" in workflow
+    assert "--authenticode" in workflow
+    assert "NO_V10_DLL_EXECUTED=1" in workflow
+    assert "Start-Process" not in workflow
+    assert "rundll32" not in workflow.lower()
+
+
 def test_dlss5_v10_contract_layout_matches_upstream_abi6():
     assert BRIDGE_ABI_VERSION == 6
     assert struct_sizes() == EXPECTED_STRUCT_SIZES

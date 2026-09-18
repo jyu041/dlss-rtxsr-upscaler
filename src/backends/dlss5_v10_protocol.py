@@ -46,6 +46,7 @@ OUTPUT_META = struct.Struct("<IIqiiiifQQ")
 class CreateRequest:
     input_width: int
     input_height: int
+    gpu_ordinal: int = 0
     processing_scale: float = 1.0
     style: int = 0
     intensity: float = 1.0
@@ -74,6 +75,10 @@ class CreateRequest:
             raise V10ProtocolError("input dimensions must be integers")
         if self.input_width <= 0 or self.input_height <= 0:
             raise V10ProtocolError("input dimensions must be positive")
+        if isinstance(self.gpu_ordinal, bool) or not isinstance(self.gpu_ordinal, int):
+            raise V10ProtocolError("gpu_ordinal must be an integer")
+        if not 0 <= self.gpu_ordinal <= 31:
+            raise V10ProtocolError("gpu_ordinal must be between 0 and 31")
         _scale(self.processing_scale)
         if isinstance(self.style, bool) or self.style not in STYLE_VALUES:
             raise V10ProtocolError("style must be 0 (Default), 1 (Natural), or 2 (Cinematic)")
@@ -103,6 +108,7 @@ class CreateRequest:
         return {
             "input_width": self.input_width,
             "input_height": self.input_height,
+            "gpu_ordinal": self.gpu_ordinal,
             "processing_scale": float(self.processing_scale),
             "style": self.style,
             "intensity": float(self.intensity),
@@ -126,7 +132,7 @@ class CreateRequest:
         if not isinstance(value, dict):
             raise V10ProtocolError("CREATE payload must be a JSON object")
         expected = {
-            "input_width", "input_height", "processing_scale", "style",
+            "input_width", "input_height", "gpu_ordinal", "processing_scale", "style",
             "intensity", "nr_passes", "local_tone", "local_structure",
             "skin_structure", "color_strength", "tone_preservation",
             "face_skin_protection", "grain_preservation",

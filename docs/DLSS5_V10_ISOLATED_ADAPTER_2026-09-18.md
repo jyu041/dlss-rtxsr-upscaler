@@ -282,3 +282,11 @@ Before the first RTX 3070/3070 Ti native run, the bounded validator now also:
 The descendant-process check is an additional containment signal, not a general
 sandbox. Direct network activity in the host process remains blocked by the
 temporary exact-interpreter outbound firewall rule during the bounded run.
+
+Additional pass criteria for the first bounded native run:
+
+- CREATE must report bridge ABI 6 and the requested GPU ordinal;
+- the selected GPU name must remain on the RTX 3070/3070 Ti path;
+- host CLOSE must complete cleanly rather than falling back to forced termination;
+- temporary firewall-rule removal is part of pass/fail: cleanup failure forces
+  the overall report to FAIL and surfaces a manual-cleanup error.

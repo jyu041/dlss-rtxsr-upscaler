@@ -151,7 +151,13 @@ python tools\capture_mfg_grid_quality_ab.py `
   --groups 8
 ```
 
-The output tree defaults to `runtime/quality/mfg-grid-ab`.
+The base output tree defaults to `runtime/quality/mfg-grid-ab`. Each run is
+automatically namespaced as:
+
+`<source-stem>-<source-sha12>/<multiplier>x/`
+
+so 2X and 4X evidence cannot silently overwrite each other. The combined report
+also records source-frame and anchor-frame intervals in milliseconds.
 
 No automatic pass/fail quality threshold is encoded yet. A metric delta is
 evidence, not a promotion rule. Temporal flicker, motion boundaries,

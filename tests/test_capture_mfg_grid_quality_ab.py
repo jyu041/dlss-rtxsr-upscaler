@@ -335,10 +335,10 @@ def test_capture_grid_writes_shared_reference_manifest(tmp_path, monkeypatch):
     assert data["multiplier"] == 2
     assert len(data["samples"]) == 1
     sample = data["samples"][0]
-    assert Path(sample["reference"]).as_posix() == "references/g000_i1.png"
-    assert Path(sample["generated"]).as_posix() == "grid4/generated/g000_i1.png"
-    assert (tmp_path / "quality" / sample["reference"]).is_file()
-    assert (tmp_path / "quality" / sample["generated"]).is_file()
+    assert Path(sample["reference"]).as_posix() == "../references/g000_i1.png"
+    assert Path(sample["generated"]).as_posix() == "generated/g000_i1.png"
+    assert (manifest.parent / sample["reference"]).resolve().is_file()
+    assert (manifest.parent / sample["generated"]).resolve().is_file()
 
 
 

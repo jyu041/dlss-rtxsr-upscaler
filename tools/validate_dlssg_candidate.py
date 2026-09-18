@@ -303,6 +303,7 @@ def main() -> int:
     parser.add_argument("--multiplier", type=int)
     parser.add_argument("--motion-mode", type=int, default=MOTION_MODE_EXTERNAL_R16G16_FLOAT)
     parser.add_argument("--instrumented-timing", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--timing-frames", type=int, default=3, help=argparse.SUPPRESS)
     parser.add_argument("--width", type=int, default=VALIDATION_WIDTH, help=argparse.SUPPRESS)
     parser.add_argument("--height", type=int, default=VALIDATION_HEIGHT, help=argparse.SUPPRESS)
     args = parser.parse_args()

@@ -732,7 +732,11 @@ public:
         wchar_t experimental[8]{};
         gpuFlowEnabled_ = GetEnvironmentVariableW(L"DLSSG_NVOF_GPU_FLOW", experimental, static_cast<DWORD>(std::size(experimental))) != 0 &&
             _wcsicmp(experimental, L"1") == 0;
+        wchar_t timestampMode[8]{};
+        gpuTimestampsEnabled_ = GetEnvironmentVariableW(L"DLSSG_GPU_TIMESTAMPS", timestampMode, static_cast<DWORD>(std::size(timestampMode))) != 0 &&
+            _wcsicmp(timestampMode, L"1") == 0;
         RunLog("WORKER_MODE=%s", diagnosticMode_ ? "DIAGNOSTIC" : "PRODUCTION");
+        RunLog("WORKER_GPU_TIMESTAMPS=%d", gpuTimestampsEnabled_ ? 1 : 0);
         runtimeDir_ = runtimeDir;
         IDXGIAdapter1 *candidate = nullptr;
         if (FAILED(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory_)))) return false;
@@ -755,7 +759,7 @@ public:
             FAILED(device_->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_)))) return false;
         if (FAILED(list_->Close())) return false;
         event_ = CreateEventW(nullptr, FALSE, FALSE, nullptr); if (!event_) return false;
-        if (!gpuTimestamps_.Initialize(device_, queue_, diagnosticMode_)) return false;
+        if (!gpuTimestamps_.Initialize(device_, queue_, gpuTimestampsEnabled_)) return false;
         runtimePaths_[0] = runtimeDir_.c_str(); common_.PathListInfo.Path = runtimePaths_; common_.PathListInfo.Length = 1;
         const NVSDK_NGX_Result official = NVSDK_NGX_D3D12_Init_with_ProjectID(projectId_,
             NVSDK_NGX_ENGINE_TYPE_CUSTOM, "1.0", runtimeDir, device_, &common_, NVSDK_NGX_Version_API);
@@ -1123,6 +1127,7 @@ private:
     bool nvofHistoryValid_ = false;
     bool diagnosticMode_ = false;
     bool gpuFlowEnabled_ = false;
+    bool gpuTimestampsEnabled_ = false;
     uint32_t width_ = 0, height_ = 0, motionMode_ = 0, generatedPerGroup_ = 1;
     int capabilityMax_ = 1;
     bool created_ = false; uint32_t initCount_ = 0, createCount_ = 0, evaluateCount_ = 0, generatedCount_ = 0;

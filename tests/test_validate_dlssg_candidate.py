@@ -5,8 +5,7 @@ import threading
 
 import pytest
 
-from tools.validate_dlssg_candidate import _drain_child_output, validate_group, validate_reset
-
+from tools.validate_dlssg_candidate import (\n    VALIDATION_HEIGHT,\n    VALIDATION_WIDTH,\n    _drain_child_output,\n    validate_group,\n    validate_reset,\n)\n
 
 def result(count=1, outputs=None, disable=0, width=64, height=64, pixel_format=28, reset_only=False):
     return SimpleNamespace(generated_count=count, outputs=outputs if outputs is not None else [b"x" * (width * height * 4)] * count,
@@ -70,3 +69,8 @@ def test_child_output_drainer_prevents_large_pipe_deadlock():
     assert len(lines) == payload_lines
     assert lines[0].startswith("00000:")
     assert lines[-1].startswith("04999:")
+
+
+def test_validator_uses_preserved_256_square_contract():
+    assert VALIDATION_WIDTH == 256
+    assert VALIDATION_HEIGHT == 256

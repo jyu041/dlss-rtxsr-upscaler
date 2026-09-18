@@ -89,13 +89,18 @@ def _child(
     instrumented_timing: bool = False,
     width: int = VALIDATION_WIDTH,
     height: int = VALIDATION_HEIGHT,
+    timing_frames: int = 3,
 ) -> int:
     # Normal validation remains fixed at 256x256. Explicit child-only
     # instrumented timing may supply practical video geometry after the bounded
     # 256x256 gate has passed.
     if width < 256 or height < 256 or width > 1920 or height > 1080:
         raise RuntimeError(f"instrumented validation geometry is out of bounds: {width}x{height}")
-    frames = [_frame(width, height, frame_id) for frame_id in range(3)]
+    if timing_frames < 3 or timing_frames > 12:
+        raise RuntimeError(f"instrumented timing frame count is out of bounds: {timing_frames}")
+    if timing_frames != 3 and not instrumented_timing:
+        raise RuntimeError("non-default timing frame count requires --instrumented-timing")
+    frames = [_frame(width, height, frame_id) for frame_id in range(timing_frames)]
     reset_motion = bytes(width * height * 4)
     motion = b"".join(struct.pack("<ee", 1.0, 0.0) for _ in range(width * height))
     expected = profile(runtime_profile)
@@ -117,7 +122,7 @@ def _child(
         )
         validate_reset(reset)
         results = []
-        for frame_id in range(3):
+        for frame_id in range(timing_frames):
             result = client.process(
                 frame_id + 1,
                 frames[frame_id],
@@ -325,6 +330,7 @@ def main() -> int:
             instrumented_timing=args.instrumented_timing,
             width=args.width,
             height=args.height,
+            timing_frames=args.timing_frames,
         )
 
     expected = profile(args.profile)

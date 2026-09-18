@@ -115,6 +115,48 @@ def test_paired_quality_rejects_mismatched_sample_keys():
     with pytest.raises(RuntimeError, match="identical sample keys"):
         capture._paired_quality(grid1, grid4)
 
+
+def test_require_grid_selected_fails_closed(monkeypatch):
+    class Worker:
+        diagnostics = ("NVOF_OUTPUT_GRID_SELECTED=1 flowWidth=1280 flowHeight=720",)
+
+    monkeypatch.setattr(capture.time, "sleep", lambda *_args: None)
+    ticks = iter([0.0, 0.0, 3.0])
+    monkeypatch.setattr(capture.time, "monotonic", lambda: next(ticks))
+    with pytest.raises(RuntimeError, match="did not confirm requested NVOF output grid 4"):
+        capture.require_grid_selected(Worker(), 4, timeout=2.0)
+
+
+def test_review_candidates_prioritize_edge_regression():
+    grid1 = {
+        "samples": [
+            {
+                "group": 0, "generated_index": 1, "reference": "r0.png",
+                "generated": "g1a.png", "mae": 10.0, "ssim_rgb": 0.90, "edge_mae": 15.0,
+            },
+            {
+                "group": 1, "generated_index": 1, "reference": "r1.png",
+                "generated": "g1b.png", "mae": 8.0, "ssim_rgb": 0.92, "edge_mae": 20.0,
+            },
+        ]
+    }
+    grid4 = {
+        "samples": [
+            {
+                "group": 0, "generated_index": 1, "reference": "r0.png",
+                "generated": "g4a.png", "mae": 11.0, "ssim_rgb": 0.89, "edge_mae": 16.0,
+            },
+            {
+                "group": 1, "generated_index": 1, "reference": "r1.png",
+                "generated": "g4b.png", "mae": 8.2, "ssim_rgb": 0.919, "edge_mae": 30.0,
+            },
+        ]
+    }
+    ranked = capture._review_candidates(grid1, grid4)
+    assert ranked[0]["group"] == 1
+    assert ranked[0]["grid4_minus_grid1_edge_mae"] == pytest.approx(10.0)
+    assert ranked[0]["reference"] == "r1.png"
+
 def test_capture_grid_writes_shared_reference_manifest(tmp_path, monkeypatch):
     width, height, multiplier, groups = 1280, 720, 2, 1
     frames = [
@@ -136,6 +178,7 @@ def test_capture_grid_writes_shared_reference_manifest(tmp_path, monkeypatch):
     class FakeWorker:
         def __init__(self, *args, **kwargs):
             self.calls = 0
+            self.diagnostics = ("NVOF_OUTPUT_GRID_SELECTED=4 flowWidth=320 flowHeight=180",)
         def __enter__(self):
             return self
         def __exit__(self, *args):

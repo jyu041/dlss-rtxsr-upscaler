@@ -13,6 +13,7 @@ from pathlib import Path
 import struct
 import subprocess
 import sys
+import threading
 import time
 
 try:
@@ -174,6 +175,27 @@ def _terminate_owned_tree(process: subprocess.Popen[str]) -> None:
             raise RuntimeError(f"owned validator descendants remain after cleanup: {lingering}")
 
 
+def _drain_child_output(stream, lines: list[str], *, echo: bool = True) -> None:
+    """Continuously drain a validator child's merged stdout/stderr.
+
+    The child forwards verbose native-worker diagnostics.  On Windows a pipe can
+    fill long before a GPU validation finishes; leaving stdout unread while
+    polling the process therefore deadlocks the child.  Drain concurrently and
+    retain the lines so timeout/failure errors still carry a useful stage tail.
+    """
+    try:
+        for raw in iter(stream.readline, ""):
+            line = raw.rstrip("\r\n")
+            lines.append(line)
+            if echo:
+                print(f"CHILD {line}", flush=True)
+    finally:
+        try:
+            stream.close()
+        except OSError:
+            pass
+
+
 def _run_one(args: argparse.Namespace, multiplier: int, motion_mode: int) -> dict[str, object]:
     command = [
         sys.executable,
@@ -200,21 +222,48 @@ def _run_one(args: argparse.Namespace, multiplier: int, motion_mode: int) -> dic
         stderr=subprocess.STDOUT,
         text=True,
         env=os.environ.copy(),
+        bufsize=1,
     )
     lines: list[str] = []
+    reader = None
+    if process.stdout is not None:
+        reader = threading.Thread(
+            target=_drain_child_output,
+            args=(process.stdout, lines),
+            daemon=True,
+            name=f"dlssg-validator-{multiplier}x-output",
+        )
+        reader.start()
+
+    timed_out = False
     while process.poll() is None:
         if time.monotonic() - started > args.timeout:
             _terminate_owned_tree(process)
-            raise TimeoutError(f"{multiplier}X {args.profile} validation exceeded {args.timeout}s")
-        print(f"HEARTBEAT profile={args.profile} multiplier={multiplier} elapsed={int(time.monotonic()-started)}s", flush=True)
+            timed_out = True
+            break
+        print(
+            f"HEARTBEAT profile={args.profile} multiplier={multiplier} "
+            f"elapsed={int(time.monotonic()-started)}s",
+            flush=True,
+        )
         time.sleep(1)
-    if process.stdout:
-        lines.extend(line.rstrip() for line in process.communicate(timeout=5)[0].splitlines())
+
+    if reader is not None:
+        reader.join(timeout=5)
+        if reader.is_alive():
+            raise RuntimeError(
+                f"{multiplier}X {args.profile} validator output reader did not finish after process exit"
+            )
+
+    tail = " | ".join(lines[-12:])
+    if timed_out:
+        detail = f": {tail}" if tail else ""
+        raise TimeoutError(
+            f"{multiplier}X {args.profile} validation exceeded {args.timeout}s{detail}"
+        )
     if process.returncode != 0:
-        _terminate_owned_tree(process)
         raise RuntimeError(
-            f"{multiplier}X {args.profile} validation failed with exit {process.returncode}: "
-            f"{' | '.join(lines[-8:])}"
+            f"{multiplier}X {args.profile} validation failed with exit {process.returncode}: {tail}"
         )
     return {"multiplier": multiplier, "output": lines[-1] if lines else ""}
 

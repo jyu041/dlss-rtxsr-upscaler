@@ -1,13 +1,20 @@
 # MFG GPU Timestamp Instrumentation — 2026-09-18
 
-This branch adds diagnostic-only D3D12 timestamp queries to the source of the
+This branch adds explicitly opt-in D3D12 timestamp queries to the source of the
 C55 native DLSS-G worker while preserving protocol v4 and the currently pinned
 validated worker binary.
 
 ## Safety boundary
 
-The instrumentation is enabled only when the worker is started with
-`DLSSG_WORKER_DIAGNOSTIC=1`, which is already the existing diagnostic mode.
+Timestamp instrumentation is enabled only when the worker is started with
+`DLSSG_GPU_TIMESTAMPS=1`. It is deliberately independent of
+`DLSSG_WORKER_DIAGNOSTIC`.
+
+This separation matters for NVOF: verbose diagnostic mode intentionally selects
+the older diagnostic motion path, while production GPU-resident NVOF requires
+forward-only flow plus `DLSSG_NVOF_GPU_FLOW=1`. The bounded instrumented
+validator therefore uses timestamp opt-in with verbose diagnostic mode **off**,
+`DLSSG_NVOF_DIRECTION=forward`, and `DLSSG_NVOF_GPU_FLOW=1`.
 
 It does **not**:
 
@@ -20,13 +27,13 @@ It does **not**:
 
 The currently distributed validated worker therefore remains byte-for-byte
 unchanged until a separately built instrumented worker is deliberately used for
-measurement.
+measurement. Normal production startup does not set `DLSSG_GPU_TIMESTAMPS`.
 
 ## Direct-queue timestamp layout
 
-The diagnostic worker creates one D3D12 timestamp query heap and a readback
-buffer. For each generated group it records timestamps on the existing direct
-command list around:
+The timestamp-enabled worker creates one D3D12 timestamp query heap and a
+readback buffer. For each generated group it records timestamps on the existing
+direct command list around:
 
 1. color/motion input upload copies;
 2. each DLSS-G Evaluate submission;

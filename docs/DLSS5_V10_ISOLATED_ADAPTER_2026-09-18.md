@@ -206,6 +206,31 @@ The parent supervisor uses real subprocess pipes and implements:
 The normal `start()` method remains blocked with `V10ExecutionDisabled`;
 only `start_protocol_selftest()` can spawn a process at this milestone.
 
+## Offline native-loader review
+
+The pinned upstream v10 implementation loads the bridge with Windows
+`WinDLL`, binds the ABI surface, calls `dlss5nr_version()` and
+`dlss5nr_frame_abi_version()`, and rejects a frame ABI other than 6 before
+initialization.
+
+`src/backends/dlss5_v10_native.py` now mirrors that binding plan without being
+connected to the host:
+
+- exact runtime static identity is rechecked immediately before any load;
+- native loading is disabled by default and raises
+  `V10NativeLoadDisabled`;
+- `allow_native_load=True` is required even to reach the loader;
+- the ABI-6 required function signatures are bound explicitly;
+- runtime frame ABI is checked again after load;
+- optional `dlss5nr_release_session` is bound if present;
+- no NGX shutdown/unload routine is part of the isolated-host lifecycle plan.
+
+The module is covered with fake-library tests. The production host currently
+does not import `dlss5_v10_native` and does not reference `load_bridge`.
+
+This gives us reviewed loader source without creating a reachable native
+execution path yet.
+
 ## Intended execution architecture
 
 The later execution milestone should keep all of these inside one owned child:

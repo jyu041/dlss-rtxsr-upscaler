@@ -20,6 +20,55 @@ V10_FILES = (
     "neuroframe_caller.dll",
 )
 
+NETWORK_IMPORT_DLLS = {
+    "WINHTTP.DLL",
+    "WININET.DLL",
+    "WS2_32.DLL",
+    "URLMON.DLL",
+}
+NETWORK_IMPORT_SYMBOLS = {
+    "CONNECT",
+    "WSACONNECT",
+    "INTERNETOPENA",
+    "INTERNETOPENW",
+    "INTERNETOPENURLA",
+    "INTERNETOPENURLW",
+    "WINHTTPOPEN",
+    "WINHTTPOPENREQUEST",
+    "URLDOWNLOADTOFILEA",
+    "URLDOWNLOADTOFILEW",
+}
+PROCESS_IMPORT_SYMBOLS = {
+    "CREATEPROCESSA",
+    "CREATEPROCESSW",
+    "CREATEPROCESSASUSERA",
+    "CREATEPROCESSASUSERW",
+    "CREATEPROCESSWITHLOGONW",
+    "CREATEPROCESSWITHTOKENW",
+    "WINEXEC",
+    "SHELLEXECUTEA",
+    "SHELLEXECUTEW",
+    "SHELLEXECUTEEXA",
+    "SHELLEXECUTEEXW",
+}
+
+
+def _sensitive_imports(pe: dict[str, object]) -> list[str]:
+    findings: list[str] = []
+    for dll in pe.get("imports", []):
+        if str(dll).upper() in NETWORK_IMPORT_DLLS:
+            findings.append(f"network-dll:{dll}")
+    symbol_map = pe.get("import_symbols", {})
+    if isinstance(symbol_map, dict):
+        for dll, symbols in symbol_map.items():
+            for symbol in symbols:
+                upper = str(symbol).upper()
+                if upper in NETWORK_IMPORT_SYMBOLS:
+                    findings.append(f"network-symbol:{dll}!{symbol}")
+                if upper in PROCESS_IMPORT_SYMBOLS:
+                    findings.append(f"process-symbol:{dll}!{symbol}")
+    return sorted(set(findings))
+
 
 @dataclass(frozen=True)
 class V10StaticStatus:
@@ -69,6 +118,7 @@ def inspect_v10_runtime(
                 "size_bytes": path.stat().st_size,
                 "sha256": _sha256(path),
                 "pe": pe,
+                "sensitive_imports": _sensitive_imports(pe),
             }
             evidence["files"][name] = record
             if pe["architecture"] != "x86_64":
@@ -126,6 +176,21 @@ def inspect_v10_runtime(
             False,
             False,
             "v10 file identity mismatch: " + ", ".join(mismatches),
+            evidence,
+        )
+
+    sensitive = {
+        name: record["sensitive_imports"]
+        for name, record in evidence["files"].items()
+        if record["sensitive_imports"]
+    }
+    if sensitive:
+        evidence["sensitive_import_review"] = sensitive
+        return V10StaticStatus(
+            "STATIC_REVIEW_REQUIRED",
+            False,
+            False,
+            "v10 identity/ABI checks passed, but networking or process-launch imports require review",
             evidence,
         )
 

@@ -157,6 +157,60 @@ def test_review_candidates_prioritize_edge_regression():
     assert ranked[0]["grid4_minus_grid1_edge_mae"] == pytest.approx(10.0)
     assert ranked[0]["reference"] == "r1.png"
 
+
+def test_temporal_report_reconstructs_anchor_and_generated_sequence(tmp_path):
+    frames = []
+    for value in (0, 10, 20):
+        frame = np.zeros((2, 2, 4), dtype=np.uint8)
+        frame[..., :3] = value
+        frame[..., 3] = 255
+        frames.append(frame)
+
+    generated = tmp_path / "generated.png"
+    capture._save_rgba(generated, frames[1])
+    report = {
+        "samples": [
+            {
+                "group": 0,
+                "generated_index": 1,
+                "generated": str(generated),
+            }
+        ]
+    }
+    temporal = capture._temporal_report(frames, report, multiplier=2, groups=1)
+    assert temporal["count"] == 2
+    assert temporal["mean_temporal_delta_mae"] == 0.0
+    assert temporal["max_temporal_delta_mae"] == 0.0
+
+
+def test_review_pack_writes_ranked_reference_grid_triptych(tmp_path):
+    from PIL import Image
+
+    paths = {}
+    for name, value in (("reference", 10), ("grid1", 20), ("grid4", 30)):
+        path = tmp_path / f"{name}.png"
+        Image.new("RGB", (8, 6), (value, value, value)).save(path)
+        paths[name] = path
+
+    candidates = [
+        {
+            "group": 2,
+            "generated_index": 1,
+            "reference": str(paths["reference"]),
+            "grid1_generated": str(paths["grid1"]),
+            "grid4_generated": str(paths["grid4"]),
+            "grid4_minus_grid1_edge_mae": 1.0,
+            "grid4_minus_grid1_ssim_rgb": -0.01,
+            "grid4_minus_grid1_mae": 0.5,
+        }
+    ]
+    written = capture._write_review_pack(tmp_path, candidates)
+    assert written[0]["rank"] == 1
+    review_path = tmp_path / written[0]["review_image"]
+    assert review_path.is_file()
+    with Image.open(review_path) as image:
+        assert image.size == (24, 48)
+
 def test_capture_grid_writes_shared_reference_manifest(tmp_path, monkeypatch):
     width, height, multiplier, groups = 1280, 720, 2, 1
     frames = [

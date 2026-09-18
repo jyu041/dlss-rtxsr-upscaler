@@ -5,10 +5,15 @@ param(
     [string]$CommunityRuntime = "$PSScriptRoot\..\runtime\dlssg\legacy\version.dll",
     [string]$OfficialRuntimeDir = "$PSScriptRoot\..\runtime\dlssg\official",
     [string]$Evidence = "$PSScriptRoot\..\runtime\audit\mfg-instrumented-validation.json",
-    [switch]$Validate256
+    [string]$PracticalEvidence = "$PSScriptRoot\..\runtime\audit\mfg-instrumented-practical-validation.json",
+    [switch]$Validate256,
+    [switch]$ValidatePractical
 )
 
 $ErrorActionPreference = 'Stop'
+if ($Validate256 -and $ValidatePractical) {
+    throw 'Choose only one GPU validation matrix: -Validate256 or -ValidatePractical.'
+}
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $native = Join-Path $root 'native\dlssg_sm86_offline'
 $output = Join-Path $native 'bin-instrumented'
@@ -72,20 +77,28 @@ Write-Host "BUILD_PASS worker=$worker"
 Write-Host "WORKER_SHA256=$workerHash"
 Write-Host 'SELFTEST_PASS'
 
-if (-not $Validate256) {
-    Write-Host 'GPU_VALIDATION_SKIPPED: pass -Validate256 explicitly to run the bounded 256x256 2X/3X/4X matrix.'
+if (-not $Validate256 -and -not $ValidatePractical) {
+    Write-Host 'GPU_VALIDATION_SKIPPED: pass -Validate256 for the bounded 256x256 gate or -ValidatePractical for the 720p/1080p timing matrix.'
     exit 0
 }
 
 $python = Get-Command python -ErrorAction Stop
 $validator = Join-Path $root 'tools\validate_dlssg_instrumented.py'
+if ($ValidatePractical) {
+    $matrix = 'practical'
+    $validationEvidence = $PracticalEvidence
+} else {
+    $matrix = 'bounded'
+    $validationEvidence = $Evidence
+}
 $validatorArgs = @(
     $validator,
     '--worker', $worker,
     '--runtime', $community,
     '--official', $official,
-    '--output', $Evidence
+    '--matrix', $matrix,
+    '--output', $validationEvidence
 )
 & $python.Source @validatorArgs
-if ($LASTEXITCODE -ne 0) { throw "Bounded instrumented validation failed: $LASTEXITCODE" }
-Write-Host "VALIDATION_PASS evidence=$Evidence"
+if ($LASTEXITCODE -ne 0) { throw "Instrumented $matrix validation failed: $LASTEXITCODE" }
+Write-Host "VALIDATION_PASS matrix=$matrix evidence=$validationEvidence"

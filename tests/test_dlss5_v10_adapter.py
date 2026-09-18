@@ -89,7 +89,9 @@ def test_v10_adapter_plan_is_nonexecuting_and_separate_from_v3(monkeypatch, tmp_
     assert plan.module == "src.backends.dlss5_v10_host"
     assert "src.backends.dlss5_v10_host" in plan.command
     assert "--serve" in plan.command
-    assert "src.backends.dlss5" not in " ".join(plan.command)
+    module_index = plan.command.index("-m") + 1
+    assert plan.command[module_index] == "src.backends.dlss5_v10_host"
+    assert plan.command[module_index] != "src.backends.dlss5"
 
 
 def test_v10_adapter_launch_remains_disabled():

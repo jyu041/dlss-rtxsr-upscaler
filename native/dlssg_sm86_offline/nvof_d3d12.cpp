@@ -365,6 +365,10 @@ struct NvofD3D12::Impl {
     }
 
     bool ReadFlow(ID3D12Resource *flow, std::vector<NV_OF_FLOW_VECTOR> &raw) {
+        if (outputGrid != 1) {
+            Log("NVOF_CPU_READBACK_GRID_UNSUPPORTED grid=%u", outputGrid);
+            return false;
+        }
         if (!ResetList()) return false;
         Transition(list, flow, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_SOURCE);
         D3D12_TEXTURE_COPY_LOCATION source{}, destination{};
@@ -703,6 +707,7 @@ bool NvofD3D12::ComputeBackward(const uint8_t *previousRgba, const uint8_t *curr
     bool resetTemporalHints, std::vector<uint8_t> &motionR16G16Float,
     std::vector<NvofFlowVector> *flowPixels, NvofFlowStatistics *statistics, NvofTimings *timings) {
     Log("NVOF_BACKWARD_BEGIN resetTemporalHints=%d", resetTemporalHints ? 1 : 0);
+    if (impl_->outputGrid != 1) { Log("NVOF_BACKWARD_GRID_UNSUPPORTED grid=%u", impl_->outputGrid); return false; }
     if (!impl_->handle || !previousRgba || !currentRgba) { Log("NVOF_BACKWARD_PRECONDITION_FAILED"); return false; }
     auto &state = *impl_;
     NvofTimings measured{};

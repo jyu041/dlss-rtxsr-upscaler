@@ -313,9 +313,12 @@ def main() -> int:
         raise SystemExit(f"input not found: {input_path}")
 
     identities = validate_identities(args.worker, args.runtime, args.official)
+    input_sha = sha256_file(input_path)
     required_frames = args.groups * args.multiplier + 1
     frames, fps = decode_source(input_path, required_frames)
-    output_root = args.output_dir.expanduser().resolve()
+    base_output = args.output_dir.expanduser().resolve()
+    source_tag = f"{input_path.stem[:32]}-{input_sha[:12]}"
+    output_root = base_output / source_tag / f"{args.multiplier}x"
     output_root.mkdir(parents=True, exist_ok=True)
 
     reports: dict[str, dict[str, object]] = {}
@@ -343,12 +346,15 @@ def main() -> int:
         "status": "PASS",
         "purpose": "quality evidence only; no promotion decision",
         "input": str(input_path),
-        "input_sha256": sha256_file(input_path),
+        "input_sha256": input_sha,
         "input_fps": fps,
         "width": width,
         "height": height,
         "multiplier": args.multiplier,
         "groups": args.groups,
+        "evidence_root": str(output_root),
+        "source_frame_interval_ms": 1000.0 / fps,
+        "anchor_interval_ms": 1000.0 * args.multiplier / fps,
         **identities,
         "grid1_summary": reports["grid1"]["summary"],
         "grid4_summary": reports["grid4"]["summary"],

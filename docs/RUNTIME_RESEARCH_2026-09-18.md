@@ -41,41 +41,44 @@ Classification:
   game-proxy architecture does not establish compatibility with this project's
   C55 direct-host worker.
 
-### Why 0.3.3 is not yet an installable project profile
+### 0.3.3 direct-host stop condition
 
-The repository currently has an executable `candidate-0.3.1` profile with
-exact pinned file hashes. The 0.3.3 Git tag has been identified, but this phase
-has not yet established exact SHA-256/size identities for the executable
-`version.dll` payload in a way suitable for the project's manifest contract.
+Further static review resolves the key compatibility question negatively for
+the packaged proxy itself.
 
-Git object/blob IDs are not substitutes for SHA-256 runtime identity.
+Upstream documents that:
 
-Therefore 0.3.3 must remain research-only until all of the following are known:
+- the first proxy whose `DllMain` runs becomes process-wide active;
+- that active proxy installs a `LoadLibrary` hook;
+- the proxy intercepts only the loading of `nvngx_dlssg.dll`;
+- later proxy DLLs become forwarding-only standby instances;
+- 0.3.0 deliberately reverted the upstream project from its native/self-built
+  NGX-host direction back to this proxy architecture.
 
-1. exact source/tag/commit identity;
-2. exact `version.dll`, `dlssg_sm86.ini`, and notice-file SHA-256 and size;
-3. PE import/export and Authenticode observations;
-4. whether the proxy can expose the direct-host entry/lifecycle contract C55
-   requires without a game process or proxy-loader lifecycle;
-5. whether it expects its embedded NVIDIA provider rather than the separately
-   pinned project provider.
+That lifecycle is materially different from the project C55 worker, which owns
+its standalone direct-host initialization. The same architectural mismatch was
+already observed with 0.3.1, and 0.3.3 has not changed that fundamental host
+contract.
 
-Only after those static questions pass should a new
-`candidate-0.3.3` executable profile be added.
+**Decision:** do not create an executable `candidate-0.3.3` C55 profile and do
+not ask for an RTX 3070 Ti compatibility run of the proxy DLL itself. Static
+analysis has already exhausted that path.
 
-### Required bounded validation if static compatibility passes
+Exact 0.3.3 file SHA-256/size and signature evidence would still be required if
+the project later stages the proxy for forensic comparison, but those identities
+would not by themselves make it a direct-host candidate.
 
-1. 256x256 Create/reset.
-2. 2X deterministic external motion.
-3. 2X NVIDIA Optical Flow.
-4. 3X deterministic external motion.
-5. 3X NVIDIA Optical Flow.
-6. 4X deterministic external motion.
-7. 4X NVIDIA Optical Flow.
-8. Verify exact generated counts/order, no stale outputs, no
-   `InterpolationDisabled`, no device removal.
-9. Then characterize 720p, 1080p, 1440p, and 4K.
-10. Compare against `legacy` with the same inputs and GPU timestamp queries.
+The actionable 0.3.3 research paths are instead:
+
+1. treat its optimized-kernel/backend work as a reference for a separately
+   adapted direct-host implementation, subject to license and binary-boundary
+   review; or
+2. leave the runtime unchanged and pursue the project's larger GPU-residency
+   bottlenecks first.
+
+If a future adapter actually exposes a C55-compatible direct-host boundary, it
+must start again at the bounded 256x256 Create/reset and 2X/3X/4X external
+motion + NVOF matrix before any practical-resolution test.
 
 The validated `legacy` profile remains the fallback throughout.
 

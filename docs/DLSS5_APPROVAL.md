@@ -1,8 +1,9 @@
 # DLSS5 Runtime Approval
 
 DLSS 5 Neural Rendering remains an optional **experimental** backend. The
-validated execution path is the legacy Feature-18 v3 runtime; the newer
-Neuroframe v9 research package remains a separate static-only candidate.
+validated execution path is the legacy Feature-18 v3 runtime. Visual Enhancer
+v10 is the newest separate static-only Neuroframe candidate; the earlier v9
+candidate is retained as historical static-audit evidence.
 
 ## Normal setup path
 
@@ -144,10 +145,21 @@ conda run -n dlss-rtxsr-upscaler python tools\provision_dlss5_v3.py --archive C:
 The supplied archive must match the same pinned size and SHA-256. Arbitrary
 runtime folders and replacement DLLs are not accepted by the managed path.
 
-## Neuroframe v9 remains separate
+## Neuroframe v10 remains separate
 
-The v9 Neuroframe release is still represented only as a selective-extraction,
-static research candidate. It is not substituted for the validated v3
-Feature-18 execution runtime and is not executed by this setup flow. Its own
-DLL boundary, loader behavior, network/process boundary and RTX 3070 Ti
-synthetic execution test must be established before it can replace v3.
+Visual Enhancer v10 is represented only as a selective-extraction, static
+research candidate. It is not substituted for the validated v3 Feature-18
+execution runtime and is not executed by setup. The upstream v10 source
+describes an in-process D3D12/NGX Feature-18 bridge plus caller shim, which is a
+materially different host boundary from the validated v3 RenoDX/ReShade-style
+five-file runtime.
+
+Before any v10 execution, the project must establish exact extracted DLL
+identities, imports/exports, Authenticode observations, Defender results,
+network/process behavior, caller/bridge ABI, and the actual meaning of the
+application's 125-200% processing scales. Those scale controls are not accepted
+as evidence that Feature 18 itself exposes native >1.0x NGX output on Ampere.
+
+The earlier v9 candidate remains available as historical static-audit evidence.
+Neither v9 nor v10 may replace v3 without a separately reviewed adapter and
+RTX 3070 Ti execution evidence.

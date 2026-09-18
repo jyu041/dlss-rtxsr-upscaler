@@ -46,8 +46,10 @@ Current stages are:
 - `dlssg_evaluate`
 - `output_copy`
 - `group_total`
+- `nvof_bracket`
+- `nvof_conversion`
 
-`dlssg_evaluate` and `output_copy` use generated index 1..3. Group/input
+`dlssg_evaluate` and `output_copy` use generated index 1..3. Group/input/NVOF
 records use index 0.
 
 ## What these timestamps mean
@@ -63,13 +65,34 @@ They can answer questions such as:
 - how much direct-queue time each output-copy segment occupies;
 - how those pieces compare with total direct-queue group duration.
 
-They do **not** yet measure NVIDIA Optical Flow GPU execution directly.
+They still do **not** measure pure NVIDIA Optical Flow engine execution
+directly.
 
-NVOF is driven through the NVIDIA Optical Flow API and has its own execution
-boundary. Existing `nvof_upload_ms`, `nvof_execute_ms`, and
-`flow_conversion_ms` remain CPU/API/wait-attributed timings. A separate NVOF
-GPU-timestamp design is required before claiming actual NVOF GPU execution
-duration.
+The NVOF GPU-resident path now adds a cross-engine timestamp bracket:
+
+1. timestamp 0 executes on the D3D12 direct queue after the NVOF input upload;
+2. that queue signals the NVOF input fence;
+3. Optical Flow waits on that input fence, executes on its own engine, and
+   signals its output fence;
+4. the direct queue waits on that NVOF output fence;
+5. timestamp 1 is the first direct-queue timestamp after that wait;
+6. timestamp 2 is recorded after the flow-copy + compute-conversion work.
+
+Therefore:
+
+- `nvof_bracket` = GPU-side elapsed time across queue handoff + Optical Flow
+  scheduling/execution + output-fence handoff. It is **not** labeled
+  `nvof_execute`.
+- `nvof_conversion` = direct-queue GPU time for the existing flow copy and
+  S10.5 → R16G16_FLOAT compute conversion.
+
+The query results are resolved on the existing conversion command list and read
+only after the worker's existing group fence completes, avoiding a new CPU wait
+inside the NVOF path.
+
+Existing `nvof_upload_ms`, `nvof_execute_ms`, and
+`flow_conversion_ms` remain CPU/API/wait-attributed timings and are retained
+for comparison.
 
 ## Reporting
 

@@ -148,7 +148,7 @@
       "sha256": "394BED6FBB3CCA1A994AE02A0A1152213D43030D6761437F86ABAA863C33D515",
       "size_bytes": 690203043,
       "archive_type": "selective-zip",
-      "allowlist": ["bin/runtime/dlssnr/nvngx_dlssnr.dll", "bin/runtime/dlssnr/neuroframe_engine_neural_rendering.dll", "bin/runtime/dlssnr/neuroframe_caller.dll"],
+      "allowlist": ["bin/runtime/dlssnr/nvngx_dlssnr.dll", "bin/runtime/dlssnr/neuroframe_engine_neural_rendering.dll", "bin/runtime/dlssnr/neuroframe_caller.dll", "bin/runtime/dlssnr/LICENSE-NVIDIA-DLSS.txt", "bin/runtime/dlssnr/LICENSE-Merserk.txt"],
       "destination": "dlss5/neuroframe-v10-candidate",
       "policy": "UPSTREAM_DOWNLOAD",
       "channel": "candidate-static-only",

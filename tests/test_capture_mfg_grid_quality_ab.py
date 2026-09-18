@@ -9,14 +9,30 @@ import tools.capture_mfg_grid_quality_ab as capture
 
 
 
+
+def test_quality_runner_builds_selftests_then_invokes_capture_tool():
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "tools" / "run_mfg_grid_quality_ab.ps1").read_text(encoding="utf-8")
+    assert "build_validate_dlssg_instrumented.ps1" in source
+    assert "capture_mfg_grid_quality_ab.py" in source
+    assert "[ValidateSet(2,4)]" in source
+    assert "[ValidateRange(1,24)]" in source
+    assert "[ValidateRange(0,1000000)]" in source
+    assert "'--start-frame', $StartFrame" in source
+    assert "'--worker', $worker" in source
+    assert "'--runtime', $runtime" in source
+    assert "'--official', $official" in source
+
 def test_evidence_root_namespaces_source_identity_and_multiplier(tmp_path):
     base = tmp_path / "quality"
     source = tmp_path / "My Clip.mp4"
-    root2 = capture.evidence_root(base, source, "ABCDEF0123456789", 2)
-    root4 = capture.evidence_root(base, source, "ABCDEF0123456789", 4)
-    assert root2.parent.name == "My Clip-ABCDEF012345"
-    assert root2.name == "2x"
-    assert root4.name == "4x"
+    root2 = capture.evidence_root(base, source, "ABCDEF0123456789", 2, 0)
+    root4 = capture.evidence_root(base, source, "ABCDEF0123456789", 4, 120)
+    assert root2.parents[1].name == "My Clip-ABCDEF012345"
+    assert root2.parent.name == "2x"
+    assert root2.name == "start-00000000"
+    assert root4.parent.name == "4x"
+    assert root4.name == "start-00000120"
     assert root2 != root4
 
 def test_grid_environment_is_restored(monkeypatch):
@@ -157,6 +173,60 @@ def test_review_candidates_prioritize_edge_regression():
     assert ranked[0]["grid4_minus_grid1_edge_mae"] == pytest.approx(10.0)
     assert ranked[0]["reference"] == "r1.png"
 
+
+def test_temporal_report_reconstructs_anchor_and_generated_sequence(tmp_path):
+    frames = []
+    for value in (0, 10, 20):
+        frame = np.zeros((2, 2, 4), dtype=np.uint8)
+        frame[..., :3] = value
+        frame[..., 3] = 255
+        frames.append(frame)
+
+    generated = tmp_path / "generated.png"
+    capture._save_rgba(generated, frames[1])
+    report = {
+        "samples": [
+            {
+                "group": 0,
+                "generated_index": 1,
+                "generated": str(generated),
+            }
+        ]
+    }
+    temporal = capture._temporal_report(frames, report, multiplier=2, groups=1)
+    assert temporal["count"] == 2
+    assert temporal["mean_temporal_delta_mae"] == 0.0
+    assert temporal["max_temporal_delta_mae"] == 0.0
+
+
+def test_review_pack_writes_ranked_reference_grid_triptych(tmp_path):
+    from PIL import Image
+
+    paths = {}
+    for name, value in (("reference", 10), ("grid1", 20), ("grid4", 30)):
+        path = tmp_path / f"{name}.png"
+        Image.new("RGB", (8, 6), (value, value, value)).save(path)
+        paths[name] = path
+
+    candidates = [
+        {
+            "group": 2,
+            "generated_index": 1,
+            "reference": str(paths["reference"]),
+            "grid1_generated": str(paths["grid1"]),
+            "grid4_generated": str(paths["grid4"]),
+            "grid4_minus_grid1_edge_mae": 1.0,
+            "grid4_minus_grid1_ssim_rgb": -0.01,
+            "grid4_minus_grid1_mae": 0.5,
+        }
+    ]
+    written = capture._write_review_pack(tmp_path, candidates)
+    assert written[0]["rank"] == 1
+    review_path = tmp_path / written[0]["review_image"]
+    assert review_path.is_file()
+    with Image.open(review_path) as image:
+        assert image.size == (24, 48)
+
 def test_capture_grid_writes_shared_reference_manifest(tmp_path, monkeypatch):
     width, height, multiplier, groups = 1280, 720, 2, 1
     frames = [
@@ -210,6 +280,38 @@ def test_capture_grid_writes_shared_reference_manifest(tmp_path, monkeypatch):
     assert (tmp_path / "quality" / sample["reference"]).is_file()
     assert (tmp_path / "quality" / sample["generated"]).is_file()
 
+
+
+def test_decode_source_respects_start_frame(tmp_path, monkeypatch):
+    width, height = 1280, 720
+
+    class Frame:
+        def __init__(self, value):
+            self.value = value
+        def to_ndarray(self, format):
+            frame = np.zeros((height, width, 4), dtype=np.uint8)
+            frame[..., 0] = self.value
+            return frame
+
+    class Stream:
+        average_rate = 60
+        base_rate = 60
+
+    class Container:
+        streams = type("Streams", (), {"video": [Stream()]})()
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return None
+        def decode(self, stream):
+            for value in range(6):
+                yield Frame(value)
+
+    monkeypatch.setattr(capture.av, "open", lambda *_args, **_kwargs: Container())
+    frames, fps = capture.decode_source(tmp_path / "fake.mp4", 2, start_frame=3)
+    assert fps == 60.0
+    assert int(frames[0][0, 0, 0]) == 3
+    assert int(frames[1][0, 0, 0]) == 4
 
 @pytest.mark.parametrize("geometry", [(640, 360), (3840, 2160)])
 def test_decode_source_rejects_unbounded_geometry(tmp_path, monkeypatch, geometry):

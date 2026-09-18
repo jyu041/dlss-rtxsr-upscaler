@@ -6,6 +6,7 @@ from src.core.mfg_quality import (
     psnr_db,
     ssim_rgb,
     summarize_samples,
+    temporal_delta_metrics,
     withheld_groups,
 )
 
@@ -82,6 +83,31 @@ def test_summary_aggregates_edge_metrics_without_requiring_edges():
     summary = summarize_samples(rows)["overall"]
     assert summary["mean_edge_mae"] == pytest.approx(5.0)
     assert summary["mean_edge_pixel_percent"] == pytest.approx(5.0)
+
+
+def test_temporal_delta_metric_is_zero_for_matching_evolution():
+    previous = np.zeros((4, 4, 4), dtype=np.uint8)
+    current = previous.copy()
+    current[..., 0] = 10
+    metrics = temporal_delta_metrics(previous, current, previous.copy(), current.copy())
+    assert metrics["temporal_delta_mae"] == 0.0
+    assert metrics["temporal_delta_rmse"] == 0.0
+
+
+def test_temporal_delta_metric_detects_wrong_frame_to_frame_change():
+    ref_previous = np.zeros((2, 2, 4), dtype=np.uint8)
+    ref_current = ref_previous.copy()
+    ref_current[..., :3] = 20
+
+    cand_previous = np.zeros((2, 2, 4), dtype=np.uint8)
+    cand_current = cand_previous.copy()
+    cand_current[..., :3] = 5
+
+    metrics = temporal_delta_metrics(
+        ref_previous, ref_current, cand_previous, cand_current
+    )
+    assert metrics["temporal_delta_mae"] == pytest.approx(15.0)
+    assert metrics["temporal_delta_rmse"] == pytest.approx(15.0)
 
 def test_withheld_group_plan_for_4x():
     assert withheld_groups(13, 4) == [

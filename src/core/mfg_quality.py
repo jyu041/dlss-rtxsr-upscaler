@@ -110,6 +110,37 @@ def frame_metrics(reference: np.ndarray, generated: np.ndarray) -> dict[str, obj
     }
 
 
+def temporal_delta_metrics(
+    reference_previous: np.ndarray,
+    reference_current: np.ndarray,
+    candidate_previous: np.ndarray,
+    candidate_current: np.ndarray,
+) -> dict[str, float]:
+    """Compare candidate and real temporal RGB derivatives.
+
+    This measures the error in frame-to-frame change rather than the error in
+    either frame alone. A candidate can therefore score well spatially while
+    still being penalized for unstable or mistimed temporal evolution.
+    """
+    ref_prev = _rgb(reference_previous)
+    ref_cur = _rgb(reference_current)
+    cand_prev = _rgb(candidate_previous)
+    cand_cur = _rgb(candidate_current)
+    if not (
+        ref_prev.shape == ref_cur.shape == cand_prev.shape == cand_cur.shape
+    ):
+        raise ValueError("temporal frames must have equal RGB shapes")
+    reference_delta = ref_cur - ref_prev
+    candidate_delta = cand_cur - cand_prev
+    residual = reference_delta - candidate_delta
+    absolute = np.abs(residual)
+    mse = float(np.mean(np.square(residual)))
+    return {
+        "temporal_delta_mae": float(np.mean(absolute)),
+        "temporal_delta_rmse": float(math.sqrt(mse)),
+    }
+
+
 def withheld_groups(frame_count: int, multiplier: int) -> list[dict[str, object]]:
     """Plan high-FPS ground-truth groups for an MFG multiplier.
 

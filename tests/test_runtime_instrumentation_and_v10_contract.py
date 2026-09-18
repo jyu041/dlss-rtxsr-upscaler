@@ -95,8 +95,9 @@ def test_instrumented_workflow_requires_explicit_gpu_validation_switch():
     workflow = (ROOT / "tools" / "build_validate_dlssg_instrumented.ps1").read_text(encoding="utf-8")
     assert "[switch]$Validate256" in workflow
     assert "[switch]$ValidatePractical" in workflow
-    assert "$Validate256 -and $ValidatePractical" in workflow
-    assert "if (-not $Validate256 -and -not $ValidatePractical)" in workflow
+    assert "[switch]$ValidatePracticalGrid4" in workflow
+    assert "$matrixSwitches.Count -gt 1" in workflow
+    assert "if (-not $Validate256 -and -not $ValidatePractical -and -not $ValidatePracticalGrid4)" in workflow
     assert "GPU_VALIDATION_SKIPPED" in workflow
     assert "bin-instrumented" in workflow
     assert "validate_dlssg_instrumented.py" in workflow
@@ -174,3 +175,17 @@ def test_mfg_gpu_timestamp_probe_covers_4x_and_releases_resources():
     assert "~GpuTimestampProbe() { Release(); }" in source
     assert "RunRelease(readback);" in source
     assert "RunRelease(heap);" in source
+
+
+def test_nvof_coarse_grid_is_explicit_opt_in_and_dense_default_is_preserved():
+    source = (ROOT / "native" / "dlssg_sm86_offline" / "nvof_d3d12.cpp").read_text(encoding="utf-8")
+    shader = (ROOT / "native" / "dlssg_sm86_offline" / "flow_convert.hlsl").read_text(encoding="utf-8")
+    validator = (ROOT / "tools" / "validate_dlssg_instrumented.py").read_text(encoding="utf-8")
+    assert 'uint32_t outputGrid = 1;' in source
+    assert 'GetEnvironmentVariableW(L"DLSSG_NVOF_OUTPUT_GRID"' in source
+    assert 'NV_OF_OUTPUT_VECTOR_GRID_SIZE_4' in source
+    assert 'state.outputGrid == 4' in source
+    assert 'flowDesc.Width = flowWidth; flowDesc.Height = flowHeight' in source
+    assert 'uint grid = max(gridSize, 1u);' in shader
+    assert 'uint2 source = id.xy / grid;' in shader
+    assert '"DLSSG_NVOF_OUTPUT_GRID": str(nvof_output_grid)' in validator

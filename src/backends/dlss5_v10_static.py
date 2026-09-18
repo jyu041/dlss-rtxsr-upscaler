@@ -20,6 +20,24 @@ V10_FILES = (
     "neuroframe_caller.dll",
 )
 
+V10_EXPECTED_FILES = {
+    "nvngx_dlssnr.dll": {
+        "size_bytes": 165830144,
+        "sha256": "6EB209E764F39872625DEBD6ABAF45E2BB6322F6F270F781F70C059AE30B3927",
+        "authenticode": "NotSigned",
+    },
+    "neuroframe_engine_neural_rendering.dll": {
+        "size_bytes": 571904,
+        "sha256": "F657D20E569F97DEC25E02141F64354CD4B3E1DC51FA1DFE48ACEEBCC3CC43D5",
+        "authenticode": "NotSigned",
+    },
+    "neuroframe_caller.dll": {
+        "size_bytes": 104960,
+        "sha256": "B3611046837BC2F2E957A694CE0817E3C1B304BD653D0C7A193148E5BDD02437",
+        "authenticode": "NotSigned",
+    },
+}
+
 NETWORK_IMPORT_DLLS = {
     "WINHTTP.DLL",
     "WININET.DLL",
@@ -120,6 +138,15 @@ def inspect_v10_runtime(
                 "pe": pe,
                 "sensitive_imports": _sensitive_imports(pe),
             }
+            pinned = V10_EXPECTED_FILES[name]
+            if record["size_bytes"] != pinned["size_bytes"]:
+                return V10StaticStatus(
+                    "IDENTITY_MISMATCH",
+                    False,
+                    False,
+                    f"{name} size does not match the pinned v10 evidence",
+                    evidence,
+                )
             evidence["files"][name] = record
             if pe["architecture"] != "x86_64":
                 return V10StaticStatus(
@@ -146,13 +173,10 @@ def inspect_v10_runtime(
         )
 
     if expected_hashes is None:
-        return V10StaticStatus(
-            "STATIC_IDENTITY_REQUIRED",
-            False,
-            False,
-            "v10 PE/ABI inspection passed, but exact extracted file hashes are not pinned yet",
-            evidence,
-        )
+        expected_hashes = {
+            name: str(record["sha256"])
+            for name, record in V10_EXPECTED_FILES.items()
+        }
 
     normalized = {name: value.upper() for name, value in expected_hashes.items()}
     missing_hashes = [name for name in V10_FILES if name not in normalized]

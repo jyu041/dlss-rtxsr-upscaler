@@ -82,18 +82,26 @@ def validate_identities(worker: Path, runtime: Path, official: Path) -> dict[str
     }
 
 
-def decode_source(path: Path, required_frames: int) -> tuple[list[np.ndarray], float]:
+def decode_source(
+    path: Path,
+    required_frames: int,
+    *,
+    start_frame: int = 0,
+) -> tuple[list[np.ndarray], float]:
     frames: list[np.ndarray] = []
     with av.open(str(path)) as container:
         stream = container.streams.video[0]
         fps = float(stream.average_rate or stream.base_rate or 0)
-        for frame in container.decode(stream):
+        for decoded_index, frame in enumerate(container.decode(stream)):
+            if decoded_index < start_frame:
+                continue
             frames.append(frame.to_ndarray(format="rgba"))
             if len(frames) >= required_frames:
                 break
     if len(frames) < required_frames:
         raise RuntimeError(
-            f"source has only {len(frames)} decoded frames; need at least {required_frames}"
+            f"source segment starting at frame {start_frame} yielded only "
+            f"{len(frames)} decoded frames; need at least {required_frames}"
         )
     if fps <= 0:
         raise RuntimeError("source frame rate is unavailable")
@@ -316,9 +324,20 @@ def _paired_quality(grid1: dict[str, object], grid4: dict[str, object]) -> dict[
     return {"samples": rows, "wins": wins}
 
 
-def evidence_root(base_output: Path, input_path: Path, input_sha: str, multiplier: int) -> Path:
+def evidence_root(
+    base_output: Path,
+    input_path: Path,
+    input_sha: str,
+    multiplier: int,
+    start_frame: int,
+) -> Path:
     source_tag = f"{input_path.stem[:32]}-{input_sha[:12]}"
-    return base_output.expanduser().resolve() / source_tag / f"{multiplier}x"
+    return (
+        base_output.expanduser().resolve()
+        / source_tag
+        / f"{multiplier}x"
+        / f"start-{start_frame:08d}"
+    )
 
 
 def _review_candidates(
@@ -471,6 +490,7 @@ def main() -> int:
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--multiplier", type=int, choices=(2, 4), required=True)
     parser.add_argument("--groups", type=int, default=8)
+    parser.add_argument("--start-frame", type=int, default=0)
     parser.add_argument("--worker", type=Path, default=DEFAULT_WORKER)
     parser.add_argument("--runtime", type=Path, default=DEFAULT_RUNTIME)
     parser.add_argument("--official", type=Path, default=DEFAULT_OFFICIAL)
@@ -479,6 +499,8 @@ def main() -> int:
 
     if not 1 <= args.groups <= 24:
         raise SystemExit("--groups must be between 1 and 24")
+    if not 0 <= args.start_frame <= 1_000_000:
+        raise SystemExit("--start-frame must be between 0 and 1000000")
 
     input_path = args.input.expanduser().resolve()
     if not input_path.is_file():
@@ -487,8 +509,16 @@ def main() -> int:
     identities = validate_identities(args.worker, args.runtime, args.official)
     input_sha = sha256_file(input_path)
     required_frames = args.groups * args.multiplier + 1
-    frames, fps = decode_source(input_path, required_frames)
-    output_root = evidence_root(args.output_dir, input_path, input_sha, args.multiplier)
+    frames, fps = decode_source(
+        input_path, required_frames, start_frame=args.start_frame
+    )
+    output_root = evidence_root(
+        args.output_dir,
+        input_path,
+        input_sha,
+        args.multiplier,
+        args.start_frame,
+    )
     output_root.mkdir(parents=True, exist_ok=True)
 
     reports: dict[str, dict[str, object]] = {}
@@ -537,6 +567,8 @@ def main() -> int:
         "height": height,
         "multiplier": args.multiplier,
         "groups": args.groups,
+        "start_frame": args.start_frame,
+        "end_frame_inclusive": args.start_frame + required_frames - 1,
         "evidence_root": str(output_root),
         "source_frame_interval_ms": 1000.0 / fps,
         "anchor_interval_ms": 1000.0 * args.multiplier / fps,

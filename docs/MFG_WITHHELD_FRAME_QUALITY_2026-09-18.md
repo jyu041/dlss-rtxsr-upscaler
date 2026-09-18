@@ -154,10 +154,11 @@ python tools\capture_mfg_grid_quality_ab.py `
 The base output tree defaults to `runtime/quality/mfg-grid-ab`. Each run is
 automatically namespaced as:
 
-`<source-stem>-<source-sha12>/<multiplier>x/`
+`<source-stem>-<source-sha12>/<multiplier>x/start-<frame>/`
 
-so 2X and 4X evidence cannot silently overwrite each other. The combined report
-also records source-frame and anchor-frame intervals in milliseconds.
+so different multipliers and different source segments cannot silently overwrite
+each other. The combined report also records the selected start/end frame plus
+source-frame and anchor-frame intervals in milliseconds.
 
 No automatic pass/fail quality threshold is encoded yet. A metric delta is
 evidence, not a promotion rule. Temporal flicker, motion boundaries,
@@ -226,8 +227,14 @@ Example:
 powershell -ExecutionPolicy Bypass -File .\tools\run_mfg_grid_quality_ab.ps1 `
   -Input "C:\path\to\high-fps-test.mp4" `
   -Multiplier 2 `
-  -Groups 8
+  -Groups 8 `
+  -StartFrame 0
 ```
 
 The wrapper performs no production-profile promotion and invokes no practical
 timing matrix. It exists only to make the real quality gate reproducible.
+
+Use `-StartFrame` (or Python `--start-frame`) to sample multiple distinct
+motion segments from the same source without replacing prior evidence. This
+is preferable to relying only on the first seconds of a clip, which may contain
+logos, fades, or static lead-in.

@@ -5,7 +5,14 @@ import threading
 
 import pytest
 
-from tools.validate_dlssg_candidate import (\n    VALIDATION_HEIGHT,\n    VALIDATION_WIDTH,\n    _drain_child_output,\n    validate_group,\n    validate_reset,\n)\n
+from tools.validate_dlssg_candidate import (
+    VALIDATION_HEIGHT,
+    VALIDATION_WIDTH,
+    _drain_child_output,
+    validate_group,
+    validate_reset,
+)
+
 
 def result(count=1, outputs=None, disable=0, width=64, height=64, pixel_format=28, reset_only=False):
     return SimpleNamespace(generated_count=count, outputs=outputs if outputs is not None else [b"x" * (width * height * 4)] * count,

@@ -141,3 +141,25 @@ def test_dlssg_gpu_timestamp_instrumentation_is_explicit_opt_in_and_protocol_v4(
     assert "diagnostic_mode=not instrumented_timing" in child
     assert "constexpr uint16_t kVersion = 4;" in protocol
     assert "static_assert(sizeof(ProcessResponse) == 160);" in protocol
+
+
+def test_mfg_instrumented_build_keeps_generated_shader_artifacts_out_of_source_tree():
+    build = (ROOT / "native" / "dlssg_sm86_offline" / "build.ps1").read_text(encoding="utf-8")
+    source = (ROOT / "native" / "dlssg_sm86_offline" / "nvof_d3d12.cpp").read_text(encoding="utf-8")
+    assert "$generatedHeader = Join-Path $Output 'flow_convert_bytecode.h'" in build
+    assert "Join-Path $PSScriptRoot 'flow_convert_bytecode.h'" not in build
+    assert '/I"$Output"' in build
+    assert '#include <flow_convert_bytecode.h>' in source
+    assert 'native worker compilation failed with exit code $LASTEXITCODE' in build
+
+
+def test_nvof_gpu_timestamp_samples_cannot_be_silently_overwritten():
+    source = (ROOT / "native" / "dlssg_sm86_offline" / "nvof_d3d12.cpp").read_text(encoding="utf-8")
+    assert "state.timingEnabled && state.timingPending" in source
+    assert "NVOF_GPU_TIMESTAMP_PENDING_UNCONSUMED" in source
+    assert "state.timingPending = false;" in source
+
+
+def test_nvof_header_forward_declares_resource_type():
+    header = (ROOT / "native" / "dlssg_sm86_offline" / "nvof_d3d12.h").read_text(encoding="utf-8")
+    assert "struct ID3D12Resource;" in header

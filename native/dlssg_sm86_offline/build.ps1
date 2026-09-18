@@ -16,13 +16,30 @@ if (-not $includeLine -or -not $libLine -or -not $pathLine) { throw 'Visual Stud
 [Environment]::SetEnvironmentVariable('INCLUDE', $includeLine.Substring($includeLine.IndexOf('=') + 1), 'Process')
 [Environment]::SetEnvironmentVariable('LIB', $libLine.Substring($libLine.IndexOf('=') + 1), 'Process')
 [Environment]::SetEnvironmentVariable('Path', $pathLine.Substring($pathLine.IndexOf('=') + 1), 'Process')
+$root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $inc = Join-Path $NgxSdk 'include'; $lib = Join-Path $NgxSdk 'lib\Windows_x86_64\x64'
+$ngxHeader = Join-Path $inc 'nvsdk_ngx.h'
+$ngxLib = Join-Path $lib 'nvsdk_ngx_d.lib'
+if (-not (Test-Path -LiteralPath $ngxHeader -PathType Leaf) -or -not (Test-Path -LiteralPath $ngxLib -PathType Leaf)) {
+    throw "NVIDIA NGX/DLSS SDK is incomplete. Expected $ngxHeader and $ngxLib. Pass -NgxSdk."
+}
+$localNvApi = Join-Path $root 'third_party\local\nvapi'
+if ((-not $NvApi -or -not (Test-Path -LiteralPath (Join-Path $NvApi 'nvapi.h'))) -and (Test-Path -LiteralPath (Join-Path $localNvApi 'nvapi.h'))) {
+    $NvApi = $localNvApi
+}
+$nvApiHeaders = @('nvapi.h','nvapi_lite_common.h','nvapi_lite_salstart.h','nvapi_lite_salend.h')
+$missingNvApi = @($nvApiHeaders | Where-Object { -not (Test-Path -LiteralPath (Join-Path $NvApi $_) -PathType Leaf) })
+if (-not $NvApi -or $missingNvApi.Count -gt 0) {
+    throw "NVIDIA NVAPI headers are incomplete. Missing: $($missingNvApi -join ', '). Pass -NvApi or stage the complete SDK under third_party\local\nvapi."
+}
 if (-not $NvOfSdk) {
-    $candidate = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'third_party\local\nvidia-optical-flow-sdk'
+    $candidate = Join-Path $root 'third_party\local\nvidia-optical-flow-sdk'
     if (Test-Path -LiteralPath (Join-Path $candidate 'nvOpticalFlowD3D12.h')) { $NvOfSdk = $candidate }
 }
-if (-not $NvOfSdk -or -not (Test-Path -LiteralPath (Join-Path $NvOfSdk 'nvOpticalFlowD3D12.h'))) {
-    throw 'NVIDIA Optical Flow SDK D3D12 headers not found. Pass -NvOfSdk or set NVOF_SDK.'
+$nvOfHeaders = @('nvOpticalFlowD3D12.h','nvOpticalFlowCommon.h')
+$missingNvOf = @($nvOfHeaders | Where-Object { -not $NvOfSdk -or -not (Test-Path -LiteralPath (Join-Path $NvOfSdk $_) -PathType Leaf) })
+if ($missingNvOf.Count -gt 0) {
+    throw "NVIDIA Optical Flow SDK headers are incomplete. Missing: $($missingNvOf -join ', '). Pass -NvOfSdk or set NVOF_SDK."
 }
 $fxc = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue |
     Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Select-Object -First 1

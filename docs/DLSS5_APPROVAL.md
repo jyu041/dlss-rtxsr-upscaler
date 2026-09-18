@@ -159,9 +159,11 @@ wedged; a future adapter must preserve that lifecycle distinction.
 
 Before any v10 execution, the project must establish exact extracted DLL
 identities, imports/exports, Authenticode observations, Defender results,
-network/process behavior, caller/bridge ABI, and the actual meaning of the
-application's 125-200% processing scales. Those scale controls are not accepted
-as evidence that Feature 18 itself exposes native >1.0x NGX output on Ampere.
+network/process behavior and caller/bridge ABI. The source-level meaning of
+the application's 125-200% processing scales is already established: v10
+Lanczos-resizes the source to the requested neural dimensions before Feature 18
+runs. Those controls therefore do not establish a native >1.0x NGX output mode
+on Ampere.
 
 The earlier v9 candidate remains available as historical static-audit evidence.
 Neither v9 nor v10 may replace v3 without a separately reviewed adapter and

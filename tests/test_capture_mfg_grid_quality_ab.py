@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -27,6 +28,8 @@ def test_quality_runner_builds_selftests_then_invokes_capture_tool():
     assert "'--worker', $worker" in source
     assert "'--runtime', $runtime" in source
     assert "'--official', $official" in source
+    assert "'--preflight-only'" in source
+    assert source.index("& $python.Source @preflightArgs") < source.index("& $build @buildArgs")
 
 
 
@@ -355,6 +358,82 @@ def test_decode_source_respects_start_frame(tmp_path, monkeypatch):
     assert int(frames[0][0, 0, 0]) == 3
     assert int(frames[1][0, 0, 0]) == 4
 
+def test_decode_source_accepts_640x480_natural_validation_geometry(tmp_path, monkeypatch):
+    width, height = 640, 480
+
+    class Frame:
+        def __init__(self, value):
+            self.value = value
+
+        def to_ndarray(self, format):
+            frame = np.zeros((height, width, 4), dtype=np.uint8)
+            frame[..., 0] = self.value
+            return frame
+
+    class Stream:
+        average_rate = 30000 / 1001
+        base_rate = 30000 / 1001
+
+    class Container:
+        streams = type("Streams", (), {"video": [Stream()]})()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def decode(self, stream):
+            for value in range(3):
+                yield Frame(value)
+
+    monkeypatch.setattr(capture.av, "open", lambda *_args, **_kwargs: Container())
+    frames, fps = capture.decode_source(tmp_path / "fake.mp4", 3)
+    assert len(frames) == 3
+    assert frames[0].shape == (480, 640, 4)
+    assert fps == pytest.approx(30000 / 1001)
+
+
+def test_preflight_only_validates_source_without_worker_identity_checks(tmp_path, monkeypatch, capsys):
+    input_path = tmp_path / "clip.mp4"
+    input_path.write_bytes(b"placeholder")
+    frames = [np.zeros((480, 640, 4), dtype=np.uint8)]
+
+    def fake_decode(path, required_frames, *, start_frame=0):
+        assert path == input_path.resolve()
+        assert required_frames == 17
+        assert start_frame == 0
+        return frames, 30000 / 1001
+
+    def identity_check_must_not_run(*_args, **_kwargs):
+        raise AssertionError("worker identity validation ran during source-only preflight")
+
+    monkeypatch.setattr(capture, "decode_source", fake_decode)
+    monkeypatch.setattr(capture, "validate_identities", identity_check_must_not_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "capture_mfg_grid_quality_ab.py",
+            "--input",
+            str(input_path),
+            "--multiplier",
+            "2",
+            "--groups",
+            "8",
+            "--start-frame",
+            "0",
+            "--preflight-only",
+        ],
+    )
+    assert capture.main() == 0
+    output = capsys.readouterr().out
+    assert '"status": "PREFLIGHT_PASS"' in output
+    assert '"width": 640' in output
+    assert '"height": 480' in output
+    assert '"anchor_fps"' in output
+
+
 @pytest.mark.parametrize("geometry", [(640, 360), (3840, 2160)])
 def test_decode_source_rejects_unbounded_geometry(tmp_path, monkeypatch, geometry):
     # Source decoding itself is covered elsewhere; keep this test on the
@@ -379,5 +458,5 @@ def test_decode_source_rejects_unbounded_geometry(tmp_path, monkeypatch, geometr
             yield Frame()
 
     monkeypatch.setattr(capture.av, "open", lambda *_args, **_kwargs: Container())
-    with pytest.raises(RuntimeError, match="bounded to 1280x720 or 1920x1080"):
+    with pytest.raises(RuntimeError, match="bounded to 640x480, 1280x720, or 1920x1080"):
         capture.decode_source(tmp_path / "fake.mp4", 1)

@@ -44,7 +44,7 @@ DEFAULT_OUTPUT = (ROOT / "runtime" / "quality" / "mfg-grid-ab").resolve()
 PRODUCTION_C55_SHA256 = "C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916"
 LEGACY_RUNTIME_SHA256 = "C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2"
 OFFICIAL_PROVIDER_SHA256 = "FF6E90EB78B827927DFF5B4ECC6B1C870C2E9BCA29ED9F48C7D348CC9E170B82"
-ALLOWED_GEOMETRIES = {(1280, 720), (1920, 1080)}
+ALLOWED_GEOMETRIES = {(640, 480), (1280, 720), (1920, 1080)}
 
 
 def sha256_file(path: Path) -> str:
@@ -111,7 +111,7 @@ def decode_source(
     height, width = shape[:2]
     if (width, height) not in ALLOWED_GEOMETRIES:
         raise RuntimeError(
-            f"quality A/B is currently bounded to 1280x720 or 1920x1080, got {width}x{height}"
+            f"quality A/B is currently bounded to 640x480, 1280x720, or 1920x1080, got {width}x{height}"
         )
     return frames, fps
 
@@ -495,6 +495,7 @@ def main() -> int:
     parser.add_argument("--runtime", type=Path, default=DEFAULT_RUNTIME)
     parser.add_argument("--official", type=Path, default=DEFAULT_OFFICIAL)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--preflight-only", action="store_true")
     args = parser.parse_args()
 
     if not 1 <= args.groups <= 24:
@@ -506,12 +507,35 @@ def main() -> int:
     if not input_path.is_file():
         raise SystemExit(f"input not found: {input_path}")
 
-    identities = validate_identities(args.worker, args.runtime, args.official)
-    input_sha = sha256_file(input_path)
     required_frames = args.groups * args.multiplier + 1
     frames, fps = decode_source(
         input_path, required_frames, start_frame=args.start_frame
     )
+    height, width = frames[0].shape[:2]
+    if args.preflight_only:
+        print(
+            json.dumps(
+                {
+                    "status": "PREFLIGHT_PASS",
+                    "input": str(input_path),
+                    "input_fps": fps,
+                    "width": width,
+                    "height": height,
+                    "multiplier": args.multiplier,
+                    "groups": args.groups,
+                    "start_frame": args.start_frame,
+                    "required_frames": required_frames,
+                    "anchor_fps": fps / args.multiplier,
+                    "source_frame_interval_ms": 1000.0 / fps,
+                    "anchor_interval_ms": 1000.0 * args.multiplier / fps,
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    identities = validate_identities(args.worker, args.runtime, args.official)
+    input_sha = sha256_file(input_path)
     output_root = evidence_root(
         args.output_dir,
         input_path,
@@ -555,7 +579,6 @@ def main() -> int:
     review_candidates = _review_candidates(reports["grid1"], reports["grid4"])
     review_pack = _write_review_pack(output_root, review_candidates)
 
-    height, width = frames[0].shape[:2]
     combined = {
         "schema_version": 2,
         "status": "PASS",
@@ -571,7 +594,14 @@ def main() -> int:
         "end_frame_inclusive": args.start_frame + required_frames - 1,
         "evidence_root": str(output_root),
         "source_frame_interval_ms": 1000.0 / fps,
+        "anchor_fps": fps / args.multiplier,
         "anchor_interval_ms": 1000.0 * args.multiplier / fps,
+        "temporal_sampling_note": (
+            "anchor cadence is below 25 fps; interpret this as a coarse-temporal "
+            "stress test rather than a 30-fps-anchor production proxy"
+            if fps / args.multiplier < 25.0
+            else "anchor cadence is at least 25 fps"
+        ),
         **identities,
         "grid1_summary": reports["grid1"]["summary"],
         "grid4_summary": reports["grid4"]["summary"],

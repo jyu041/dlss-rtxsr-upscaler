@@ -12,16 +12,25 @@
       "sha256": "F32F8D9586D3A3006D5E26549D9BAB74DD33E10326157D5AEE4620C9DD0006C8",
       "size_bytes": 31646602,
       "archive_type": "selective-zip",
-      "allowlist": ["dlssg_sm86_offline.exe"],
-      "archive_members": ["NVIDIA-Video-Enhancer-v0.1.0-beta.2/runtime/dlssg_sm86_offline/dlssg_sm86_offline.exe"],
-      "extract_map": {"NVIDIA-Video-Enhancer-v0.1.0-beta.2/runtime/dlssg_sm86_offline/dlssg_sm86_offline.exe": "dlssg_sm86_offline.exe"},
+      "allowlist": [
+        "dlssg_sm86_offline.exe"
+      ],
+      "archive_members": [
+        "NVIDIA-Video-Enhancer-v0.1.0-beta.2/runtime/dlssg_sm86_offline/dlssg_sm86_offline.exe"
+      ],
+      "extract_map": {
+        "NVIDIA-Video-Enhancer-v0.1.0-beta.2/runtime/dlssg_sm86_offline/dlssg_sm86_offline.exe": "dlssg_sm86_offline.exe"
+      },
       "destination": "dlssg/worker",
       "policy": "UPSTREAM_DOWNLOAD",
       "channel": "validated-project",
       "license_name": "Project-owned worker distributed by NVIDIA Video Enhancer; NVIDIA SDK materials remain under NVIDIA terms",
       "redistributable": true,
       "direct_user_download": true,
-      "constraints": {"worker_sha256": "C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916", "worker_size_bytes": 602112}
+      "constraints": {
+        "worker_sha256": "C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916",
+        "worker_size_bytes": 602112
+      }
     },
     {
       "id": "project-dlss-sr-beta2",
@@ -34,16 +43,29 @@
       "sha256": "F32F8D9586D3A3006D5E26549D9BAB74DD33E10326157D5AEE4620C9DD0006C8",
       "size_bytes": 31646602,
       "archive_type": "selective-zip",
-      "allowlist": ["dlss_sr_host.exe", "nvngx_dlss.dll"],
-      "archive_members": ["NVIDIA-Video-Enhancer-v0.1.0-beta.2/runtime/dlss-sr-host/dlss_sr_host.exe", "NVIDIA-Video-Enhancer-v0.1.0-beta.2/runtime/dlss-sr-host/nvngx_dlss.dll"],
-      "extract_map": {"NVIDIA-Video-Enhancer-v0.1.0-beta.2/runtime/dlss-sr-host/dlss_sr_host.exe": "dlss_sr_host.exe", "NVIDIA-Video-Enhancer-v0.1.0-beta.2/runtime/dlss-sr-host/nvngx_dlss.dll": "nvngx_dlss.dll"},
+      "allowlist": [
+        "dlss_sr_host.exe",
+        "nvngx_dlss.dll"
+      ],
+      "archive_members": [
+        "NVIDIA-Video-Enhancer-v0.1.0-beta.2/runtime/dlss-sr-host/dlss_sr_host.exe",
+        "NVIDIA-Video-Enhancer-v0.1.0-beta.2/runtime/dlss-sr-host/nvngx_dlss.dll"
+      ],
+      "extract_map": {
+        "NVIDIA-Video-Enhancer-v0.1.0-beta.2/runtime/dlss-sr-host/dlss_sr_host.exe": "dlss_sr_host.exe",
+        "NVIDIA-Video-Enhancer-v0.1.0-beta.2/runtime/dlss-sr-host/nvngx_dlss.dll": "nvngx_dlss.dll"
+      },
       "destination": "dlss-sr-host",
       "policy": "UPSTREAM_DOWNLOAD",
       "channel": "validated-project",
       "license_name": "Project host plus NVIDIA RTX SDK runtime under the applicable NVIDIA terms",
       "redistributable": true,
       "direct_user_download": true,
-      "constraints": {"host_sha256": "E23F3CD5BEB5E70001E9950C890027D46F84CEB4439A09CEA67E343AB34A34BB", "runtime_sha256": "3975567B8943C53ACCE397F2B72380092F84F162D00B0D2C7D08A1025C563983", "first_use_selftest_required": true}
+      "constraints": {
+        "host_sha256": "E23F3CD5BEB5E70001E9950C890027D46F84CEB4439A09CEA67E343AB34A34BB",
+        "runtime_sha256": "3975567B8943C53ACCE397F2B72380092F84F162D00B0D2C7D08A1025C563983",
+        "first_use_selftest_required": true
+      }
     },
     {
       "id": "dlssg-official-provider-310.9.1",
@@ -56,16 +78,28 @@
       "sha256": "92C4D954631A1710DA86CA3FA8D5034F2B9503838C95FC4AE977AE149319781B",
       "size_bytes": 275994000,
       "archive_type": "provider-zip",
-      "allowlist": ["nvngx_dlssg.dll", "nvngx_dlss.license.txt"],
-      "archive_members": ["bin/x64/nvngx_dlssg.dll", "bin/x64/nvngx_dlss.license.txt"],
-      "extract_map": {"bin/x64/nvngx_dlssg.dll": "nvngx_dlssg.dll", "bin/x64/nvngx_dlss.license.txt": "nvngx_dlss.license.txt"},
+      "allowlist": [
+        "nvngx_dlssg.dll",
+        "nvngx_dlss.license.txt"
+      ],
+      "archive_members": [
+        "bin/x64/nvngx_dlssg.dll",
+        "bin/x64/nvngx_dlss.license.txt"
+      ],
+      "extract_map": {
+        "bin/x64/nvngx_dlssg.dll": "nvngx_dlssg.dll",
+        "bin/x64/nvngx_dlss.license.txt": "nvngx_dlss.license.txt"
+      },
       "destination": "dlssg/official",
       "policy": "UPSTREAM_DOWNLOAD",
       "channel": "validated-provider",
       "license_name": "NVIDIA/Streamline and included third-party terms",
       "redistributable": false,
       "direct_user_download": true,
-      "constraints": {"provider_sha256": "FF6E90EB78B827927DFF5B4ECC6B1C870C2E9BCA29ED9F48C7D348CC9E170B82", "provider_size_bytes": 7460976}
+      "constraints": {
+        "provider_sha256": "FF6E90EB78B827927DFF5B4ECC6B1C870C2E9BCA29ED9F48C7D348CC9E170B82",
+        "provider_size_bytes": 7460976
+      }
     },
     {
       "id": "dlssg-legacy-reference",
@@ -78,7 +112,10 @@
       "sha256": null,
       "size_bytes": null,
       "archive_type": "files",
-      "allowlist": ["version.dll", "dlssg_sm86.ini"],
+      "allowlist": [
+        "version.dll",
+        "dlssg_sm86.ini"
+      ],
       "destination": "dlssg/legacy",
       "policy": "UPSTREAM_DOWNLOAD",
       "channel": "validated",
@@ -87,10 +124,28 @@
       "direct_user_download": true,
       "required": true,
       "files": [
-        {"path": "version.dll", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/5f62ff44a9c08f9841fa605e7b7160f79ccd2c40/version.dll", "sha256": "C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2", "size_bytes": 15667520},
-        {"path": "dlssg_sm86.ini", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/5f62ff44a9c08f9841fa605e7b7160f79ccd2c40/dlssg_sm86.ini", "sha256": "FD7F0722194E6E8D8C085327D9826EFFB411925A69A5E7549D70EFF26A9F18B5", "size_bytes": 581}
+        {
+          "path": "version.dll",
+          "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/5f62ff44a9c08f9841fa605e7b7160f79ccd2c40/version.dll",
+          "sha256": "C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2",
+          "size_bytes": 15667520
+        },
+        {
+          "path": "dlssg_sm86.ini",
+          "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/5f62ff44a9c08f9841fa605e7b7160f79ccd2c40/dlssg_sm86.ini",
+          "sha256": "FD7F0722194E6E8D8C085327D9826EFFB411925A69A5E7549D70EFF26A9F18B5",
+          "size_bytes": 581
+        }
       ],
-      "constraints": {"multipliers": [2, 3, 4], "compatibility_test_required": false, "status": "validated C55 direct-host runtime; RTX 3070 Ti 2X/3X/4X evidence retained"}
+      "constraints": {
+        "multipliers": [
+          2,
+          3,
+          4
+        ],
+        "compatibility_test_required": false,
+        "status": "validated C55 direct-host runtime; RTX 3070 Ti 2X/3X/4X evidence retained"
+      }
     },
     {
       "id": "dlssg-sm86-0.3.1-candidate",
@@ -103,7 +158,11 @@
       "sha256": null,
       "size_bytes": null,
       "archive_type": "files",
-      "allowlist": ["version.dll", "dlssg_sm86.ini", "THIRD_PARTY_NOTICES.txt"],
+      "allowlist": [
+        "version.dll",
+        "dlssg_sm86.ini",
+        "THIRD_PARTY_NOTICES.txt"
+      ],
       "destination": "dlssg/candidate-0.3.1",
       "policy": "UPSTREAM_DOWNLOAD",
       "channel": "candidate",
@@ -111,11 +170,34 @@
       "redistributable": false,
       "direct_user_download": true,
       "files": [
-        {"path": "version.dll", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/117faf5c70333b34160f5d21d01c222261cc5af1/version.dll", "sha256": "3D4C7D537A6E71E3A9D41FFC6487E054B26C56D27B7C0825D39EAA7EF0C7E86D", "size_bytes": 29676832},
-        {"path": "dlssg_sm86.ini", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/117faf5c70333b34160f5d21d01c222261cc5af1/dlssg_sm86.ini", "sha256": "231574047C4989D292E592802102D2437FC636B56E535E8D70D403F20D4CCAFC", "size_bytes": 2727},
-        {"path": "THIRD_PARTY_NOTICES.txt", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/117faf5c70333b34160f5d21d01c222261cc5af1/THIRD_PARTY_NOTICES.txt", "sha256": "AC3B44AB30A4235EDD18FECA1AB4F802D57C8D3D0EE4878DC77B81A6B127155F", "size_bytes": 3349}
+        {
+          "path": "version.dll",
+          "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/117faf5c70333b34160f5d21d01c222261cc5af1/version.dll",
+          "sha256": "3D4C7D537A6E71E3A9D41FFC6487E054B26C56D27B7C0825D39EAA7EF0C7E86D",
+          "size_bytes": 29676832
+        },
+        {
+          "path": "dlssg_sm86.ini",
+          "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/117faf5c70333b34160f5d21d01c222261cc5af1/dlssg_sm86.ini",
+          "sha256": "231574047C4989D292E592802102D2437FC636B56E535E8D70D403F20D4CCAFC",
+          "size_bytes": 2727
+        },
+        {
+          "path": "THIRD_PARTY_NOTICES.txt",
+          "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/117faf5c70333b34160f5d21d01c222261cc5af1/THIRD_PARTY_NOTICES.txt",
+          "sha256": "AC3B44AB30A4235EDD18FECA1AB4F802D57C8D3D0EE4878DC77B81A6B127155F",
+          "size_bytes": 3349
+        }
       ],
-      "constraints": {"multipliers": [2, 3, 4], "compatibility_test_required": true, "status": "proxy-generation candidate; not the C55 direct-host default"}
+      "constraints": {
+        "multipliers": [
+          2,
+          3,
+          4
+        ],
+        "compatibility_test_required": true,
+        "status": "proxy-generation candidate; not the C55 direct-host default"
+      }
     },
     {
       "id": "dlss5-neuroframe-v9-static-candidate",
@@ -128,14 +210,67 @@
       "sha256": "F531426E0B6C935C2ECC6299121F910E3921FC6CBD589C9A3B95A78A1D589D71",
       "size_bytes": 509001461,
       "archive_type": "selective-zip",
-      "allowlist": ["bin/runtime/dlssnr/nvngx_dlssnr.dll", "bin/runtime/dlssnr/neuroframe_engine.dll", "bin/runtime/dlssnr/neuroframe_caller.dll"],
+      "allowlist": [
+        "bin/runtime/dlssnr/nvngx_dlssnr.dll",
+        "bin/runtime/dlssnr/neuroframe_engine.dll",
+        "bin/runtime/dlssnr/neuroframe_caller.dll"
+      ],
       "destination": "dlss5/neuroframe-v9-candidate",
       "policy": "UPSTREAM_DOWNLOAD",
       "channel": "candidate-static-only",
       "license_name": "Merserk MIT source; NVIDIA and other archive materials under respective terms",
       "redistributable": false,
       "direct_user_download": true,
-      "constraints": {"static_only": true, "status": "static-only; native adapter and RTX30 compatibility test required", "output_scales": [1.0, 0.75, 0.5, 0.25]}
+      "constraints": {
+        "static_only": true,
+        "status": "static-only; native adapter and RTX30 compatibility test required",
+        "output_scales": [
+          1,
+          0.75,
+          0.5,
+          0.25
+        ]
+      }
+    },
+    {
+      "id": "dlss5-neuroframe-v10-static-candidate",
+      "name": "DLSS5 Neuroframe v10 static candidate",
+      "backend": "dlss5-neuroframe",
+      "version": "v10.0-7781107b",
+      "source": "https://github.com/Merserk/dlss5-visual-enhancer",
+      "source_url": "https://github.com/Merserk/dlss5-visual-enhancer/commit/7781107b89057f4d62d7c0a35fc3c1e90e7d9c31",
+      "artifact_url": "https://github.com/Merserk/dlss5-visual-enhancer/releases/download/v10.0/Visual.Enhancer.v10.0.zip",
+      "sha256": "394BED6FBB3CCA1A994AE02A0A1152213D43030D6761437F86ABAA863C33D515",
+      "size_bytes": 690203043,
+      "archive_type": "selective-zip",
+      "allowlist": [
+        "bin/runtime/dlssnr/nvngx_dlssnr.dll",
+        "bin/runtime/dlssnr/neuroframe_engine_neural_rendering.dll",
+        "bin/runtime/dlssnr/neuroframe_caller.dll"
+      ],
+      "destination": "dlss5/neuroframe-v10-candidate",
+      "policy": "UPSTREAM_DOWNLOAD",
+      "channel": "candidate-static-only",
+      "license_name": "Merserk Source License 1.0 for project-owned v10 material; NVIDIA and other archive materials retain their respective terms",
+      "redistributable": false,
+      "direct_user_download": true,
+      "constraints": {
+        "static_only": true,
+        "feature_id_observed": 18,
+        "host_architecture": "in-process D3D12/NGX bridge plus caller shim",
+        "processing_scales": [
+          0.25,
+          0.5,
+          0.75,
+          1,
+          1.25,
+          1.5,
+          1.75,
+          2
+        ],
+        "native_output_scaling_unverified": true,
+        "status": "static-only; exact extracted file identities, ABI/import audit, native adapter, and RTX30 compatibility test required before execution"
+      }
     }
   ]
 }

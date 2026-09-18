@@ -79,11 +79,12 @@ def score_manifest(manifest_path: Path) -> dict[str, object]:
         )
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "metric_contract": {
             "rgb_only": True,
             "psnr_identical_is_null": True,
             "ssim": "global per-channel RGB SSIM averaged across channels",
+            "edge_mae": "RGB MAE over reference-only Rec.709 luma edges with >=20-code one-pixel gradient",
         },
         "multiplier": multiplier,
         "samples": rows,

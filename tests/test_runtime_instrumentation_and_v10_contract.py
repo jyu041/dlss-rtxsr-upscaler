@@ -4,6 +4,8 @@ from pathlib import Path
 from src.backends.dlss5_v10_contract import (
     BRIDGE_ABI_VERSION,
     EXPECTED_STRUCT_SIZES,
+    EXPORT_SIGNATURES,
+    LIFETIME_CONTRACT,
     FrameDescriptorV1,
     FrameResultV1,
     RenderParametersV6,
@@ -38,7 +40,43 @@ def test_dlss5_v10_required_export_surface_is_explicit():
     assert "dlss5nr_frame_abi_version" in REQUIRED_EXPORTS
     assert "dlss5nr_process_frame_v6" in REQUIRED_EXPORTS
     assert "dlss5nr_process_cuda_v6" in REQUIRED_EXPORTS
+    assert "dlss5nr_cuda_supported" in REQUIRED_EXPORTS
+    assert "dlss5nr_cuda_status" in REQUIRED_EXPORTS
     assert "dlss5nr_surface_create" in REQUIRED_EXPORTS
+    assert set(EXPORT_SIGNATURES) == set(REQUIRED_EXPORTS)
+
+
+def test_dlss5_v10_v6_entrypoint_signatures_match_upstream_binding():
+    assert EXPORT_SIGNATURES["dlss5nr_init"] == (
+        ("int", "wchar*", "char*", "int"),
+        "int",
+    )
+    assert EXPORT_SIGNATURES["dlss5nr_process_v6"] == (
+        ("float*", "float*", "int", "int", "RenderParametersV6*", "char*", "int"),
+        "int",
+    )
+    assert EXPORT_SIGNATURES["dlss5nr_process_cuda_v6"] == (
+        ("uint64", "uint64", "int", "int", "uint64", "RenderParametersV6*", "char*", "int"),
+        "int",
+    )
+    assert EXPORT_SIGNATURES["dlss5nr_process_frame_v6"] == (
+        (
+            "FrameDescriptorV1*",
+            "FrameDescriptorV1*",
+            "RenderParametersV6*",
+            "FrameResultV1*",
+            "char*",
+            "int",
+        ),
+        "int",
+    )
+
+
+def test_dlss5_v10_lifetime_contract_does_not_reuse_v3_shutdown_assumptions():
+    assert LIFETIME_CONTRACT["feature_id"] == 18
+    assert LIFETIME_CONTRACT["bridge_abi_version"] == 6
+    assert LIFETIME_CONTRACT["normal_close_calls_ngx_shutdown"] is False
+    assert LIFETIME_CONTRACT["normal_close_unloads_driver_modules"] is False
 
 
 def test_dlssg_gpu_timestamp_instrumentation_is_diagnostic_only_and_protocol_v4():

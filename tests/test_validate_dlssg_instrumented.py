@@ -64,12 +64,17 @@ def test_runtime_identity_gate_requires_both_pinned_hashes(monkeypatch, tmp_path
     }
 
 
-def test_instrumented_validator_matrix_is_bounded_in_source():
+def test_instrumented_validator_matrices_are_bounded_in_source():
     source = (
         Path(__file__).resolve().parents[1]
         / "tools"
         / "validate_dlssg_instrumented.py"
     ).read_text(encoding="utf-8")
-    assert "for multiplier in (2, 3, 4):" in source
-    assert '("external", 1), ("nvof", 2)' in source
-    assert '"validation_geometry": [256, 256]' in source
+    assert '"bounded": {' in source
+    assert '"practical": {' in source
+    assert '"geometries": ((256, 256),)' in source
+    assert '"geometries": ((1280, 720), (1920, 1080))' in source
+    assert '"multipliers": (2, 3, 4)' in source
+    assert '"multipliers": (2, 4)' in source
+    assert '(("external", 1), ("nvof", 2))' in source
+    assert '"validation_geometries"' in source

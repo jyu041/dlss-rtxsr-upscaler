@@ -93,6 +93,21 @@ def test_grid_environment_is_restored(monkeypatch):
     assert "DLSSG_NVOF_OUTPUT_GRID" not in os.environ
 
 
+def test_capture_manifest_paths_are_relative_to_grid_manifest_dir(tmp_path):
+    output_root = tmp_path / "run"
+    manifest_dir = output_root / "grid1"
+    reference = output_root / "references" / "g000_i1.png"
+    generated = manifest_dir / "generated" / "g000_i1.png"
+
+    reference_rel = capture._manifest_relative(reference, manifest_dir)
+    generated_rel = capture._manifest_relative(generated, manifest_dir)
+
+    assert reference_rel == "../references/g000_i1.png"
+    assert generated_rel == "generated/g000_i1.png"
+    assert (manifest_dir / reference_rel).resolve() == reference.resolve()
+    assert (manifest_dir / generated_rel).resolve() == generated.resolve()
+
+
 def test_quality_delta_direction():
     grid1 = {
         "summary": {

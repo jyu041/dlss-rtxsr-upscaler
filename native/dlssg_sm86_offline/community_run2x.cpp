@@ -630,12 +630,23 @@ static double Milliseconds(Clock::time_point begin, Clock::time_point end) {
 
 struct GpuTimestampProbe {
     static constexpr UINT kCapacity = 16;
+    static_assert(kCapacity >= 12, "4X GPU timing requires twelve timestamp slots");
     ID3D12QueryHeap *heap = nullptr;
     ID3D12Resource *readback = nullptr;
     UINT64 frequency = 0;
     bool enabled = false;
 
+    ~GpuTimestampProbe() { Release(); }
+
+    void Release() {
+        RunRelease(readback);
+        RunRelease(heap);
+        frequency = 0;
+        enabled = false;
+    }
+
     bool Initialize(ID3D12Device *device, ID3D12CommandQueue *queue, bool requested) {
+        Release();
         if (!requested) return true;
         if (!device || !queue || FAILED(queue->GetTimestampFrequency(&frequency)) || !frequency) {
             RunLog("GPU_TIMESTAMP_INIT available=0 reason=frequency");

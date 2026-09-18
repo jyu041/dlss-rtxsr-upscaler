@@ -299,7 +299,7 @@ def test_v10_protocol_client_roundtrip_uses_simulator_only():
         created = client.create(CreateRequest(64, 64, processing_scale=1.0))
         assert created["native_loaded"] is False
         assert created["output_size"] == [64, 64]
-        output = client.process(FrameRequest(timestamp=5, reset=True, rgba=rgba))
+        output = client.process_frame(FrameRequest(timestamp=5, reset=True, rgba=rgba))
         assert output.rgba == rgba
         assert output.ngx_create_result == SIMULATED_NATIVE_RESULT
         assert output.ngx_evaluate_result == SIMULATED_NATIVE_RESULT
@@ -327,7 +327,7 @@ def test_v10_protocol_client_poison_terminates_owned_simulator():
     client.create(CreateRequest(64, 64, processing_scale=2.0))
     try:
         with pytest.raises(V10ProtocolError, match="selftest FRAME supports 1.0x"):
-            client.process(FrameRequest(timestamp=1, reset=False, rgba=rgba))
+            client.process_frame(FrameRequest(timestamp=1, reset=False, rgba=rgba))
         assert client.poisoned is True
         result = client.close()
         assert result == "TERMINATED_POISONED"

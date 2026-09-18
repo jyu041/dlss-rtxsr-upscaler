@@ -353,3 +353,53 @@ powershell -ExecutionPolicy Bypass -File .\tools\build_validate_dlssg_instrument
 This is a research-only performance experiment. It is not a production default
 and must be followed by withheld-frame/perceptual quality comparison before any
 promotion could be considered.
+
+
+## Practical 4x4 NVOF output-grid result
+
+The first practical 4x4 hardware run completed successfully on the RTX 3070 Ti.
+
+Experimental worker SHA-256:
+
+`C570011DBAC20C7DC41C2D0A04283D696EBD513F93AAA1D4CFE4F8D280B364FB`
+
+The pinned legacy community runtime and NVIDIA provider hashes remained unchanged.
+All eight 720p/1080p 2X/4X external/NVOF cells passed, with no reported device
+removal.
+
+Observed 4x4 NVOF bracket samples:
+
+| Geometry | Multiplier | Bracket samples | Reported median |
+| --- | ---: | --- | ---: |
+| 1280x720 | 2X | 24.039, 1.647, 2.434 ms | 2.434 ms |
+| 1280x720 | 4X | 20.285, 4.287, 2.259 ms | 4.287 ms |
+| 1920x1080 | 2X | 22.728, 2.697, 2.706 ms | 2.706 ms |
+| 1920x1080 | 4X | 4.551, 5.422, 3.912 ms | 4.551 ms |
+
+The first sample is a clear warm-up outlier in three of the four NVOF cells.
+Therefore this run is evidence that coarse-grid NVOF can materially reduce the
+cross-engine bracket, but the three-sample median is not precise enough for a
+promotion decision.
+
+The same run also showed materially different external-path DLSS-G timings from
+the prior practical run, especially at 1080p. Cross-run percentages therefore
+remain confounded by GPU clock/load state.
+
+The next gate is a same-invocation A/B matrix:
+`practical-grid-ab`.
+
+It runs only NVOF cells, compares grids 1 and 4 at each geometry/multiplier, and
+uses eight measured frames per child. The purpose is to reduce warm-up
+sensitivity and compare both NVOF grid modes under much closer machine
+conditions. It remains research-only; production/default grid selection is
+still 1x1.
+
+The explicit command is:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\build_validate_dlssg_instrumented.ps1 -ValidatePracticalGridAB
+```
+
+The corrected evidence filename is:
+
+`runtime/audit/mfg-instrumented-practical-grid-ab-validation.json`

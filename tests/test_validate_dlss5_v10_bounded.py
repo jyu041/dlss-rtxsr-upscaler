@@ -108,6 +108,9 @@ def test_bounded_v10_fake_pass_installs_and_removes_firewall(monkeypatch, tmp_pa
     assert report["feature_evidence"]["ngx_evaluate_result"] == 1
     assert report["firewall_installed"] is True
     assert report["firewall_removed"] is True
+    assert [item["stage"] for item in report["process_tree_checks"]] == [
+        "after_hello", "after_create", "after_frame"
+    ]
     assert calls[0][0] == "install"
     assert calls[-1][0] == "remove"
 

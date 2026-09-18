@@ -39,6 +39,9 @@ from .dlss5_v10_protocol import (
 from .dlss5_v10_static import V10_EXPECTED_FILES
 
 
+EXPERIMENT_ACK = "BOUNDED_256_ONE_FRAME"
+
+
 
 SIMULATED_NATIVE_RESULT = -2147483648
 
@@ -147,6 +150,146 @@ def protocol_selftest_server() -> int:
         return 2
 
 
+def experimental_native_server(runtime_dir: Path, preflight_report: Path) -> int:
+    if __import__("os").environ.get("NVE_DLSS5_V10_NATIVE") != EXPERIMENT_ACK:
+        print(
+            "BLOCKED: experimental native v10 host requires the exact bounded-test acknowledgement",
+            file=sys.stderr,
+        )
+        return 77
+
+    from .dlss5_v10_native import V10NativeSession, load_bridge
+    from .dlss5_v10_security import validate_preflight_report
+
+    runtime_dir = runtime_dir.expanduser().resolve()
+    preflight_report = preflight_report.expanduser().resolve()
+    validate_preflight_report(runtime_dir, preflight_report)
+
+    guard = SessionGuard()
+    native_session = None
+    frame_count = 0
+    stdout = sys.stdout.buffer
+    stdin = sys.stdin.buffer
+    stdout.write(
+        encode_json(
+            HELLO,
+            0,
+            {
+                "protocol_version": PROTOCOL_VERSION,
+                "native_loaded": False,
+                "experimental_native_mode": True,
+                "normal_backend_enabled": False,
+                "bounded_contract": {
+                    "input": [256, 256],
+                    "processing_scale": 1.0,
+                    "max_frames": 1,
+                },
+            },
+        )
+    )
+    stdout.flush()
+
+    try:
+        while True:
+            command, request_id, payload = read_message(stdin)
+            if command == CREATE:
+                guard.accept_create(request_id)
+                create = CreateRequest.from_wire(decode_json(payload))
+                if (
+                    create.input_width != 256
+                    or create.input_height != 256
+                    or create.processing_scale != 1.0
+                    or create.output_size != (256, 256)
+                ):
+                    raise V10ProtocolError(
+                        "bounded native v10 CREATE requires exactly 256x256 at 1.0x"
+                    )
+                bound = load_bridge(
+                    runtime_dir,
+                    allow_native_load=True,
+                )
+                native_session = V10NativeSession(bound, runtime_dir, create)
+                initialized = native_session.initialize()
+                stdout.write(
+                    encode_json(
+                        CREATE,
+                        request_id,
+                        {
+                            "status": "CREATED",
+                            "native_loaded": True,
+                            "experimental_native_mode": True,
+                            "output_size": [256, 256],
+                            "initialization": initialized,
+                        },
+                    )
+                )
+                stdout.flush()
+                continue
+
+            if command == FRAME:
+                guard.accept_frame(request_id)
+                if native_session is None:
+                    raise V10ProtocolError("FRAME requires successful native CREATE")
+                if frame_count >= 1:
+                    raise V10ProtocolError(
+                        "bounded native v10 host permits exactly one FRAME"
+                    )
+                frame = FrameRequest.decode(payload, 256, 256)
+                output = native_session.process_frame(frame)
+                frame_count += 1
+                stdout.write(encode_message(OUTPUT, request_id, output.encode()))
+                stdout.flush()
+                continue
+
+            if command == CLOSE:
+                guard.accept_close(request_id)
+                close_status = (
+                    native_session.close()
+                    if native_session is not None
+                    else "CLOSED_WITHOUT_NATIVE_SESSION"
+                )
+                stdout.write(
+                    encode_json(
+                        CLOSE,
+                        request_id,
+                        {
+                            "status": "CLOSED",
+                            "native_loaded": native_session is not None,
+                            "session_close": close_status,
+                            "ngx_shutdown_called": False,
+                            "module_unload_called": False,
+                        },
+                    )
+                )
+                stdout.flush()
+                return 0
+
+            raise V10ProtocolError(f"command {command} is invalid for native host input")
+    except (EOFError, V10ProtocolError, ValueError, RuntimeError) as exc:
+        guard.poison(str(exc))
+        if native_session is not None:
+            try:
+                native_session.close()
+            except Exception:
+                pass
+        try:
+            stdout.write(
+                encode_json(
+                    ERROR,
+                    guard.next_request_id,
+                    {
+                        "error": str(exc),
+                        "poisoned": True,
+                        "experimental_native_mode": True,
+                    },
+                )
+            )
+            stdout.flush()
+        except Exception:
+            pass
+        return 2
+
+
 def contract_report() -> dict[str, object]:
     validate_static_contract()
     return {
@@ -167,7 +310,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--contract-selftest", action="store_true")
     parser.add_argument("--serve", action="store_true")
     parser.add_argument("--protocol-selftest-server", action="store_true")
+    parser.add_argument("--experimental-native-serve", action="store_true")
     parser.add_argument("--runtime-dir", type=Path)
+    parser.add_argument("--preflight-report", type=Path)
     args = parser.parse_args(argv)
 
     if args.contract_selftest:
@@ -176,6 +321,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.protocol_selftest_server:
         return protocol_selftest_server()
+
+    if args.experimental_native_serve:
+        if args.runtime_dir is None or args.preflight_report is None:
+            parser.error("--experimental-native-serve requires --runtime-dir and --preflight-report")
+        return experimental_native_server(args.runtime_dir, args.preflight_report)
 
     if args.serve:
         print(

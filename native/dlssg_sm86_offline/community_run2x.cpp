@@ -679,8 +679,8 @@ struct GpuTimestampProbe {
         if (!readback || queryCount > kCapacity) return false;
         const SIZE_T bytes = static_cast<SIZE_T>(queryCount) * sizeof(UINT64);
         D3D12_RANGE range{0, bytes};
-        const UINT64 *ticks = nullptr;
-        const HRESULT mapped = readback->Map(0, &range, reinterpret_cast<void **>(const_cast<UINT64 **>(&ticks)));
+        UINT64 *ticks = nullptr;
+        const HRESULT mapped = readback->Map(0, &range, reinterpret_cast<void **>(&ticks));
         if (FAILED(mapped) || !ticks) {
             RunLog("GPU_TIMESTAMP_READBACK_FAILED frame=%llu hr=0x%08X",
                 static_cast<unsigned long long>(frameId), static_cast<unsigned>(mapped));

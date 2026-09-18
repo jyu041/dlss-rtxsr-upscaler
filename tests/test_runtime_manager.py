@@ -140,6 +140,30 @@ def test_verify_detects_modified_managed_file(tmp_path):
     assert "integrity" in result["detail"]
 
 
+
+def test_verify_ignores_only_declared_generated_runtime_files(tmp_path):
+    manifest = tmp_path / "manifest.json"
+    demo = spec(
+        allowlist=("payload.bin",),
+        policy="USER_SUPPLIED",
+        constraints={"ignored_generated_files": ["logs/*.jsonl"]},
+    )
+    manifest.write_text(json.dumps({"runtimes": [demo.__dict__]}), encoding="utf-8")
+    archive = tmp_path / "demo.zip"
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.writestr("payload.bin", b"ok")
+    manager = RuntimeManager(manifest, tmp_path / "install")
+    destination = manager.import_zip("demo", archive)
+    (destination / "logs").mkdir()
+    (destination / "logs" / "runtime.jsonl").write_text("{}\n", encoding="utf-8")
+    result = manager.verify("demo")
+    assert result["ok"] is True
+
+    (destination / "unexpected.dll").write_bytes(b"not managed")
+    result = manager.verify("demo")
+    assert result["ok"] is False
+    assert "integrity" in result["detail"]
+
 def test_manifest_loads_pinned_multifile_candidate():
     manager = RuntimeManager(Path("src/runtime_manager/manifest.json"), Path("runtime"))
     spec = manager.specs["dlssg-sm86-0.3.1-candidate"]

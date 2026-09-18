@@ -246,6 +246,17 @@ def run_bounded(
 
         initialization = create.get("initialization", {})
         gpu_name = str(initialization.get("gpu_name", ""))
+        bridge_abi_version = initialization.get("bridge_abi_version")
+        initialized_gpu_ordinal = initialization.get("gpu_ordinal")
+        if bridge_abi_version != 6:
+            raise RuntimeError(
+                f"bounded v10 milestone requires bridge ABI 6, got {bridge_abi_version!r}"
+            )
+        if initialized_gpu_ordinal != gpu_ordinal:
+            raise RuntimeError(
+                f"bounded v10 GPU ordinal mismatch requested={gpu_ordinal} "
+                f"initialized={initialized_gpu_ordinal!r}"
+            )
         if "RTX 3070" not in gpu_name:
             raise RuntimeError(
                 f"bounded v10 milestone requires the RTX 3070/3070 Ti path, got {gpu_name!r}"
@@ -281,6 +292,8 @@ def run_bounded(
             )
 
         report["close"] = client.close()
+        if report["close"] != "CLOSED":
+            raise RuntimeError(f"bounded v10 host did not close cleanly: {report['close']}")
         report["status"] = "PASS"
         return report
     except BaseException as exc:
@@ -300,6 +313,11 @@ def run_bounded(
             except Exception as exc:
                 report["firewall_removed"] = False
                 report["firewall_remove_error"] = str(exc)
+                report["status"] = "FAIL"
+                report.setdefault(
+                    "error",
+                    "bounded v10 firewall cleanup failed; remove the temporary rule manually",
+                )
 
 
 def build_parser() -> argparse.ArgumentParser:

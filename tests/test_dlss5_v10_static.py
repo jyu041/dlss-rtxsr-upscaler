@@ -17,6 +17,7 @@ def _pe(exports=()):
         "pe32_plus": True,
         "sections": [],
         "imports": ["KERNEL32.dll"],
+        "import_symbols": {"KERNEL32.dll": []},
         "exports": list(exports),
     }
 
@@ -74,3 +75,33 @@ def test_v10_static_boundary_rejects_wrong_architecture(monkeypatch, tmp_path):
     status = v10.inspect_v10_runtime(runtime)
     assert status.state == "ARCHITECTURE_MISMATCH"
     assert status.execution_allowed is False
+
+
+def test_v10_static_boundary_requires_review_for_sensitive_imports(monkeypatch, tmp_path):
+    runtime = tmp_path / "v10"
+    _write_runtime(runtime)
+
+    def inspect(path):
+        report = _pe(REQUIRED_EXPORTS if path.name == "neuroframe_engine_neural_rendering.dll" else ())
+        if path.name == "neuroframe_engine_neural_rendering.dll":
+            report["imports"] = ["KERNEL32.dll", "WS2_32.dll"]
+            report["import_symbols"] = {
+                "KERNEL32.dll": ["CreateProcessW"],
+                "WS2_32.dll": ["connect"],
+            }
+        return report
+
+    monkeypatch.setattr(v10, "inspect_pe", inspect)
+    first = v10.inspect_v10_runtime(runtime)
+    expected = {
+        name: first.evidence["files"][name]["sha256"]
+        for name in v10.V10_FILES
+    }
+    status = v10.inspect_v10_runtime(runtime, expected_hashes=expected)
+    assert status.state == "STATIC_REVIEW_REQUIRED"
+    assert status.valid is False
+    assert status.execution_allowed is False
+    findings = status.evidence["sensitive_import_review"]["neuroframe_engine_neural_rendering.dll"]
+    assert "network-dll:WS2_32.dll" in findings
+    assert "network-symbol:WS2_32.dll!connect" in findings
+    assert "process-symbol:KERNEL32.dll!CreateProcessW" in findings

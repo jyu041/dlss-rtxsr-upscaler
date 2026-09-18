@@ -158,6 +158,11 @@ def summarize_samples(samples: Iterable[dict[str, object]]) -> dict[str, object]
             for row in group
             if row.get("edge_mae") is not None
         ]
+        edge_percent_values = [
+            float(row["edge_pixel_percent"])
+            for row in group
+            if row.get("edge_pixel_percent") is not None
+        ]
         return {
             "count": len(group),
             "mean_mae": float(np.mean([float(row["mae"]) for row in group])),
@@ -165,7 +170,9 @@ def summarize_samples(samples: Iterable[dict[str, object]]) -> dict[str, object]
             "mean_psnr_db": float(np.mean(psnr_values)) if psnr_values else None,
             "mean_ssim_rgb": float(np.mean([float(row["ssim_rgb"]) for row in group])),
             "mean_edge_mae": float(np.mean(edge_values)) if edge_values else None,
-            "mean_edge_pixel_percent": float(np.mean([float(row["edge_pixel_percent"]) for row in group])),
+            "mean_edge_pixel_percent": (
+                float(np.mean(edge_percent_values)) if edge_percent_values else None
+            ),
             "identical_count": sum(bool(row.get("identical")) for row in group),
         }
 

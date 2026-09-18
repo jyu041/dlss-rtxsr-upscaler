@@ -122,6 +122,7 @@ def test_v10_create_schema_matches_upstream_bounds_and_geometry():
     request = CreateRequest(
         input_width=1920,
         input_height=1080,
+        gpu_ordinal=2,
         processing_scale=1.5,
         style=2,
         intensity=1.25,
@@ -139,6 +140,7 @@ def test_v10_create_schema_matches_upstream_bounds_and_geometry():
     )
     assert request.output_size == (2880, 1620)
     wire = request.to_wire()
+    assert wire["gpu_ordinal"] == 2
     assert wire["memory_type"] == "host"
     assert wire["pixel_format"] == "rgba8"
     assert CreateRequest.from_wire(wire) == request
@@ -335,3 +337,9 @@ def test_v10_protocol_client_poison_terminates_owned_simulator():
         assert client.process.poll() is not None
     finally:
         client.abort()
+
+
+@pytest.mark.parametrize("ordinal", [-1, 32, 1.5, True])
+def test_v10_create_schema_rejects_invalid_gpu_ordinal(ordinal):
+    with pytest.raises(V10ProtocolError, match="gpu_ordinal"):
+        CreateRequest(256, 256, gpu_ordinal=ordinal).validate()

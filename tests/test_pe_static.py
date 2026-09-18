@@ -35,8 +35,14 @@ def _synthetic_pe(path):
     data[0x360:0x360 + len(b"dlss5nr_test\0")] = b"dlss5nr_test\0"
 
     # Import descriptor at file offset 0x400.
-    struct.pack_into("<IIIII", data, 0x400, 0, 0, 0, 0x1260, 0)
+    # OriginalFirstThunk RVA 0x1280, DLL name RVA 0x1260.
+    struct.pack_into("<IIIII", data, 0x400, 0x1280, 0, 0, 0x1260, 0)
     data[0x460:0x460 + len(b"KERNEL32.dll\0")] = b"KERNEL32.dll\0"
+    # One PE32+ import-by-name thunk, then a zero terminator.
+    struct.pack_into("<Q", data, 0x480, 0x12A0)
+    struct.pack_into("<Q", data, 0x488, 0)
+    struct.pack_into("<H", data, 0x4A0, 0)
+    data[0x4A2:0x4A2 + len(b"CreateProcessW\0")] = b"CreateProcessW\0"
     path.write_bytes(data)
 
 
@@ -47,5 +53,6 @@ def test_static_pe_reader_extracts_architecture_imports_and_exports(tmp_path):
     assert report["architecture"] == "x86_64"
     assert report["pe32_plus"] is True
     assert report["imports"] == ["KERNEL32.dll"]
+    assert report["import_symbols"] == {"KERNEL32.dll": ["CreateProcessW"]}
     assert report["exports"] == ["dlss5nr_test"]
     assert report["sections"][0]["name"] == ".rdata"

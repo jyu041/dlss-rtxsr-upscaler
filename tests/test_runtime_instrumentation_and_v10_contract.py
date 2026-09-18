@@ -94,7 +94,9 @@ def test_dlss5_v10_lifetime_contract_does_not_reuse_v3_shutdown_assumptions():
 def test_instrumented_workflow_requires_explicit_gpu_validation_switch():
     workflow = (ROOT / "tools" / "build_validate_dlssg_instrumented.ps1").read_text(encoding="utf-8")
     assert "[switch]$Validate256" in workflow
-    assert "if (-not $Validate256)" in workflow
+    assert "[switch]$ValidatePractical" in workflow
+    assert "$Validate256 -and $ValidatePractical" in workflow
+    assert "if (-not $Validate256 -and -not $ValidatePractical)" in workflow
     assert "GPU_VALIDATION_SKIPPED" in workflow
     assert "bin-instrumented" in workflow
     assert "validate_dlssg_instrumented.py" in workflow

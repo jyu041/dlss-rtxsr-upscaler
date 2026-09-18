@@ -15,10 +15,10 @@ def test_validated_mfg_default_is_unchanged():
     assert PROFILES["legacy"].compatibility_required is False
 
 
-def test_sm86_033_is_not_executable_without_exact_identity_gate():
-    # 0.3.3 is the preferred research successor, but no executable profile is
-    # allowed until exact runtime identity and the C55 direct-host contract are
-    # established.
+def test_sm86_033_proxy_is_not_a_c55_executable_profile():
+    # Static upstream review confirms 0.3.3 remains a DllMain/LoadLibrary proxy
+    # architecture rather than the standalone direct-host contract owned by C55.
+    # It must not become executable merely because it is newer.
     assert "candidate-0.3.3" not in PROFILES
 
 

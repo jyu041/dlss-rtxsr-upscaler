@@ -204,8 +204,8 @@ def capture_grid(
                         {
                             "group": group,
                             "generated_index": generated_index,
-                            "reference": str(ref.relative_to(output_root)),
-                            "generated": str(generated.relative_to(output_root)),
+                            "reference": ref.relative_to(output_root).as_posix(),
+                            "generated": generated.relative_to(output_root).as_posix(),
                         }
                     )
 
@@ -242,7 +242,56 @@ def _quality_delta(grid1: dict[str, object], grid4: dict[str, object]) -> dict[s
         "grid4_minus_grid1_mean_rmse": delta("mean_rmse"),
         "grid4_minus_grid1_mean_psnr_db": delta("mean_psnr_db"),
         "grid4_minus_grid1_mean_ssim_rgb": delta("mean_ssim_rgb"),
+        "grid4_minus_grid1_mean_edge_mae": delta("mean_edge_mae"),
     }
+
+
+def _paired_quality(grid1: dict[str, object], grid4: dict[str, object]) -> dict[str, object]:
+    left = {
+        (int(row["group"]), int(row["generated_index"])): row
+        for row in grid1["samples"]
+    }
+    right = {
+        (int(row["group"]), int(row["generated_index"])): row
+        for row in grid4["samples"]
+    }
+    if set(left) != set(right):
+        raise RuntimeError("grid quality reports do not contain identical sample keys")
+
+    rows: list[dict[str, object]] = []
+    lower_is_better = ("mae", "rmse", "edge_mae")
+    higher_is_better = ("psnr_db", "ssim_rgb")
+    wins = {metric: {"grid1": 0, "grid4": 0, "tie": 0, "comparable": 0}
+            for metric in (*lower_is_better, *higher_is_better)}
+
+    for key in sorted(left):
+        a = left[key]
+        b = right[key]
+        delta: dict[str, float | None] = {}
+        for metric in (*lower_is_better, *higher_is_better):
+            av = a.get(metric)
+            bv = b.get(metric)
+            if av is None or bv is None:
+                delta[metric] = None
+                continue
+            avf, bvf = float(av), float(bv)
+            delta[metric] = bvf - avf
+            bucket = wins[metric]
+            bucket["comparable"] += 1
+            if abs(avf - bvf) <= 1e-12:
+                bucket["tie"] += 1
+            elif metric in lower_is_better:
+                bucket["grid1" if avf < bvf else "grid4"] += 1
+            else:
+                bucket["grid1" if avf > bvf else "grid4"] += 1
+        rows.append(
+            {
+                "group": key[0],
+                "generated_index": key[1],
+                "grid4_minus_grid1": delta,
+            }
+        )
+    return {"samples": rows, "wins": wins}
 
 
 def main() -> int:
@@ -290,10 +339,11 @@ def main() -> int:
 
     height, width = frames[0].shape[:2]
     combined = {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": "PASS",
         "purpose": "quality evidence only; no promotion decision",
         "input": str(input_path),
+        "input_sha256": sha256_file(input_path),
         "input_fps": fps,
         "width": width,
         "height": height,
@@ -303,6 +353,7 @@ def main() -> int:
         "grid1_summary": reports["grid1"]["summary"],
         "grid4_summary": reports["grid4"]["summary"],
         "quality_delta": _quality_delta(reports["grid1"], reports["grid4"]),
+        "paired_quality": _paired_quality(reports["grid1"], reports["grid4"]),
     }
     combined_path = output_root / "grid-ab-quality-report.json"
     combined_path.write_text(json.dumps(combined, indent=2) + "\n", encoding="utf-8")

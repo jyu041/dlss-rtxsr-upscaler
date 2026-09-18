@@ -110,3 +110,26 @@ Before any GPU timing run, a development machine must:
 
 No production runtime identity should be updated merely because the
 instrumented build compiles.
+
+
+## One-command development workflow
+
+`tools/build_validate_dlssg_instrumented.ps1` now provides the intended
+development sequence.
+
+By default it:
+
+1. verifies the exact legacy community-runtime SHA-256;
+2. verifies the exact NVIDIA 310.9.1 provider SHA-256;
+3. builds into `bin-instrumented`;
+4. runs the GPU-free native `--selftest`;
+5. records the new worker SHA-256;
+6. stops **before GPU validation**.
+
+GPU validation requires the explicit `-Validate256` switch. With that switch,
+the script invokes the separate `tools/validate_dlssg_instrumented.py` gate,
+which refuses the production C55 hash and accepts only an executable under
+`bin-instrumented`. It then runs exactly six bounded cells: 2X/3X/4X ×
+external-motion/NVOF at 256x256.
+
+The normal `tools/validate_dlssg_candidate.py` C55 identity gate is unchanged.

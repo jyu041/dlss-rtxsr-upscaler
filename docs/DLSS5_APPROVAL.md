@@ -150,9 +150,12 @@ runtime folders and replacement DLLs are not accepted by the managed path.
 Visual Enhancer v10 is represented only as a selective-extraction, static
 research candidate. It is not substituted for the validated v3 Feature-18
 execution runtime and is not executed by setup. The upstream v10 source
-describes an in-process D3D12/NGX Feature-18 bridge plus caller shim, which is a
-materially different host boundary from the validated v3 RenoDX/ReShade-style
-five-file runtime.
+describes an in-process D3D12/NGX Feature-18 bridge plus caller shim with
+bridge ABI 6, which is a materially different host boundary from the validated
+v3 RenoDX/ReShade-style five-file runtime. Upstream also treats NGX as
+process-lifetime state and avoids normal NGX shutdown/module unload after a
+successful Feature-18 evaluation because those operations have reportedly
+wedged; a future adapter must preserve that lifecycle distinction.
 
 Before any v10 execution, the project must establish exact extracted DLL
 identities, imports/exports, Authenticode observations, Defender results,

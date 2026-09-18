@@ -30,6 +30,8 @@ REQUIRED_EXPORTS = (
     "dlss5nr_rebind",
     "dlss5nr_process_v6",
     "dlss5nr_process_cuda_v6",
+    "dlss5nr_cuda_supported",
+    "dlss5nr_cuda_status",
     "dlss5nr_process_frame_v6",
     "dlss5nr_temporal_status",
     "dlss5nr_scene_score_v1",
@@ -42,6 +44,61 @@ REQUIRED_EXPORTS = (
 OPTIONAL_EXPORTS = (
     "dlss5nr_release_session",
 )
+
+
+# Symbolic signatures copied from the ABI-6 ctypes binding in upstream
+# neural_bridge.py.  These are data-only adapter specifications: no DLL is
+# loaded and no ctypes function pointer is created here.
+EXPORT_SIGNATURES = {
+    "dlss5nr_version": ((), "char*"),
+    "dlss5nr_gpu_name": ((), "char*"),
+    "dlss5nr_adapter_luid": ((), "char*"),
+    "dlss5nr_frame_abi_version": ((), "uint32"),
+    "dlss5nr_init": (("int", "wchar*", "char*", "int"), "int"),
+    "dlss5nr_rebind": (("int", "char*", "int"), "int"),
+    "dlss5nr_process_v6": (
+        ("float*", "float*", "int", "int", "RenderParametersV6*", "char*", "int"),
+        "int",
+    ),
+    "dlss5nr_process_cuda_v6": (
+        ("uint64", "uint64", "int", "int", "uint64", "RenderParametersV6*", "char*", "int"),
+        "int",
+    ),
+    "dlss5nr_cuda_supported": ((), "int"),
+    "dlss5nr_cuda_status": (("char*", "int"), "int"),
+    "dlss5nr_process_frame_v6": (
+        (
+            "FrameDescriptorV1*",
+            "FrameDescriptorV1*",
+            "RenderParametersV6*",
+            "FrameResultV1*",
+            "char*",
+            "int",
+        ),
+        "int",
+    ),
+    "dlss5nr_temporal_status": (("char*", "int"), "int"),
+    "dlss5nr_scene_score_v1": (
+        ("FrameDescriptorV1*", "float", "float*", "int*", "char*", "int"),
+        "int",
+    ),
+    "dlss5nr_surface_create": (("uint32", "uint32", "uint32", "char*", "int"), "void*"),
+    "dlss5nr_surface_frame_desc": (("void*", "FrameDescriptorV1*"), "int"),
+    "dlss5nr_surface_retain": (("void*",), "void"),
+    "dlss5nr_surface_release": (("void*",), "void"),
+}
+
+OPTIONAL_EXPORT_SIGNATURES = {
+    "dlss5nr_release_session": ((), "int"),
+}
+
+LIFETIME_CONTRACT = {
+    "feature_id": 18,
+    "bridge_abi_version": BRIDGE_ABI_VERSION,
+    "normal_close_calls_ngx_shutdown": False,
+    "normal_close_unloads_driver_modules": False,
+    "release_session_optional": True,
+}
 
 
 class FrameDescriptorV1(ctypes.Structure):
@@ -170,3 +227,13 @@ def validate_static_contract() -> None:
         raise RuntimeError(
             f"DLSS5 v10 ABI layout mismatch: actual={actual}, expected={EXPECTED_STRUCT_SIZES}"
         )
+    signature_exports = set(EXPORT_SIGNATURES)
+    required_exports = set(REQUIRED_EXPORTS)
+    if signature_exports != required_exports:
+        missing = sorted(required_exports - signature_exports)
+        extra = sorted(signature_exports - required_exports)
+        raise RuntimeError(
+            f"DLSS5 v10 export-signature mismatch: missing={missing}, extra={extra}"
+        )
+    if set(OPTIONAL_EXPORT_SIGNATURES) != set(OPTIONAL_EXPORTS):
+        raise RuntimeError("DLSS5 v10 optional export-signature contract is inconsistent")

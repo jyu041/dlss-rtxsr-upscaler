@@ -52,7 +52,7 @@ if not exist "%~dp0runtime\dlss-sr-host\nvngx_dlss.dll" (echo DLSS SR runtime bo
 if not exist "%~dp0native\dlssg_sm86_offline\bin" mkdir "%~dp0native\dlssg_sm86_offline\bin" || exit /b 1
 copy /y "%DLSSG_WORKER_EXE%" "%~dp0native\dlssg_sm86_offline\bin\dlssg_sm86_offline.exe" >nul || exit /b 1
 
-echo [6/10] Installing managed DLSS-G provider and compatibility runtime
+echo [6/10] Installing validated DLSS-G direct-host runtime and NVIDIA provider
 set "NVE_DLSSG_PROVIDER_ARCHIVE=%TEMP%\NVIDIA-Streamline-v2.14.1.zip"
 call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\manage_runtime.py verify dlssg-official-provider-310.9.1 >nul 2>nul
 if errorlevel 1 (
@@ -61,16 +61,17 @@ if errorlevel 1 (
 )
 del /q "%NVE_DLSSG_PROVIDER_ARCHIVE%" >nul 2>nul
 
-call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\manage_runtime.py verify dlssg-sm86-0.3.1-candidate >nul 2>nul
+call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\manage_runtime.py verify dlssg-legacy-reference >nul 2>nul
 if errorlevel 1 (
-  echo Installing or repairing the pinned SM86 0.3.1 DLSS-G compatibility runtime from its public upstream source...
-  call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\manage_runtime.py install dlssg-sm86-0.3.1-candidate || exit /b 1
+  echo Installing the pinned C55-validated SM86 direct-host runtime from upstream commit 5f62ff44...
+  call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\manage_runtime.py install dlssg-legacy-reference || exit /b 1
 )
 
-set "DLSSG_RUNTIME_PROFILE=candidate-0.3.1"
-set "DLSSG_COMMUNITY_RUNTIME=%~dp0runtime\dlssg\candidate-0.3.1\version.dll"
+set "DLSSG_RUNTIME_PROFILE=legacy"
+set "DLSSG_COMMUNITY_RUNTIME=%~dp0runtime\dlssg\legacy\version.dll"
 set "DLSSG_OFFICIAL_RUNTIME_DIR=%~dp0runtime\dlssg\official"
-if not exist "%DLSSG_COMMUNITY_RUNTIME%" (echo Managed DLSS-G compatibility runtime was not installed correctly.& exit /b 1)
+if not exist "%DLSSG_COMMUNITY_RUNTIME%" (echo Validated DLSS-G direct-host runtime was not installed correctly.& exit /b 1)
+if not exist "%~dp0runtime\dlssg\legacy\dlssg_sm86.ini" (echo Validated DLSS-G direct-host INI was not installed correctly.& exit /b 1)
 if not exist "%DLSSG_OFFICIAL_RUNTIME_DIR%\nvngx_dlssg.dll" (echo Managed NVIDIA DLSS-G provider was not installed correctly.& exit /b 1)
 
 echo [7/10] Optional managed DLSS 5 v3 provisioning
@@ -110,8 +111,8 @@ if /I "%NVE_DLSS5_CHOICE%"=="Y" (
 echo [8/10] Running backend validation
 call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\check_dlss_sr_readiness.py --selftest
 if errorlevel 1 echo WARNING: DLSS SR self-test did not pass on this machine. The verified files remain installed and no manual path configuration is required.
-call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\validate_dlssg_candidate.py --official "%DLSSG_OFFICIAL_RUNTIME_DIR%"
-if errorlevel 1 echo WARNING: DLSS-G compatibility validation did not pass on this machine. The managed files remain installed and no manual path configuration is required.
+call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\validate_dlssg_candidate.py --profile legacy --runtime "%DLSSG_COMMUNITY_RUNTIME%" --official "%DLSSG_OFFICIAL_RUNTIME_DIR%"
+if errorlevel 1 echo WARNING: DLSS-G 2X/3X/4X validation did not pass on this machine. The exact validated stack remains installed; DLSS-G should not be used until the local failure is understood.
 
 echo [9/10] Running diagnostics
 call conda run --no-capture-output %NVE_CONDA_TARGET% python -m src.core.diagnostics || exit /b 1
@@ -121,12 +122,13 @@ if not exist config mkdir config
 >"config\source_env.bat" echo @echo off
 if defined NVE_CONDA_PREFIX (>>"config\source_env.bat" echo set "NVE_CONDA_PREFIX=%NVE_CONDA_PREFIX%") else (>>"config\source_env.bat" echo set "NVE_CONDA_ENV=%NVE_CONDA_ENV%")
 >>"config\source_env.bat" echo set "DLSSG_WORKER_EXE=%%~dp0..\runtime\dlssg\worker\dlssg_sm86_offline.exe"
->>"config\source_env.bat" echo set "DLSSG_RUNTIME_PROFILE=candidate-0.3.1"
->>"config\source_env.bat" echo set "DLSSG_COMMUNITY_RUNTIME=%%~dp0..\runtime\dlssg\candidate-0.3.1\version.dll"
+>>"config\source_env.bat" echo set "DLSSG_RUNTIME_PROFILE=legacy"
+>>"config\source_env.bat" echo set "DLSSG_COMMUNITY_RUNTIME=%%~dp0..\runtime\dlssg\legacy\version.dll"
 >>"config\source_env.bat" echo set "DLSSG_OFFICIAL_RUNTIME_DIR=%%~dp0..\runtime\dlssg\official"
 
 echo.
 echo Environment ready: %NVE_CONDA_ENV%
-echo C55, DLSS SR, and the managed DLSS-G provider/runtime are installed from pinned public sources.
+echo C55, DLSS SR, and the validated DLSS-G direct-host runtime/provider are installed from pinned public sources.
 echo Normal use does not require downloading backend DLLs manually or entering runtime paths in the UI.
+echo The newer SM86 0.3.1 proxy generation remains an advanced candidate only; normal C55 MFG uses the validated legacy direct-host profile.
 echo DLSS 5 v3 can also be provisioned from its pinned upstream release through the explicit setup opt-in; it remains experimental and fail-closed behind hash, scan, firewall, and Feature-18 self-test gates.

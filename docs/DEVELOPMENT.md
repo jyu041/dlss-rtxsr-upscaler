@@ -26,9 +26,17 @@ The managed DLSS-G source defaults are:
 
 ```text
 runtime/dlssg/worker/dlssg_sm86_offline.exe
-runtime/dlssg/candidate-0.3.1/version.dll
+runtime/dlssg/legacy/version.dll
+runtime/dlssg/legacy/dlssg_sm86.ini
 runtime/dlssg/official/
 ```
+
+The `legacy` name is retained for identity compatibility, but this is the
+validated normal C55 direct-host profile: upstream commit
+`5f62ff44a9c08f9841fa605e7b7160f79ccd2c40`, which has retained RTX 3070 Ti
+2X/3X/4X evidence. The newer `candidate-0.3.1` proxy-generation runtime remains
+available through Runtime Manager and explicit `DLSSG_RUNTIME_PROFILE` overrides
+for research; it is not the normal application default.
 
 Advanced `DLSSG_*` environment overrides are retained for compatibility and
 research, but the normal UI intentionally does not ask users to enter runtime

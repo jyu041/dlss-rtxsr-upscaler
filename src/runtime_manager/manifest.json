@@ -68,8 +68,33 @@
       "constraints": {"provider_sha256": "FF6E90EB78B827927DFF5B4ECC6B1C870C2E9BCA29ED9F48C7D348CC9E170B82", "provider_size_bytes": 7460976}
     },
     {
+      "id": "dlssg-legacy-reference",
+      "name": "DLSS Frame Generation validated direct-host runtime",
+      "backend": "dlssg",
+      "version": "5f62ff44",
+      "source": "https://github.com/sdli1995/dlssg_for_sm86",
+      "source_url": "https://github.com/sdli1995/dlssg_for_sm86/commit/5f62ff44a9c08f9841fa605e7b7160f79ccd2c40",
+      "artifact_url": null,
+      "sha256": null,
+      "size_bytes": null,
+      "archive_type": "files",
+      "allowlist": ["version.dll", "dlssg_sm86.ini"],
+      "destination": "dlssg/legacy",
+      "policy": "UPSTREAM_DOWNLOAD",
+      "channel": "validated",
+      "license_name": "GPLv3 source ancestry plus separate NVIDIA/third-party binary terms; downloaded directly from pinned upstream commit",
+      "redistributable": false,
+      "direct_user_download": true,
+      "required": true,
+      "files": [
+        {"path": "version.dll", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/5f62ff44a9c08f9841fa605e7b7160f79ccd2c40/version.dll", "sha256": "C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2", "size_bytes": 15667520},
+        {"path": "dlssg_sm86.ini", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/5f62ff44a9c08f9841fa605e7b7160f79ccd2c40/dlssg_sm86.ini", "sha256": "FD7F0722194E6E8D8C085327D9826EFFB411925A69A5E7549D70EFF26A9F18B5", "size_bytes": 581}
+      ],
+      "constraints": {"multipliers": [2, 3, 4], "compatibility_test_required": false, "status": "validated C55 direct-host runtime; RTX 3070 Ti 2X/3X/4X evidence retained"}
+    },
+    {
       "id": "dlssg-sm86-0.3.1-candidate",
-      "name": "DLSS Frame Generation SM86 0.3.1 candidate",
+      "name": "DLSS Frame Generation SM86 0.3.1 proxy candidate",
       "backend": "dlssg",
       "version": "0.3.1-117faf5c",
       "source": "https://github.com/sdli1995/dlssg_for_sm86",
@@ -90,28 +115,7 @@
         {"path": "dlssg_sm86.ini", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/117faf5c70333b34160f5d21d01c222261cc5af1/dlssg_sm86.ini", "sha256": "231574047C4989D292E592802102D2437FC636B56E535E8D70D403F20D4CCAFC", "size_bytes": 2727},
         {"path": "THIRD_PARTY_NOTICES.txt", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/117faf5c70333b34160f5d21d01c222261cc5af1/THIRD_PARTY_NOTICES.txt", "sha256": "AC3B44AB30A4235EDD18FECA1AB4F802D57C8D3D0EE4878DC77B81A6B127155F", "size_bytes": 3349}
       ],
-      "constraints": {"multipliers": [2, 3, 4], "compatibility_test_required": true, "status": "candidate; C55 compatibility not independently exercised"}
-    },
-    {
-      "id": "dlssg-legacy-reference",
-      "name": "DLSS Frame Generation legacy reference",
-      "backend": "dlssg",
-      "version": "5f62ff44",
-      "source": "https://github.com/sdli1995/dlssg_for_sm86",
-      "source_url": "https://github.com/sdli1995/dlssg_for_sm86",
-      "artifact_url": null,
-      "sha256": null,
-      "size_bytes": null,
-      "archive_type": "user-supplied",
-      "allowlist": ["version.dll", "dlssg_sm86.ini"],
-      "destination": "dlssg/legacy",
-      "policy": "USER_SUPPLIED",
-      "channel": "validated",
-      "license_name": "NVIDIA/third-party terms; direct user supplied",
-      "redistributable": false,
-      "direct_user_download": false,
-      "required": false,
-      "constraints": {"multipliers": [2, 3, 4]}
+      "constraints": {"multipliers": [2, 3, 4], "compatibility_test_required": true, "status": "proxy-generation candidate; not the C55 direct-host default"}
     },
     {
       "id": "dlss5-neuroframe-v9-static-candidate",

@@ -1,4 +1,8 @@
-"""Bounded, explicit C55 candidate validation with a timeout per multiplier."""
+"""Bounded C55 DLSS-G runtime validation with a timeout per multiplier.
+
+The normal setup validates the preserved legacy direct-host profile.  The newer
+0.3.1 proxy generation remains available only as an explicit candidate profile.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +13,7 @@ from pathlib import Path
 import struct
 import subprocess
 import sys
+import threading
 import time
 
 try:
@@ -20,17 +25,22 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.backends.dlssg_worker import (DlssgWorker, MOTION_MODE_EXTERNAL_R16G16_FLOAT,
-                                       MOTION_MODE_NVIDIA_OPTICAL_FLOW,
-                                       PIXEL_FORMAT_RGBA8_UNORM, mfg_group_complete)
+from src.backends.dlssg_worker import (
+    DlssgWorker,
+    MOTION_MODE_EXTERNAL_R16G16_FLOAT,
+    MOTION_MODE_NVIDIA_OPTICAL_FLOW,
+    PIXEL_FORMAT_RGBA8_UNORM,
+    mfg_group_complete,
+)
 from src.core.dlssg_attestation import ATTESTATION_PATH, current, write_result
-from src.core.dlssg_official_runtime import identity
-from src.core.dlssg_profiles import C55_WORKER_SHA256, profile
+from src.core.dlssg_official_runtime import identity, policy_satisfied
+from src.core.dlssg_profiles import C55_WORKER_SHA256, managed_runtime_paths, profile
 from src.core.dlssg_readiness import sha256_file
 
 DEFAULT_WORKER = ROOT / "native" / "dlssg_sm86_offline" / "bin" / "dlssg_sm86_offline.exe"
-DEFAULT_RUNTIME = ROOT / "runtime" / "dlssg" / "candidate-0.3.1" / "version.dll"
 PER_RUN_TIMEOUT = 30
+VALIDATION_WIDTH = 256
+VALIDATION_HEIGHT = 256
 
 
 def validate_reset(result) -> None:
@@ -41,38 +51,92 @@ def validate_reset(result) -> None:
 def validate_group(result, multiplier: int, width: int, height: int) -> None:
     expected_count = multiplier - 1
     if result.generated_count != expected_count or len(result.outputs) != expected_count:
-        raise RuntimeError(f"{multiplier}X group incomplete: count={result.generated_count}, outputs={len(result.outputs)}, expected={expected_count}")
-    # PROCESS v4 returns outputs in generated-index order; the exact sequence
-    # is therefore established by count plus the protocol's ordered group.
+        raise RuntimeError(
+            f"{multiplier}X group incomplete: count={result.generated_count}, "
+            f"outputs={len(result.outputs)}, expected={expected_count}"
+        )
     if not mfg_group_complete(multiplier, tuple(range(1, result.generated_count + 1))):
         raise RuntimeError(f"{multiplier}X generated-index group is incomplete")
-    if result.disable_interpolation != 0 or result.width != width or result.height != height or result.pixel_format != PIXEL_FORMAT_RGBA8_UNORM:
+    if (
+        result.disable_interpolation != 0
+        or result.width != width
+        or result.height != height
+        or result.pixel_format != PIXEL_FORMAT_RGBA8_UNORM
+    ):
         raise RuntimeError("invalid disable flag, dimensions, or pixel format")
     if any(len(output) != width * height * 4 or not output for output in result.outputs):
         raise RuntimeError("invalid generated output byte count")
 
 
 def _frame(width: int, height: int, frame_id: int) -> bytes:
-    return bytes(((x * 7 + y * 13 + frame_id * 29) ^ ((x + frame_id) & 7)) & 255
-                 for y in range(height) for x in range(width) for _ in range(4))
+    return bytes(
+        ((x * 7 + y * 13 + frame_id * 29) ^ ((x + frame_id) & 7)) & 255
+        for y in range(height)
+        for x in range(width)
+        for _ in range(4)
+    )
 
 
-def _child(worker: Path, runtime: Path, official: Path, multiplier: int, motion_mode: int) -> int:
-    width = height = 64
+def _child(
+    worker: Path,
+    runtime: Path,
+    official: Path,
+    runtime_profile: str,
+    multiplier: int,
+    motion_mode: int,
+) -> int:
+    # Match the preserved bounded MFG validation contract. The community
+    # runtime has proven Create/Evaluate at 256x256 and practical video
+    # resolutions; 64x64 reaches CreateFeature but returns InvalidParameter.
+    width = VALIDATION_WIDTH
+    height = VALIDATION_HEIGHT
     frames = [_frame(width, height, frame_id) for frame_id in range(3)]
     reset_motion = bytes(width * height * 4)
     motion = b"".join(struct.pack("<ee", 1.0, 0.0) for _ in range(width * height))
-    with DlssgWorker(worker, runtime, official, expected_community_sha256=profile("candidate-0.3.1").runtime_sha256, strict_runtime_hash=True,
-                     diagnostic_callback=lambda line: print(f"WORKER {line}", file=sys.stderr, flush=True), diagnostic_mode=True) as client:
+    expected = profile(runtime_profile)
+    with DlssgWorker(
+        worker,
+        runtime,
+        official,
+        expected_community_sha256=expected.runtime_sha256,
+        strict_runtime_hash=True,
+        diagnostic_callback=lambda line: print(f"WORKER {line}", file=sys.stderr, flush=True),
+        diagnostic_mode=True,
+    ) as client:
         client.create(width, height, multiplier=multiplier, motion_mode=motion_mode)
-        reset = client.process(0, frames[0], reset_motion if motion_mode == MOTION_MODE_EXTERNAL_R16G16_FLOAT else None, reset=True)
+        reset = client.process(
+            0,
+            frames[0],
+            reset_motion if motion_mode == MOTION_MODE_EXTERNAL_R16G16_FLOAT else None,
+            reset=True,
+        )
         validate_reset(reset)
         results = []
         for frame_id in range(3):
-            result = client.process(frame_id + 1, frames[frame_id], motion if motion_mode == MOTION_MODE_EXTERNAL_R16G16_FLOAT else None)
+            result = client.process(
+                frame_id + 1,
+                frames[frame_id],
+                motion if motion_mode == MOTION_MODE_EXTERNAL_R16G16_FLOAT else None,
+            )
             validate_group(result, multiplier, width, height)
-            results.append({"generated_count": result.generated_count, "output_bytes": [len(output) for output in result.outputs]})
-    print(json.dumps({"multiplier": multiplier, "motion_mode": motion_mode, "reset": {"generated_count": 0}, "frames": results}), flush=True)
+            results.append(
+                {
+                    "generated_count": result.generated_count,
+                    "output_bytes": [len(output) for output in result.outputs],
+                }
+            )
+    print(
+        json.dumps(
+            {
+                "profile": runtime_profile,
+                "multiplier": multiplier,
+                "motion_mode": motion_mode,
+                "reset": {"generated_count": 0},
+                "frames": results,
+            }
+        ),
+        flush=True,
+    )
     return 0
 
 
@@ -84,9 +148,21 @@ def _terminate_owned_tree(process: subprocess.Popen[str]) -> None:
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             child_pids = []
     if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, text=True, timeout=10, check=False)
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
         for pid in child_pids:
-            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True, timeout=10, check=False)
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
     elif process.poll() is None:
         process.kill()
     try:
@@ -105,56 +181,179 @@ def _terminate_owned_tree(process: subprocess.Popen[str]) -> None:
             raise RuntimeError(f"owned validator descendants remain after cleanup: {lingering}")
 
 
+def _drain_child_output(stream, lines: list[str], *, echo: bool = True) -> None:
+    """Continuously drain a validator child's merged stdout/stderr.
+
+    The child forwards verbose native-worker diagnostics.  On Windows a pipe can
+    fill long before a GPU validation finishes; leaving stdout unread while
+    polling the process therefore deadlocks the child.  Drain concurrently and
+    retain the lines so timeout/failure errors still carry a useful stage tail.
+    """
+    try:
+        for raw in iter(stream.readline, ""):
+            line = raw.rstrip("\r\n")
+            lines.append(line)
+            if echo:
+                print(f"CHILD {line}", flush=True)
+    finally:
+        try:
+            stream.close()
+        except OSError:
+            pass
+
+
 def _run_one(args: argparse.Namespace, multiplier: int, motion_mode: int) -> dict[str, object]:
-    command = [sys.executable, str(Path(__file__).resolve()), "--child", "--worker", str(args.worker), "--runtime", str(args.runtime), "--official", str(args.official), "--multiplier", str(multiplier), "--motion-mode", str(motion_mode)]
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "--child",
+        "--profile",
+        args.profile,
+        "--worker",
+        str(args.worker),
+        "--runtime",
+        str(args.runtime),
+        "--official",
+        str(args.official),
+        "--multiplier",
+        str(multiplier),
+        "--motion-mode",
+        str(motion_mode),
+    ]
     started = time.monotonic()
-    process = subprocess.Popen(command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=os.environ.copy())
+    process = subprocess.Popen(
+        command,
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        env=os.environ.copy(),
+        bufsize=1,
+    )
     lines: list[str] = []
+    reader = None
+    if process.stdout is not None:
+        reader = threading.Thread(
+            target=_drain_child_output,
+            args=(process.stdout, lines),
+            daemon=True,
+            name=f"dlssg-validator-{multiplier}x-output",
+        )
+        reader.start()
+
+    timed_out = False
     while process.poll() is None:
         if time.monotonic() - started > args.timeout:
             _terminate_owned_tree(process)
-            raise TimeoutError(f"{multiplier}X candidate validation exceeded {args.timeout}s")
-        print(f"HEARTBEAT multiplier={multiplier} elapsed={int(time.monotonic()-started)}s", flush=True)
+            timed_out = True
+            break
+        print(
+            f"HEARTBEAT profile={args.profile} multiplier={multiplier} "
+            f"elapsed={int(time.monotonic()-started)}s",
+            flush=True,
+        )
         time.sleep(1)
-    if process.stdout:
-        lines.extend(line.rstrip() for line in process.communicate(timeout=5)[0].splitlines())
+
+    if reader is not None:
+        reader.join(timeout=5)
+        if reader.is_alive():
+            raise RuntimeError(
+                f"{multiplier}X {args.profile} validator output reader did not finish after process exit"
+            )
+
+    tail = " | ".join(lines[-12:])
+    if timed_out:
+        detail = f": {tail}" if tail else ""
+        raise TimeoutError(
+            f"{multiplier}X {args.profile} validation exceeded {args.timeout}s{detail}"
+        )
     if process.returncode != 0:
-        _terminate_owned_tree(process)
-        raise RuntimeError(f"{multiplier}X validation failed with exit {process.returncode}: {' | '.join(lines[-5:])}")
+        raise RuntimeError(
+            f"{multiplier}X {args.profile} validation failed with exit {process.returncode}: {tail}"
+        )
     return {"multiplier": multiplier, "output": lines[-1] if lines else ""}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--profile", choices=("legacy", "candidate-0.3.1"), default="candidate-0.3.1")
     parser.add_argument("--worker", type=Path, default=DEFAULT_WORKER)
-    parser.add_argument("--runtime", type=Path, default=DEFAULT_RUNTIME)
+    parser.add_argument("--runtime", type=Path)
     parser.add_argument("--official", type=Path, required=True)
     parser.add_argument("--timeout", type=int, default=PER_RUN_TIMEOUT)
     parser.add_argument("--child", action="store_true")
     parser.add_argument("--multiplier", type=int)
     parser.add_argument("--motion-mode", type=int, default=MOTION_MODE_EXTERNAL_R16G16_FLOAT)
     args = parser.parse_args()
+    if args.runtime is None:
+        args.runtime = managed_runtime_paths(ROOT, args.profile)[0]
+    args.worker = args.worker.resolve()
+    args.runtime = args.runtime.resolve()
+    args.official = args.official.resolve()
+
     if args.child:
-        return _child(args.worker, args.runtime, args.official, args.multiplier, args.motion_mode)
-    expected = profile("candidate-0.3.1")
+        return _child(
+            args.worker,
+            args.runtime,
+            args.official,
+            args.profile,
+            args.multiplier,
+            args.motion_mode,
+        )
+
+    expected = profile(args.profile)
     actual_worker = sha256_file(args.worker) if args.worker.is_file() else None
     official_id = identity(args.official)
     if actual_worker != C55_WORKER_SHA256:
         raise SystemExit(f"BLOCKED: worker identity is {actual_worker}, expected {C55_WORKER_SHA256}")
-    if sha256_file(args.runtime) != expected.runtime_sha256 or official_id.startswith("missing"):
-        raise SystemExit("BLOCKED: exact candidate files and required official NGX provider identity are not both present")
+    if sha256_file(args.runtime) != expected.runtime_sha256:
+        raise SystemExit(f"BLOCKED: {args.profile} runtime identity does not match the pinned profile")
+    ini = args.runtime.with_name("dlssg_sm86.ini")
+    if expected.ini_sha256 and sha256_file(ini) != expected.ini_sha256:
+        raise SystemExit(f"BLOCKED: {args.profile} INI identity does not match the pinned profile")
+    if not policy_satisfied(official_id):
+        raise SystemExit("BLOCKED: required pinned NVIDIA 310.9.1 provider identity is not present")
+
     results = []
-    for multiplier in (2, 3, 4):
+    for multiplier in expected.multipliers:
         paths = {}
-        for label, motion_mode in (("external", MOTION_MODE_EXTERNAL_R16G16_FLOAT), ("nvof", MOTION_MODE_NVIDIA_OPTICAL_FLOW)):
-            print(f"START multiplier={multiplier} path={label}", flush=True)
+        for label, motion_mode in (
+            ("external", MOTION_MODE_EXTERNAL_R16G16_FLOAT),
+            ("nvof", MOTION_MODE_NVIDIA_OPTICAL_FLOW),
+        ):
+            print(f"START profile={args.profile} multiplier={multiplier} path={label}", flush=True)
             paths[label] = _run_one(args, multiplier, motion_mode)
-            print(f"PASS multiplier={multiplier} path={label}", flush=True)
+            print(f"PASS profile={args.profile} multiplier={multiplier} path={label}", flush=True)
         results.append({"multiplier": multiplier, "paths": paths})
-    report = current(runtime_path=args.runtime, ini_path=args.runtime.with_name("dlssg_sm86.ini"), official_identity=official_id, worker_path=args.worker)
-    report["motion_paths"] = {"external": "PASS", "nvof": "PASS"}
-    write_result(ATTESTATION_PATH, report, multipliers=[2, 3, 4], official_identity=official_id)
-    print(json.dumps({"status": "PASS", "results": results, "attestation": str(ATTESTATION_PATH)}, indent=2))
+
+    attestation = None
+    if args.profile == "candidate-0.3.1":
+        report = current(
+            runtime_path=args.runtime,
+            ini_path=ini,
+            official_identity=official_id,
+            worker_path=args.worker,
+        )
+        report["motion_paths"] = {"external": "PASS", "nvof": "PASS"}
+        write_result(
+            ATTESTATION_PATH,
+            report,
+            multipliers=list(expected.multipliers),
+            official_identity=official_id,
+        )
+        attestation = str(ATTESTATION_PATH)
+
+    print(
+        json.dumps(
+            {
+                "status": "PASS",
+                "profile": args.profile,
+                "results": results,
+                "attestation": attestation,
+            },
+            indent=2,
+        )
+    )
     return 0
 
 

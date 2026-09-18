@@ -10,6 +10,8 @@ BETA2_SHA256 = "F32F8D9586D3A3006D5E26549D9BAB74DD33E10326157D5AEE4620C9DD0006C8
 C55_SHA256 = "C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916"
 SR_HOST_SHA256 = "E23F3CD5BEB5E70001E9950C890027D46F84CEB4439A09CEA67E343AB34A34BB"
 SR_RUNTIME_SHA256 = "3975567B8943C53ACCE397F2B72380092F84F162D00B0D2C7D08A1025C563983"
+LEGACY_DLSSG_SHA256 = "C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2"
+LEGACY_DLSSG_INI_SHA256 = "FD7F0722194E6E8D8C085327D9826EFFB411925A69A5E7549D70EFF26A9F18B5"
 
 
 def test_public_release_bootstrap_manifest_is_exact_and_public():
@@ -36,9 +38,10 @@ def test_public_release_bootstrap_manifest_is_exact_and_public():
     assert sr.constraints["runtime_sha256"] == SR_RUNTIME_SHA256
 
 
-def test_dlssg_managed_components_have_public_pinned_sources():
+def test_dlssg_normal_runtime_is_the_validated_legacy_direct_host_pair():
     manager = RuntimeManager(MANIFEST, ROOT / "runtime")
     provider = manager.specs["dlssg-official-provider-310.9.1"]
+    legacy = manager.specs["dlssg-legacy-reference"]
     candidate = manager.specs["dlssg-sm86-0.3.1-candidate"]
 
     assert provider.policy == "UPSTREAM_DOWNLOAD"
@@ -47,33 +50,47 @@ def test_dlssg_managed_components_have_public_pinned_sources():
     assert provider.artifact_url and "NVIDIA-RTX/Streamline" in provider.artifact_url
     assert provider.constraints["provider_sha256"]
 
+    assert legacy.policy == "UPSTREAM_DOWNLOAD"
+    assert legacy.direct_user_download is True
+    assert legacy.required is True
+    assert legacy.destination == "dlssg/legacy"
+    assert legacy.constraints["compatibility_test_required"] is False
+    assert legacy.constraints["multipliers"] == [2, 3, 4]
+    legacy_files = {item.path: item for item in legacy.files}
+    assert legacy_files["version.dll"].sha256 == LEGACY_DLSSG_SHA256
+    assert legacy_files["version.dll"].size_bytes == 15_667_520
+    assert legacy_files["dlssg_sm86.ini"].sha256 == LEGACY_DLSSG_INI_SHA256
+    assert legacy_files["dlssg_sm86.ini"].size_bytes == 581
+    assert all("5f62ff44a9c08f9841fa605e7b7160f79ccd2c40" in item.url for item in legacy.files)
+
+    # The newer proxy-generation runtime remains available for explicit
+    # experimentation, but setup must not promote it over the validated path.
     assert candidate.policy == "UPSTREAM_DOWNLOAD"
     assert candidate.direct_user_download is True
     assert candidate.destination == "dlssg/candidate-0.3.1"
     assert candidate.constraints["compatibility_test_required"] is True
-    assert candidate.files
-    assert all(item.url and "github" in item.url for item in candidate.files)
 
 
-def test_setup_bootstraps_managed_resources_and_persists_canonical_paths():
+def test_setup_bootstraps_validated_dlssg_path_and_persists_canonical_paths():
     setup = (ROOT / "setup.bat").read_text(encoding="utf-8")
     for runtime_id in (
         "project-c55-worker-beta2",
         "project-dlss-sr-beta2",
         "dlssg-official-provider-310.9.1",
-        "dlssg-sm86-0.3.1-candidate",
+        "dlssg-legacy-reference",
     ):
         assert runtime_id in setup
     assert "tools\\manage_runtime.py install" in setup
-    assert "tools\\validate_dlssg_candidate.py" in setup
+    assert "tools\\validate_dlssg_candidate.py --profile legacy" in setup
     assert "tools\\check_dlss_sr_readiness.py --selftest" in setup
     assert "runtime\\dlssg\\worker\\dlssg_sm86_offline.exe" in setup
-    assert "runtime\\dlssg\\candidate-0.3.1\\version.dll" in setup
+    assert "runtime\\dlssg\\legacy\\version.dll" in setup
     assert "runtime\\dlssg\\official" in setup
     assert "DLSSG_WORKER_EXE" in setup
-    assert "DLSSG_RUNTIME_PROFILE=candidate-0.3.1" in setup
+    assert "DLSSG_RUNTIME_PROFILE=legacy" in setup
     assert "DLSSG_COMMUNITY_RUNTIME" in setup
     assert "DLSSG_OFFICIAL_RUNTIME_DIR" in setup
+    assert "manage_runtime.py install dlssg-sm86-0.3.1-candidate" not in setup
     assert "dlss-rtxsr-upscaler-resources" not in setup
 
 

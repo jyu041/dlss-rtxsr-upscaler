@@ -303,7 +303,7 @@ class DlssgWorker:
         if not process or not process.stdin or not process.stdout:
             raise DlssgWorkerProcessError("worker is not running")
         if process.poll() is not None:
-            tail = " | ".join(self._diagnostics[-5:])
+            tail = " | ".join(list(self._diagnostics)[-5:])
             raise DlssgWorkerProcessError(f"worker exited with code {process.returncode}: {tail}")
         return process
 
@@ -330,7 +330,7 @@ class DlssgWorker:
             "response_payload_bytes": payload_bytes,
         }
         if status not in allowed_statuses:
-            tail = " | ".join(self._diagnostics[-5:])
+            tail = " | ".join(list(self._diagnostics)[-5:])
             raise DlssgNativeError(status, command, tail)
         return response_payload
 
@@ -349,7 +349,7 @@ class DlssgWorker:
         header_seconds = time.perf_counter() - header_start
         status, response_bytes = _decode_response_header(response_header, COMMAND_PROCESS, request_id)
         if status not in allowed_statuses:
-            tail = " | ".join(self._diagnostics[-5:])
+            tail = " | ".join(list(self._diagnostics)[-5:])
             raise DlssgNativeError(status, COMMAND_PROCESS, tail)
         if response_bytes < PROCESS_RESPONSE.size:
             raise DlssgWorkerProtocolError("short PROCESS response")

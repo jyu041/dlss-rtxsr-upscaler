@@ -1,8 +1,19 @@
+from pathlib import Path
 from types import SimpleNamespace
+import subprocess
+import sys
+import threading
 
 import pytest
 
-from tools.validate_dlssg_candidate import validate_group, validate_reset
+import tools.validate_dlssg_candidate as validator
+from tools.validate_dlssg_candidate import (
+    VALIDATION_HEIGHT,
+    VALIDATION_WIDTH,
+    _drain_child_output,
+    validate_group,
+    validate_reset,
+)
 
 
 def result(count=1, outputs=None, disable=0, width=64, height=64, pixel_format=28, reset_only=False):
@@ -35,3 +46,90 @@ def test_group_rejects_disabled_or_bad_shape_format_and_bytes():
 def test_4x_requires_three_outputs():
     validate_group(result(count=3), 4, 64, 64)
     with pytest.raises(RuntimeError): validate_group(result(count=1), 4, 64, 64)
+
+
+def test_child_output_drainer_prevents_large_pipe_deadlock():
+    payload_lines = 5000
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            (
+                "for i in range(5000):\n"
+                "    print(f'{i:05d}:' + 'x' * 120, flush=True)\n"
+            ),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    assert process.stdout is not None
+    lines = []
+    reader = threading.Thread(
+        target=_drain_child_output,
+        args=(process.stdout, lines),
+        kwargs={"echo": False},
+        daemon=True,
+    )
+    reader.start()
+    assert process.wait(timeout=10) == 0
+    reader.join(timeout=5)
+    assert not reader.is_alive()
+    assert len(lines) == payload_lines
+    assert lines[0].startswith("00000:")
+    assert lines[-1].startswith("04999:")
+
+
+def test_validator_uses_preserved_256_square_contract():
+    assert VALIDATION_WIDTH == 256
+    assert VALIDATION_HEIGHT == 256
+
+
+def test_child_executes_proven_256_square_dimensions(monkeypatch):
+    created = {}
+
+    class FakeWorker:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def create(self, width, height, *, multiplier, motion_mode):
+            created["dimensions"] = (width, height)
+            created["multiplier"] = multiplier
+            created["motion_mode"] = motion_mode
+            return {}
+
+        def process(self, frame_id, color, motion=None, *, reset=False):
+            width = VALIDATION_WIDTH
+            height = VALIDATION_HEIGHT
+            if reset:
+                return result(
+                    count=0,
+                    outputs=[],
+                    width=width,
+                    height=height,
+                    reset_only=True,
+                )
+            return result(
+                count=1,
+                outputs=[b"x" * (width * height * 4)],
+                width=width,
+                height=height,
+            )
+
+    monkeypatch.setattr(validator, "DlssgWorker", FakeWorker)
+    assert validator._child(
+        Path("worker.exe"),
+        Path("version.dll"),
+        Path("official"),
+        "legacy",
+        2,
+        validator.MOTION_MODE_EXTERNAL_R16G16_FLOAT,
+    ) == 0
+    assert created["dimensions"] == (256, 256)
+    assert created["multiplier"] == 2

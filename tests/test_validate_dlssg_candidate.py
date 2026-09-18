@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 import subprocess
 import sys
@@ -5,6 +6,7 @@ import threading
 
 import pytest
 
+import tools.validate_dlssg_candidate as validator
 from tools.validate_dlssg_candidate import (
     VALIDATION_HEIGHT,
     VALIDATION_WIDTH,
@@ -81,3 +83,53 @@ def test_child_output_drainer_prevents_large_pipe_deadlock():
 def test_validator_uses_preserved_256_square_contract():
     assert VALIDATION_WIDTH == 256
     assert VALIDATION_HEIGHT == 256
+
+
+def test_child_executes_proven_256_square_dimensions(monkeypatch):
+    created = {}
+
+    class FakeWorker:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def create(self, width, height, *, multiplier, motion_mode):
+            created["dimensions"] = (width, height)
+            created["multiplier"] = multiplier
+            created["motion_mode"] = motion_mode
+            return {}
+
+        def process(self, frame_id, color, motion=None, *, reset=False):
+            width = VALIDATION_WIDTH
+            height = VALIDATION_HEIGHT
+            if reset:
+                return result(
+                    count=0,
+                    outputs=[],
+                    width=width,
+                    height=height,
+                    reset_only=True,
+                )
+            return result(
+                count=1,
+                outputs=[b"x" * (width * height * 4)],
+                width=width,
+                height=height,
+            )
+
+    monkeypatch.setattr(validator, "DlssgWorker", FakeWorker)
+    assert validator._child(
+        Path("worker.exe"),
+        Path("version.dll"),
+        Path("official"),
+        "legacy",
+        2,
+        validator.MOTION_MODE_EXTERNAL_R16G16_FLOAT,
+    ) == 0
+    assert created["dimensions"] == (256, 256)
+    assert created["multiplier"] == 2

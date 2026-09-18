@@ -108,6 +108,12 @@ def test_nvof_gpu_timestamp_is_labeled_as_cross_engine_bracket():
     assert "stage=nvof_execute" not in worker
 
 
+def test_instrumented_timing_switch_is_child_only():
+    validator = (ROOT / "tools" / "validate_dlssg_candidate.py").read_text(encoding="utf-8")
+    assert 'if args.instrumented_timing and not args.child:' in validator
+    assert '--instrumented-timing is reserved for bounded child validation' in validator
+
+
 def test_dlssg_gpu_timestamp_instrumentation_is_explicit_opt_in_and_protocol_v4():
     source = (ROOT / "native" / "dlssg_sm86_offline" / "community_run2x.cpp").read_text(encoding="utf-8")
     protocol = (ROOT / "native" / "dlssg_sm86_offline" / "worker_protocol.h").read_text(encoding="utf-8")

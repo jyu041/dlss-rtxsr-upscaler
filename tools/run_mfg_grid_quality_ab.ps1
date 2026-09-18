@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory=$true)]
-    [string]$Input,
+    [Alias('Input')]
+    [string]$InputPath,
     [ValidateSet(2,4)]
     [int]$Multiplier = 2,
     [ValidateRange(1,24)]
@@ -15,7 +16,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$inputPath = (Resolve-Path -LiteralPath $Input).Path
+$inputPath = (Resolve-Path -LiteralPath $InputPath).Path
 $build = Join-Path $PSScriptRoot 'build_validate_dlssg_instrumented.ps1'
 $worker = Join-Path $root 'native\dlssg_sm86_offline\bin-instrumented\dlssg_sm86_offline.exe'
 $runtime = Join-Path $root 'runtime\dlssg\legacy\version.dll'

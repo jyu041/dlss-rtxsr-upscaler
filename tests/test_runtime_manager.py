@@ -259,3 +259,23 @@ def test_candidate_install_is_files_verified_but_validation_required(tmp_path):
     assert manager.inspect("demo")[1].value == "VALIDATION_REQUIRED"
     result = manager.verify("demo")
     assert result["ok"] is True and result["files_verified"] is True and result["backend_ready"] is False
+
+
+def test_manifest_loads_dlss5_v10_static_candidate():
+    manager = RuntimeManager(Path("src/runtime_manager/manifest.json"), Path("runtime"))
+    candidate = manager.specs["dlss5-neuroframe-v10-static-candidate"]
+    assert candidate.version == "v10.0-7781107b"
+    assert candidate.sha256 == "394BED6FBB3CCA1A994AE02A0A1152213D43030D6761437F86ABAA863C33D515"
+    assert candidate.size_bytes == 690203043
+    assert candidate.channel == "candidate-static-only"
+    assert candidate.redistributable is False
+    assert candidate.direct_user_download is True
+    assert candidate.destination == "dlss5/neuroframe-v10-candidate"
+    assert candidate.allowlist == (
+        "bin/runtime/dlssnr/nvngx_dlssnr.dll",
+        "bin/runtime/dlssnr/neuroframe_engine_neural_rendering.dll",
+        "bin/runtime/dlssnr/neuroframe_caller.dll",
+    )
+    assert candidate.constraints["static_only"] is True
+    assert candidate.constraints["feature_id_observed"] == 18
+    assert candidate.constraints["native_output_scaling_unverified"] is True

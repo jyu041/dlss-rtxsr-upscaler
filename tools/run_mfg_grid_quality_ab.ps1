@@ -22,6 +22,20 @@ $worker = Join-Path $root 'native\dlssg_sm86_offline\bin-instrumented\dlssg_sm86
 $runtime = Join-Path $root 'runtime\dlssg\legacy\version.dll'
 $official = Join-Path $root 'runtime\dlssg\official'
 $quality = Join-Path $PSScriptRoot 'capture_mfg_grid_quality_ab.py'
+$python = Get-Command python -ErrorAction Stop
+
+$preflightArgs = @(
+    $quality,
+    '--input', $inputPath,
+    '--multiplier', $Multiplier,
+    '--groups', $Groups,
+    '--start-frame', $StartFrame,
+    '--preflight-only'
+)
+& $python.Source @preflightArgs
+if ($LASTEXITCODE -ne 0) {
+    throw "MFG grid quality input preflight failed: $LASTEXITCODE"
+}
 
 $buildArgs = @{
     NgxSdk = $NgxSdk
@@ -34,7 +48,6 @@ if ($LASTEXITCODE -ne 0) {
     throw "Instrumented worker build/selftest failed: $LASTEXITCODE"
 }
 
-$python = Get-Command python -ErrorAction Stop
 $qualityArgs = @(
     $quality,
     '--input', $inputPath,

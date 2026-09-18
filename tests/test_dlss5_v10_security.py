@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -6,8 +7,12 @@ import src.backends.dlss5_v10_security as security
 from src.backends.dlss5_v10_static import V10StaticStatus
 
 
-def _report(destination):
+NOW = datetime(2026, 9, 18, 12, 0, tzinfo=timezone.utc)
+
+
+def _report(destination, *, timestamp=NOW):
     return {
+        "timestamp_utc": timestamp.isoformat(),
         "native_executed": False,
         "approved_for_normal_backend": False,
         "hardware_test_ready": True,
@@ -36,7 +41,7 @@ def test_v10_preflight_security_gate_accepts_matching_clean_report(monkeypatch, 
         ),
     )
 
-    report = security.validate_preflight_report(runtime, report_path)
+    report = security.validate_preflight_report(runtime, report_path, now=NOW)
     assert report["hardware_test_ready"] is True
 
 
@@ -67,8 +72,44 @@ def test_v10_preflight_security_gate_rejects_policy_changes(
     )
 
     with pytest.raises(RuntimeError, match=message):
-        security.validate_preflight_report(runtime, report_path)
+        security.validate_preflight_report(runtime, report_path, now=NOW)
 
+
+
+def test_v10_preflight_security_gate_rejects_stale_defender_report(monkeypatch, tmp_path):
+    destination = tmp_path / "candidate"
+    runtime = destination / "bin" / "runtime" / "dlssnr"
+    runtime.mkdir(parents=True)
+    report_path = tmp_path / "report.json"
+    stale = _report(destination, timestamp=NOW - timedelta(hours=25))
+    report_path.write_text(json.dumps(stale), encoding="utf-8")
+    monkeypatch.setattr(
+        security,
+        "inspect_v10_runtime",
+        lambda path: V10StaticStatus(
+            "STATIC_AUDIT_COMPLETE", True, False, "pass", {}
+        ),
+    )
+    with pytest.raises(RuntimeError, match="Defender preflight is stale"):
+        security.validate_preflight_report(runtime, report_path, now=NOW)
+
+
+def test_v10_preflight_security_gate_rejects_future_timestamp(monkeypatch, tmp_path):
+    destination = tmp_path / "candidate"
+    runtime = destination / "bin" / "runtime" / "dlssnr"
+    runtime.mkdir(parents=True)
+    report_path = tmp_path / "report.json"
+    future = _report(destination, timestamp=NOW + timedelta(minutes=6))
+    report_path.write_text(json.dumps(future), encoding="utf-8")
+    monkeypatch.setattr(
+        security,
+        "inspect_v10_runtime",
+        lambda path: V10StaticStatus(
+            "STATIC_AUDIT_COMPLETE", True, False, "pass", {}
+        ),
+    )
+    with pytest.raises(RuntimeError, match="unexpectedly in the future"):
+        security.validate_preflight_report(runtime, report_path, now=NOW)
 
 def test_v10_preflight_security_gate_rejects_runtime_path_mismatch(monkeypatch, tmp_path):
     destination = tmp_path / "candidate"
@@ -87,7 +128,7 @@ def test_v10_preflight_security_gate_rejects_runtime_path_mismatch(monkeypatch, 
     )
 
     with pytest.raises(RuntimeError, match="does not match preflight destination"):
-        security.validate_preflight_report(other, report_path)
+        security.validate_preflight_report(other, report_path, now=NOW)
 
 
 def test_v10_preflight_security_gate_rechecks_current_identity(monkeypatch, tmp_path):
@@ -105,4 +146,4 @@ def test_v10_preflight_security_gate_rechecks_current_identity(monkeypatch, tmp_
     )
 
     with pytest.raises(RuntimeError, match="changed after preflight"):
-        security.validate_preflight_report(runtime, report_path)
+        security.validate_preflight_report(runtime, report_path, now=NOW)

@@ -17,6 +17,7 @@ import tempfile
 import time
 
 import numpy as np
+import psutil
 
 from src.backends.dlss5_metrics import effect_metrics, effect_observed
 from src.backends.dlss5_v10_client import EXPERIMENT_ACK, V10ProtocolClient
@@ -121,6 +122,38 @@ def remove_temporary_firewall_block(rule_name: str) -> None:
     _run_elevated_script(script)
 
 
+def assert_no_host_descendants(pid: int | None, stage: str) -> dict[str, object]:
+    if pid is None:
+        raise RuntimeError(f"v10 host PID unavailable at {stage}")
+    try:
+        root = psutil.Process(pid)
+        descendants = [
+            process
+            for process in root.children(recursive=True)
+            if process.is_running()
+        ]
+    except (psutil.Error, OSError) as exc:
+        raise RuntimeError(f"could not inspect v10 host process tree at {stage}: {exc}") from exc
+    evidence = {
+        "stage": stage,
+        "host_pid": pid,
+        "descendant_count": len(descendants),
+        "descendants": [
+            {
+                "pid": process.pid,
+                "name": process.name(),
+            }
+            for process in descendants
+        ],
+    }
+    if descendants:
+        raise RuntimeError(
+            f"unexpected child process spawned by v10 host at {stage}: "
+            + ", ".join(f"{item['name']}({item['pid']})" for item in evidence["descendants"])
+        )
+    return evidence
+
+
 def synthetic_frame() -> np.ndarray:
     width = height = 256
     y, x = np.mgrid[0:height, 0:width]
@@ -139,7 +172,7 @@ def run_bounded(
     *,
     gpu_ordinal: int,
 ) -> dict[str, object]:
-    validate_preflight_report(runtime, preflight)
+    preflight_evidence = validate_preflight_report(runtime, preflight)
     python = Path(sys.executable).resolve()
     rule_name = f"NVE DLSS5 v10 bounded test {__import__('os').getpid()}"
     firewall_installed = False
@@ -158,12 +191,15 @@ def run_bounded(
         "normal_backend_changed": False,
         "runtime": str(runtime.resolve()),
         "preflight": str(preflight.resolve()),
+        "preflight_age_seconds": preflight_evidence.get("preflight_age_seconds"),
+        "defender": preflight_evidence.get("malware_scan"),
         "python": str(python),
         "gpu_ordinal": gpu_ordinal,
         "dimensions": [256, 256],
         "processing_scale": 1.0,
         "frame_count": 1,
         "firewall_rule": rule_name,
+        "process_tree_checks": [],
     }
 
     try:
@@ -177,6 +213,9 @@ def run_bounded(
             acknowledgement=EXPERIMENT_ACK,
         )
         report["hello"] = hello
+        report["process_tree_checks"].append(
+            assert_no_host_descendants(client.pid, "after_hello")
+        )
 
         create = client.create(
             CreateRequest(
@@ -201,9 +240,23 @@ def run_bounded(
         )
         report["create"] = create
         report["native_executed"] = bool(create.get("native_loaded") is True)
+        report["process_tree_checks"].append(
+            assert_no_host_descendants(client.pid, "after_create")
+        )
 
         initialization = create.get("initialization", {})
         gpu_name = str(initialization.get("gpu_name", ""))
+        bridge_abi_version = initialization.get("bridge_abi_version")
+        initialized_gpu_ordinal = initialization.get("gpu_ordinal")
+        if bridge_abi_version != 6:
+            raise RuntimeError(
+                f"bounded v10 milestone requires bridge ABI 6, got {bridge_abi_version!r}"
+            )
+        if initialized_gpu_ordinal != gpu_ordinal:
+            raise RuntimeError(
+                f"bounded v10 GPU ordinal mismatch requested={gpu_ordinal} "
+                f"initialized={initialized_gpu_ordinal!r}"
+            )
         if "RTX 3070" not in gpu_name:
             raise RuntimeError(
                 f"bounded v10 milestone requires the RTX 3070/3070 Ti path, got {gpu_name!r}"
@@ -215,6 +268,9 @@ def run_bounded(
             FrameRequest(timestamp=0, reset=True, rgba=source.tobytes())
         )
         report["frame_roundtrip_seconds"] = time.perf_counter() - frame_started
+        report["process_tree_checks"].append(
+            assert_no_host_descendants(client.pid, "after_frame")
+        )
         report["feature_evidence"] = {
             "ngx_create_result": output.ngx_create_result,
             "ngx_evaluate_result": output.ngx_evaluate_result,
@@ -236,6 +292,8 @@ def run_bounded(
             )
 
         report["close"] = client.close()
+        if report["close"] != "CLOSED":
+            raise RuntimeError(f"bounded v10 host did not close cleanly: {report['close']}")
         report["status"] = "PASS"
         return report
     except BaseException as exc:
@@ -255,6 +313,11 @@ def run_bounded(
             except Exception as exc:
                 report["firewall_removed"] = False
                 report["firewall_remove_error"] = str(exc)
+                report["status"] = "FAIL"
+                report.setdefault(
+                    "error",
+                    "bounded v10 firewall cleanup failed; remove the temporary rule manually",
+                )
 
 
 def build_parser() -> argparse.ArgumentParser:

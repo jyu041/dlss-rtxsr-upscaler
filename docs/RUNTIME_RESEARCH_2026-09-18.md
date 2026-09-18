@@ -127,21 +127,28 @@ The process-lifetime NGX policy is important for our adapter design: v10 must
 not be dropped into the existing v3 lifecycle and assumed to have identical
 shutdown semantics.
 
-### What v10 does *not* prove yet
+### v10 processing scale is now statically understood
 
-The application exposes processing scales from 25% through 200%, but that must
-not be described as proof that Feature 18 itself performs native >1.0x NGX
-output on Ampere.
+The v10 source explicitly states that Feature 18 is evaluated at the final
+Neural Rendering dimensions. Scale factors below 1.0 are Lanczos-downscaled
+**before** Feature 18; scale factors above 1.0 (125%, 150%, 175%, 200%) are
+Lanczos-upscaled **before** Feature 18.
 
-The current RTX 3070 Ti v3 evidence still stands:
+Therefore the v10 125-200% controls are **not** evidence that Feature 18 exposes
+a native >1.0x NGX output-scale mode on Ampere. They are a pre-resize plus
+Neural Rendering workflow: the source image is first resized to the requested
+final neural dimensions, then Feature 18 evaluates at that size.
+
+This is still potentially useful for the project because a 2x final image could
+be produced through conventional pre-upscale followed by Neural Rendering, but
+it is architecturally different from the v3 higher-output-scale attempts that
+returned NGX `InvalidParameter (0xBAD00005)`.
+
+The current RTX 3070 Ti v3 evidence therefore still stands unchanged:
 
 - 1.0x Feature-18 execution: validated.
-- higher v3 output scales: reproducible NGX
+- higher native v3 output scales: reproducible NGX
   `InvalidParameter (0xBAD00005)` / native fallback.
-
-For v10, the project must separately determine the Feature-18 render dimensions,
-final composition dimensions, and any later resize/SR stage before making a
-claim about true Neural Rendering output scaling.
 
 ### v10 security and licensing gate
 

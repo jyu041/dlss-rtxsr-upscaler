@@ -87,12 +87,14 @@ def _child(
     motion_mode: int,
     *,
     instrumented_timing: bool = False,
+    width: int = VALIDATION_WIDTH,
+    height: int = VALIDATION_HEIGHT,
 ) -> int:
-    # Match the preserved bounded MFG validation contract. The community
-    # runtime has proven Create/Evaluate at 256x256 and practical video
-    # resolutions; 64x64 reaches CreateFeature but returns InvalidParameter.
-    width = VALIDATION_WIDTH
-    height = VALIDATION_HEIGHT
+    # Normal validation remains fixed at 256x256. Explicit child-only
+    # instrumented timing may supply practical video geometry after the bounded
+    # 256x256 gate has passed.
+    if width < 256 or height < 256 or width > 1920 or height > 1080:
+        raise RuntimeError(f"instrumented validation geometry is out of bounds: {width}x{height}")
     frames = [_frame(width, height, frame_id) for frame_id in range(3)]
     reset_motion = bytes(width * height * 4)
     motion = b"".join(struct.pack("<ee", 1.0, 0.0) for _ in range(width * height))
@@ -296,6 +298,8 @@ def main() -> int:
     parser.add_argument("--multiplier", type=int)
     parser.add_argument("--motion-mode", type=int, default=MOTION_MODE_EXTERNAL_R16G16_FLOAT)
     parser.add_argument("--instrumented-timing", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--width", type=int, default=VALIDATION_WIDTH, help=argparse.SUPPRESS)
+    parser.add_argument("--height", type=int, default=VALIDATION_HEIGHT, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.runtime is None:
         args.runtime = managed_runtime_paths(ROOT, args.profile)[0]
@@ -305,6 +309,10 @@ def main() -> int:
 
     if args.instrumented_timing and not args.child:
         raise SystemExit("BLOCKED: --instrumented-timing is reserved for bounded child validation")
+    if not args.child and (args.width != VALIDATION_WIDTH or args.height != VALIDATION_HEIGHT):
+        raise SystemExit("BLOCKED: practical geometry is reserved for instrumented child validation")
+    if args.child and not args.instrumented_timing and (args.width != VALIDATION_WIDTH or args.height != VALIDATION_HEIGHT):
+        raise SystemExit("BLOCKED: non-default child geometry requires --instrumented-timing")
 
     if args.child:
         return _child(
@@ -315,6 +323,8 @@ def main() -> int:
             args.multiplier,
             args.motion_mode,
             instrumented_timing=args.instrumented_timing,
+            width=args.width,
+            height=args.height,
         )
 
     expected = profile(args.profile)

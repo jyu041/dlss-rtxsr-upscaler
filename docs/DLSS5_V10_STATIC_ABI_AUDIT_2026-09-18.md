@@ -151,6 +151,25 @@ The runtime candidate auditor now applies this automatically to extracted
 `.dll` and `.exe` files. This lets us inspect likely networking/process
 dependencies and ABI exports without `LoadLibrary`.
 
+## Static networking / process-boundary review
+
+The source-level Python bridge binding at the pinned v10 commit imports
+`ctypes`, `contextlib`, `json`, `threading`, `time`, NumPy, path helpers,
+and the NGX runtime lock. It contains no direct `subprocess`, `socket`,
+`urllib`, `requests`, HTTP, `CreateProcess`, or `ShellExecute` references.
+
+This is intentionally a **narrow bridge-source observation**. The Visual
+Enhancer application as a whole includes legitimate process/network features
+for FFmpeg, Live mode, source resolution, desktop integration, and media
+handling. Those application-level features must not be attributed to the
+Neural Rendering DLLs without binary evidence.
+
+The project PE reader now records both imported DLL names and imported
+functions/ordinals. The v10 static inspector flags direct networking or
+process-launch imports as `STATIC_REVIEW_REQUIRED` even after exact hashes and
+ABI checks pass. Absence of such direct imports is useful evidence but is not a
+proof of no dynamic API resolution or runtime networking.
+
 ## Remaining static blocker
 
 The authentic v10 release archive is pinned at archive level, but this

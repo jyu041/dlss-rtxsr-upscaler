@@ -64,6 +64,8 @@ The project currently requires static evidence for these v10 bridge exports:
 - `dlss5nr_rebind`
 - `dlss5nr_process_v6`
 - `dlss5nr_process_cuda_v6`
+- `dlss5nr_cuda_supported`
+- `dlss5nr_cuda_status`
 - `dlss5nr_process_frame_v6`
 - `dlss5nr_temporal_status`
 - `dlss5nr_scene_score_v1`
@@ -75,8 +77,21 @@ The project currently requires static evidence for these v10 bridge exports:
 `dlss5nr_release_session` is treated as optional because upstream resolves it
 with `getattr`.
 
-This list is an observed upstream application contract, not an NVIDIA public
-API claim.
+This list is the **minimal ABI-6 surface required by the project's proposed
+adapter**, derived from the upstream ctypes binding. Upstream also binds legacy
+entry points for compatibility; those older entry points are not required by
+the proposed ABI-6-only adapter. This is not an NVIDIA public API claim.
+
+The project now records the exact symbolic argument/return signatures for every
+required entry point in `EXPORT_SIGNATURES`. In particular:
+
+- `dlss5nr_init(int, wchar*, char*, int) -> int`
+- `dlss5nr_process_v6(float*, float*, int, int, RenderParametersV6*, char*, int) -> int`
+- `dlss5nr_process_cuda_v6(uint64, uint64, int, int, uint64, RenderParametersV6*, char*, int) -> int`
+- `dlss5nr_process_frame_v6(FrameDescriptorV1*, FrameDescriptorV1*, RenderParametersV6*, FrameResultV1*, char*, int) -> int`
+
+The CUDA capability/status exports are also mandatory because the upstream
+binding resolves them directly rather than via an optional `getattr`.
 
 ## Lifetime semantics
 

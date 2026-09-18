@@ -90,7 +90,9 @@ This makes the reporting path backward-compatible.
 
 The native worker source is compiled by
 `native/dlssg_sm86_offline/build.ps1` against the separately staged NVIDIA
-DLSS, NVAPI, and Optical Flow SDK inputs.
+DLSS, NVAPI, and Optical Flow SDK inputs. On this research branch the build
+script defaults to `bin-instrumented`, not the validated `bin` directory, so
+a development timing build cannot silently overwrite the pinned C55 worker.
 
 GitHub ordinary CI intentionally does not possess those SDK inputs, so this
 branch can statically test protocol/default invariants and Python parsing but

@@ -93,6 +93,90 @@ Reserved commands:
 The protocol is transport scaffolding only. It does not yet define a native
 frame-memory implementation.
 
+## Protocol v1 payload contract
+
+The first protocol generation is intentionally narrow: **host-memory RGBA8
+only**. CUDA/NV12/P010 transport remains outside this milestone even though the
+upstream bridge ABI can represent those formats.
+
+CREATE is a canonical JSON object containing:
+
+- input width and height;
+- one exact upstream processing scale:
+  `0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0`;
+- style `0/1/2` = Default/Natural/Cinematic;
+- ABI-6 Neural Rendering controls:
+  intensity, NR passes, tone, structure, skin, color strength, tone
+  preservation, face/skin protection, grain preservation, shimmer suppression;
+- automatic-mask and NVOF-preference flags;
+- literal transport declarations `memory_type=host` and
+  `pixel_format=rgba8`.
+
+The control limits are copied from the pinned upstream v10 validation logic:
+
+- intensity/tone/structure: 0..2;
+- skin structure: -1..2;
+- color/tone-preservation/face-protection/grain/shimmer: 0..1;
+- NR passes: integer 1..4.
+
+Output geometry uses upstream's nearest-even rule after Lanczos pre-resize and
+must remain at least 64×64 and within the 7680×4320 long/short-edge boundary.
+
+FRAME payload is binary:
+
+```text
+int64 timestamp
+uint8 reset
+7 bytes reserved
+width * height * 4 bytes tightly-packed RGBA8
+```
+
+OUTPUT payload begins with:
+
+```text
+uint32 width
+uint32 height
+int64  timestamp
+int32  ngx_create_result
+int32  ngx_evaluate_result
+int32  cuda_result
+int32  scene_reset
+float  scene_score
+uint64 upload_bytes
+uint64 download_bytes
+```
+
+and is followed by exactly `width * height * 4` RGBA8 bytes.
+
+This retains the Feature-18 result codes needed to distinguish successful
+Neural Rendering from fallback/error behavior.
+
+## Request ordering and poison semantics
+
+The child HELLO message reserves request ID 0. Parent requests begin at 1:
+
+1. exactly one CREATE;
+2. zero or more consecutive FRAME requests;
+3. one CLOSE.
+
+Request IDs must be strictly consecutive. CREATE after CREATE, FRAME before
+CREATE, repeated CLOSE, skipped IDs, truncated messages, invalid reset flags,
+unknown commands, and payloads above the 64 MiB protocol limit are rejected.
+
+Any future native timeout or native/ABI error poisons the process session.
+After poison, no additional CREATE/FRAME request may be accepted. CLOSE remains
+available as a terminal parent-side protocol action, after which the parent owns
+process termination if the child fails to exit within the bounded grace period.
+
+Current constants are deliberately conservative:
+
+- host start timeout: 15 s;
+- frame timeout: 30 s;
+- close grace: 1 s.
+
+These are contract values only at this milestone; the host still cannot execute
+a v10 DLL.
+
 ## Intended execution architecture
 
 The later execution milestone should keep all of these inside one owned child:

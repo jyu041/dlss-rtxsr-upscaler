@@ -44,8 +44,21 @@ if (-not (Test-Path -LiteralPath $worker -PathType Leaf)) {
     throw "Instrumented worker not produced: $worker"
 }
 
-$selftestOutput = & $worker --selftest 2>&1
-$selftestCode = $LASTEXITCODE
+# Windows PowerShell 5.1 wraps native stderr as ErrorRecord objects and, with
+# $ErrorActionPreference='Stop', can terminate on an otherwise-successful
+# diagnostic trace. The worker intentionally writes its self-test stages to
+# stderr, so capture both streams through Start-Process and judge success from
+# the real process exit code plus the required completion marker.
+$selftestStdout = Join-Path $output 'selftest.stdout.txt'
+$selftestStderr = Join-Path $output 'selftest.stderr.txt'
+Remove-Item -LiteralPath $selftestStdout,$selftestStderr -Force -ErrorAction SilentlyContinue
+$selftestProcess = Start-Process -FilePath $worker -ArgumentList '--selftest' -NoNewWindow -Wait -PassThru `
+    -RedirectStandardOutput $selftestStdout -RedirectStandardError $selftestStderr
+$selftestCode = $selftestProcess.ExitCode
+$selftestOutput = @()
+if (Test-Path -LiteralPath $selftestStdout) { $selftestOutput += @(Get-Content -LiteralPath $selftestStdout) }
+if (Test-Path -LiteralPath $selftestStderr) { $selftestOutput += @(Get-Content -LiteralPath $selftestStderr) }
+Remove-Item -LiteralPath $selftestStdout,$selftestStderr -Force -ErrorAction SilentlyContinue
 if ($selftestCode -ne 0 -or (($selftestOutput -join "\n") -notmatch 'SELFTEST_COMPLETE')) {
     throw "Instrumented worker selftest failed ($selftestCode): $($selftestOutput -join ' | ')"
 }

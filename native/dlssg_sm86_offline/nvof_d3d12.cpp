@@ -33,6 +33,12 @@ bool DiagnosticLoggingEnabled() {
     return enabled;
 }
 
+bool GpuTimestampEnabled() {
+    char value[8]{};
+    return GetEnvironmentVariableA("DLSSG_GPU_TIMESTAMPS", value, sizeof(value)) != 0 &&
+        std::strcmp(value, "1") == 0;
+}
+
 bool IsVerboseDiagnosticMarker(const char *format) {
     return std::strncmp(format, "NVOF_STAGE_", 11) == 0 ||
         std::strncmp(format, "NVOF_SEED_", 10) == 0 ||
@@ -444,7 +450,7 @@ bool NvofD3D12::Initialize(ID3D12Device *device, ID3D12CommandQueue *queue, uint
     state.eventHandle = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     if (!state.eventHandle) return false;
 
-    if (DiagnosticLoggingEnabled()) {
+    if (GpuTimestampEnabled()) {
         D3D12_QUERY_HEAP_DESC timingDesc{};
         timingDesc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
         timingDesc.Count = 3;

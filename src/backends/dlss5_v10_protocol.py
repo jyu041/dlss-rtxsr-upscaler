@@ -15,7 +15,7 @@ from typing import BinaryIO
 
 MAGIC = b"NR10"
 PROTOCOL_VERSION = 1
-MAX_PAYLOAD = 64 * 1024 * 1024
+MAX_PAYLOAD = 128 * 1024 * 1024
 
 HELLO = 1
 CREATE = 2

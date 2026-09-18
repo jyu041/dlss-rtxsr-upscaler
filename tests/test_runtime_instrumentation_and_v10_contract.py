@@ -189,3 +189,4 @@ def test_nvof_coarse_grid_is_explicit_opt_in_and_dense_default_is_preserved():
     assert 'uint grid = max(gridSize, 1u);' in shader
     assert 'uint2 source = id.xy / grid;' in shader
     assert '"DLSSG_NVOF_OUTPUT_GRID": str(nvof_output_grid)' in validator
+    assert 'expected_grid_marker = f"NVOF_OUTPUT_GRID_SELECTED={nvof_output_grid} "' in validator

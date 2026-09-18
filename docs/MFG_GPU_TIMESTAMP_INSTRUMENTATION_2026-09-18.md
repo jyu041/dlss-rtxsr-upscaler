@@ -403,3 +403,43 @@ powershell -ExecutionPolicy Bypass -File .\tools\build_validate_dlssg_instrument
 The corrected evidence filename is:
 
 `runtime/audit/mfg-instrumented-practical-grid-ab-validation.json`
+
+## Controlled same-run 1x1 versus 4x4 NVOF result
+
+The same-invocation eight-frame-per-cell A/B matrix completed successfully on
+the RTX 3070 Ti. The experiment used the same instrumented worker build for
+both grid modes and preserved the pinned legacy runtime/provider identities.
+
+Experimental worker SHA-256:
+
+`534937A896E511F3CA6FD23AEB8CA3BFB147F2C31AE7D2861902DE2141F22663`
+
+NVOF bracket medians:
+
+| Geometry | Multiplier | Grid 1 | Grid 4 | Reduction |
+| --- | ---: | ---: | ---: | ---: |
+| 1280x720 | 2X | 7.074 ms | 1.832 ms | 74.1% |
+| 1280x720 | 4X | 7.062 ms | 1.976 ms | 72.0% |
+| 1920x1080 | 2X | 13.551 ms | 2.771 ms | 79.6% |
+| 1920x1080 | 4X | 13.653 ms | 3.284 ms | 75.9% |
+
+The paired DLSS-G `group_total` medians stayed effectively unchanged between
+grid modes:
+
+- 720p 2X: 1.577 ms (grid 1) versus 1.573 ms (grid 4);
+- 720p 4X: 3.486 ms versus 3.509 ms;
+- 1080p 2X: 2.353 ms versus 2.344 ms;
+- 1080p 4X: 4.576 ms versus 4.640 ms.
+
+The flow-conversion stage also became cheaper because the coarse source texture
+contains 1/16 as many vectors before dense expansion:
+
+- 720p: ~0.0358 ms (grid 1) versus ~0.0174 ms (grid 4);
+- 1080p: ~0.066 ms versus ~0.0266 ms.
+
+This same-run result removes the earlier cross-run GPU-state confounder and
+establishes 4x4 as the current MFG NVOF performance candidate.
+
+It does **not** establish acceptable image quality. The next gate is withheld
+real-frame quality A/B using the exact same source anchors for grid 1 and grid
+4. No production/default setting changes at this stage.

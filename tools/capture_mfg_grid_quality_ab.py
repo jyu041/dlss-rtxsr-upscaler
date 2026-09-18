@@ -294,6 +294,11 @@ def _paired_quality(grid1: dict[str, object], grid4: dict[str, object]) -> dict[
     return {"samples": rows, "wins": wins}
 
 
+def evidence_root(base_output: Path, input_path: Path, input_sha: str, multiplier: int) -> Path:
+    source_tag = f"{input_path.stem[:32]}-{input_sha[:12]}"
+    return base_output.expanduser().resolve() / source_tag / f"{multiplier}x"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=Path, required=True)
@@ -316,9 +321,7 @@ def main() -> int:
     input_sha = sha256_file(input_path)
     required_frames = args.groups * args.multiplier + 1
     frames, fps = decode_source(input_path, required_frames)
-    base_output = args.output_dir.expanduser().resolve()
-    source_tag = f"{input_path.stem[:32]}-{input_sha[:12]}"
-    output_root = base_output / source_tag / f"{args.multiplier}x"
+    output_root = evidence_root(args.output_dir, input_path, input_sha, args.multiplier)
     output_root.mkdir(parents=True, exist_ok=True)
 
     reports: dict[str, dict[str, object]] = {}

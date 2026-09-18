@@ -7,12 +7,14 @@ param(
     [string]$Evidence = "$PSScriptRoot\..\runtime\audit\mfg-instrumented-validation.json",
     [string]$PracticalEvidence = "$PSScriptRoot\..\runtime\audit\mfg-instrumented-practical-validation.json",
     [switch]$Validate256,
-    [switch]$ValidatePractical
+    [switch]$ValidatePractical,
+    [switch]$ValidatePracticalGrid4
 )
 
 $ErrorActionPreference = 'Stop'
-if ($Validate256 -and $ValidatePractical) {
-    throw 'Choose only one GPU validation matrix: -Validate256 or -ValidatePractical.'
+$matrixSwitches = @($Validate256, $ValidatePractical, $ValidatePracticalGrid4) | Where-Object { $_ }
+if ($matrixSwitches.Count -gt 1) {
+    throw 'Choose only one GPU validation matrix: -Validate256, -ValidatePractical, or -ValidatePracticalGrid4.'
 }
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $native = Join-Path $root 'native\dlssg_sm86_offline'
@@ -77,14 +79,17 @@ Write-Host "BUILD_PASS worker=$worker"
 Write-Host "WORKER_SHA256=$workerHash"
 Write-Host 'SELFTEST_PASS'
 
-if (-not $Validate256 -and -not $ValidatePractical) {
-    Write-Host 'GPU_VALIDATION_SKIPPED: pass -Validate256 for the bounded 256x256 gate or -ValidatePractical for the 720p/1080p timing matrix.'
+if (-not $Validate256 -and -not $ValidatePractical -and -not $ValidatePracticalGrid4) {
+    Write-Host 'GPU_VALIDATION_SKIPPED: pass -Validate256, -ValidatePractical, or -ValidatePracticalGrid4 explicitly.'
     exit 0
 }
 
 $python = Get-Command python -ErrorAction Stop
 $validator = Join-Path $root 'tools\validate_dlssg_instrumented.py'
-if ($ValidatePractical) {
+if ($ValidatePracticalGrid4) {
+    $matrix = 'practical-grid4'
+    $validationEvidence = [IO.Path]::ChangeExtension($PracticalEvidence, $null) + '-grid4.json'
+} elseif ($ValidatePractical) {
     $matrix = 'practical'
     $validationEvidence = $PracticalEvidence
 } else {

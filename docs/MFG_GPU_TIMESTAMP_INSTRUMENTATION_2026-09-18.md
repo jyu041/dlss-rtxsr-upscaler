@@ -133,3 +133,8 @@ which refuses the production C55 hash and accepts only an executable under
 external-motion/NVOF at 256x256.
 
 The normal `tools/validate_dlssg_candidate.py` C55 identity gate is unchanged.
+
+
+The isolated validator is intentionally **not** wired into normal setup or
+startup. It is a developer evidence tool only. The standard C55 validator still
+requires the exact pinned production worker hash.

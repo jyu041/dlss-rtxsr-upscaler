@@ -30,7 +30,7 @@ from src.backends.dlssg_worker import (  # noqa: E402
     DlssgWorker,
     MOTION_MODE_NVIDIA_OPTICAL_FLOW,
 )
-from src.core.mfg_quality import withheld_groups  # noqa: E402
+from src.core.mfg_quality import temporal_delta_metrics, withheld_groups  # noqa: E402
 from tools.score_mfg_withheld import score_manifest  # noqa: E402
 
 INSTRUMENTED_ROOT = (
@@ -140,6 +140,13 @@ def _save_rgba_bytes(path: Path, payload: bytes, width: int, height: int) -> Non
         raise RuntimeError(f"generated frame is {len(payload)} bytes; expected {expected}")
     rgba = np.frombuffer(payload, dtype=np.uint8).reshape(height, width, 4)
     _save_rgba(path, rgba)
+
+
+def _load_rgba(path: Path) -> np.ndarray:
+    from PIL import Image
+
+    with Image.open(path) as image:
+        return np.asarray(image.convert("RGBA"), dtype=np.uint8)
 
 
 def require_grid_selected(client: DlssgWorker, grid: int, timeout: float = 2.0) -> None:
@@ -365,6 +372,100 @@ def _review_candidates(
     return ranked[:limit]
 
 
+def _temporal_report(
+    frames: list[np.ndarray],
+    report: dict[str, object],
+    *,
+    multiplier: int,
+    groups: int,
+) -> dict[str, object]:
+    generated_by_source: dict[int, np.ndarray] = {}
+    for row in report["samples"]:
+        group = int(row["group"])
+        generated_index = int(row["generated_index"])
+        source_index = group * multiplier + generated_index
+        generated_by_source[source_index] = _load_rgba(Path(str(row["generated"])))
+
+    last_index = groups * multiplier
+    candidate_frames: list[np.ndarray] = []
+    for source_index in range(last_index + 1):
+        if source_index % multiplier == 0:
+            candidate_frames.append(frames[source_index])
+        else:
+            candidate = generated_by_source.get(source_index)
+            if candidate is None:
+                raise RuntimeError(
+                    f"missing generated temporal frame for source index {source_index}"
+                )
+            candidate_frames.append(candidate)
+
+    rows = []
+    for source_index in range(1, last_index + 1):
+        metrics = temporal_delta_metrics(
+            frames[source_index - 1],
+            frames[source_index],
+            candidate_frames[source_index - 1],
+            candidate_frames[source_index],
+        )
+        rows.append({"source_index": source_index, **metrics})
+
+    mae_values = np.asarray([row["temporal_delta_mae"] for row in rows], dtype=np.float64)
+    rmse_values = np.asarray([row["temporal_delta_rmse"] for row in rows], dtype=np.float64)
+    return {
+        "count": len(rows),
+        "mean_temporal_delta_mae": float(np.mean(mae_values)),
+        "p95_temporal_delta_mae": float(np.percentile(mae_values, 95)),
+        "max_temporal_delta_mae": float(np.max(mae_values)),
+        "mean_temporal_delta_rmse": float(np.mean(rmse_values)),
+        "transitions": rows,
+    }
+
+
+def _write_review_pack(
+    output_root: Path,
+    candidates: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    from PIL import Image, ImageDraw
+
+    review_root = output_root / "review"
+    review_root.mkdir(parents=True, exist_ok=True)
+    written: list[dict[str, object]] = []
+    for rank, candidate in enumerate(candidates, start=1):
+        reference = Image.open(candidate["reference"]).convert("RGB")
+        grid1 = Image.open(candidate["grid1_generated"]).convert("RGB")
+        grid4 = Image.open(candidate["grid4_generated"]).convert("RGB")
+        if not (reference.size == grid1.size == grid4.size):
+            raise RuntimeError("review candidate images do not share geometry")
+
+        width, height = reference.size
+        canvas = Image.new("RGB", (width * 3, height + 42))
+        draw = ImageDraw.Draw(canvas)
+        canvas.paste(reference, (0, 42))
+        canvas.paste(grid1, (width, 42))
+        canvas.paste(grid4, (width * 2, 42))
+        draw.text((12, 12), "REFERENCE", fill="white")
+        draw.text((width + 12, 12), "GRID 1", fill="white")
+        draw.text((width * 2 + 12, 12), "GRID 4", fill="white")
+
+        name = (
+            f"{rank:02d}-g{int(candidate['group']):03d}"
+            f"-i{int(candidate['generated_index'])}.jpg"
+        )
+        path = review_root / name
+        canvas.save(path, quality=94, subsampling=0)
+        written.append(
+            {
+                **candidate,
+                "rank": rank,
+                "review_image": path.relative_to(output_root).as_posix(),
+            }
+        )
+        reference.close()
+        grid1.close()
+        grid4.close()
+    return written
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=Path, required=True)
@@ -409,6 +510,21 @@ def main() -> int:
         reports[f"grid{grid}"] = report
         print(f"CAPTURE_PASS grid={grid} report={report_path}", flush=True)
 
+    temporal = {
+        "grid1": _temporal_report(
+            frames, reports["grid1"], multiplier=args.multiplier, groups=args.groups
+        ),
+        "grid4": _temporal_report(
+            frames, reports["grid4"], multiplier=args.multiplier, groups=args.groups
+        ),
+    }
+    temporal["grid4_minus_grid1_mean_temporal_delta_mae"] = (
+        temporal["grid4"]["mean_temporal_delta_mae"]
+        - temporal["grid1"]["mean_temporal_delta_mae"]
+    )
+    review_candidates = _review_candidates(reports["grid1"], reports["grid4"])
+    review_pack = _write_review_pack(output_root, review_candidates)
+
     height, width = frames[0].shape[:2]
     combined = {
         "schema_version": 2,
@@ -429,7 +545,8 @@ def main() -> int:
         "grid4_summary": reports["grid4"]["summary"],
         "quality_delta": _quality_delta(reports["grid1"], reports["grid4"]),
         "paired_quality": _paired_quality(reports["grid1"], reports["grid4"]),
-        "review_candidates": _review_candidates(reports["grid1"], reports["grid4"]),
+        "temporal_quality": temporal,
+        "review_candidates": review_pack,
     }
     combined_path = output_root / "grid-ab-quality-report.json"
     combined_path.write_text(json.dumps(combined, indent=2) + "\n", encoding="utf-8")

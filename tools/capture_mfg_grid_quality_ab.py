@@ -139,7 +139,11 @@ def _save_rgba(path: Path, rgba: np.ndarray) -> None:
     from PIL import Image
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(rgba, mode="RGBA").save(path)
+    Image.fromarray(rgba).save(path)
+
+
+def _manifest_relative(path: Path, manifest_dir: Path) -> str:
+    return Path(os.path.relpath(path.resolve(), manifest_dir.resolve())).as_posix()
 
 
 def _save_rgba_bytes(path: Path, payload: bytes, width: int, height: int) -> None:
@@ -187,7 +191,8 @@ def capture_grid(
         raise RuntimeError(f"withheld plan produced {len(plan)} groups; expected {groups}")
 
     references = output_root / "references"
-    generated_root = output_root / f"grid{grid}" / "generated"
+    manifest_root = output_root / f"grid{grid}"
+    generated_root = manifest_root / "generated"
     samples: list[dict[str, object]] = []
 
     # Write references once. Both grid modes point at this same immutable set.
@@ -234,12 +239,12 @@ def capture_grid(
                         {
                             "group": group,
                             "generated_index": generated_index,
-                            "reference": ref.relative_to(output_root).as_posix(),
-                            "generated": generated.relative_to(output_root).as_posix(),
+                            "reference": _manifest_relative(ref, manifest_root),
+                            "generated": _manifest_relative(generated, manifest_root),
                         }
                     )
 
-    manifest = output_root / f"grid{grid}" / "manifest.json"
+    manifest = manifest_root / "manifest.json"
     manifest.parent.mkdir(parents=True, exist_ok=True)
     manifest.write_text(
         json.dumps(

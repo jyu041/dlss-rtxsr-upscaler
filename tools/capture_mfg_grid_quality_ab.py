@@ -16,6 +16,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 from typing import Iterator
 
 import av
@@ -141,6 +142,19 @@ def _save_rgba_bytes(path: Path, payload: bytes, width: int, height: int) -> Non
     _save_rgba(path, rgba)
 
 
+def require_grid_selected(client: DlssgWorker, grid: int, timeout: float = 2.0) -> None:
+    marker = f"NVOF_OUTPUT_GRID_SELECTED={grid} "
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if any(marker in line for line in client.diagnostics):
+            return
+        time.sleep(0.01)
+    tail = " | ".join(client.diagnostics[-20:])
+    raise RuntimeError(
+        f"worker did not confirm requested NVOF output grid {grid}; diagnostics: {tail}"
+    )
+
+
 def capture_grid(
     *,
     grid: int,
@@ -184,6 +198,7 @@ def capture_grid(
                 multiplier=multiplier,
                 motion_mode=MOTION_MODE_NVIDIA_OPTICAL_FLOW,
             )
+            require_grid_selected(client, grid)
             bootstrap = client.process(0, frames[0].tobytes(), reset=True)
             if not bootstrap.reset_only or bootstrap.outputs:
                 raise RuntimeError("quality capture bootstrap unexpectedly generated output")
@@ -299,6 +314,57 @@ def evidence_root(base_output: Path, input_path: Path, input_sha: str, multiplie
     return base_output.expanduser().resolve() / source_tag / f"{multiplier}x"
 
 
+def _review_candidates(
+    grid1: dict[str, object],
+    grid4: dict[str, object],
+    *,
+    limit: int = 8,
+) -> list[dict[str, object]]:
+    left = {
+        (int(row["group"]), int(row["generated_index"])): row
+        for row in grid1["samples"]
+    }
+    right = {
+        (int(row["group"]), int(row["generated_index"])): row
+        for row in grid4["samples"]
+    }
+    if set(left) != set(right):
+        raise RuntimeError("grid quality reports do not contain identical sample keys")
+
+    ranked = []
+    for key in sorted(left):
+        a, b = left[key], right[key]
+        edge_delta = None
+        if a.get("edge_mae") is not None and b.get("edge_mae") is not None:
+            edge_delta = float(b["edge_mae"]) - float(a["edge_mae"])
+        ssim_delta = float(b["ssim_rgb"]) - float(a["ssim_rgb"])
+        mae_delta = float(b["mae"]) - float(a["mae"])
+        ranked.append(
+            {
+                "group": key[0],
+                "generated_index": key[1],
+                "reference": b["reference"],
+                "grid1_generated": a["generated"],
+                "grid4_generated": b["generated"],
+                "grid4_minus_grid1_edge_mae": edge_delta,
+                "grid4_minus_grid1_ssim_rgb": ssim_delta,
+                "grid4_minus_grid1_mae": mae_delta,
+            }
+        )
+
+    # Prefer reference-edge regressions, then global SSIM/MAE regressions.
+    def severity(row: dict[str, object]) -> tuple[float, float, float]:
+        edge = row["grid4_minus_grid1_edge_mae"]
+        return (
+            float(edge) if edge is not None else float("-inf"),
+            -float(row["grid4_minus_grid1_ssim_rgb"]),
+            float(row["grid4_minus_grid1_mae"]),
+        )
+
+    ranked.sort(key=severity, reverse=True)
+    return ranked[:limit]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=Path, required=True)
@@ -363,6 +429,7 @@ def main() -> int:
         "grid4_summary": reports["grid4"]["summary"],
         "quality_delta": _quality_delta(reports["grid1"], reports["grid4"]),
         "paired_quality": _paired_quality(reports["grid1"], reports["grid4"]),
+        "review_candidates": _review_candidates(reports["grid1"], reports["grid4"]),
     }
     combined_path = output_root / "grid-ab-quality-report.json"
     combined_path.write_text(json.dumps(combined, indent=2) + "\n", encoding="utf-8")

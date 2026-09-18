@@ -17,6 +17,8 @@ def test_quality_runner_builds_selftests_then_invokes_capture_tool():
     assert "capture_mfg_grid_quality_ab.py" in source
     assert "[ValidateSet(2,4)]" in source
     assert "[ValidateRange(1,24)]" in source
+    assert "[ValidateRange(0,1000000)]" in source
+    assert "'--start-frame', $StartFrame" in source
     assert "'--worker', $worker" in source
     assert "'--runtime', $runtime" in source
     assert "'--official', $official" in source
@@ -24,11 +26,13 @@ def test_quality_runner_builds_selftests_then_invokes_capture_tool():
 def test_evidence_root_namespaces_source_identity_and_multiplier(tmp_path):
     base = tmp_path / "quality"
     source = tmp_path / "My Clip.mp4"
-    root2 = capture.evidence_root(base, source, "ABCDEF0123456789", 2)
-    root4 = capture.evidence_root(base, source, "ABCDEF0123456789", 4)
-    assert root2.parent.name == "My Clip-ABCDEF012345"
-    assert root2.name == "2x"
-    assert root4.name == "4x"
+    root2 = capture.evidence_root(base, source, "ABCDEF0123456789", 2, 0)
+    root4 = capture.evidence_root(base, source, "ABCDEF0123456789", 4, 120)
+    assert root2.parents[1].name == "My Clip-ABCDEF012345"
+    assert root2.parent.name == "2x"
+    assert root2.name == "start-00000000"
+    assert root4.parent.name == "4x"
+    assert root4.name == "start-00000120"
     assert root2 != root4
 
 def test_grid_environment_is_restored(monkeypatch):
@@ -276,6 +280,38 @@ def test_capture_grid_writes_shared_reference_manifest(tmp_path, monkeypatch):
     assert (tmp_path / "quality" / sample["reference"]).is_file()
     assert (tmp_path / "quality" / sample["generated"]).is_file()
 
+
+
+def test_decode_source_respects_start_frame(tmp_path, monkeypatch):
+    width, height = 1280, 720
+
+    class Frame:
+        def __init__(self, value):
+            self.value = value
+        def to_ndarray(self, format):
+            frame = np.zeros((height, width, 4), dtype=np.uint8)
+            frame[..., 0] = self.value
+            return frame
+
+    class Stream:
+        average_rate = 60
+        base_rate = 60
+
+    class Container:
+        streams = type("Streams", (), {"video": [Stream()]})()
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return None
+        def decode(self, stream):
+            for value in range(6):
+                yield Frame(value)
+
+    monkeypatch.setattr(capture.av, "open", lambda *_args, **_kwargs: Container())
+    frames, fps = capture.decode_source(tmp_path / "fake.mp4", 2, start_frame=3)
+    assert fps == 60.0
+    assert int(frames[0][0, 0, 0]) == 3
+    assert int(frames[1][0, 0, 0]) == 4
 
 @pytest.mark.parametrize("geometry", [(640, 360), (3840, 2160)])
 def test_decode_source_rejects_unbounded_geometry(tmp_path, monkeypatch, geometry):

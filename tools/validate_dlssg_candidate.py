@@ -39,6 +39,8 @@ from src.core.dlssg_readiness import sha256_file
 
 DEFAULT_WORKER = ROOT / "native" / "dlssg_sm86_offline" / "bin" / "dlssg_sm86_offline.exe"
 PER_RUN_TIMEOUT = 30
+VALIDATION_WIDTH = 256
+VALIDATION_HEIGHT = 256
 
 
 def validate_reset(result) -> None:
@@ -83,8 +85,7 @@ def _child(
     multiplier: int,
     motion_mode: int,
 ) -> int:
-    width = height = 64
-    frames = [_frame(width, height, frame_id) for frame_id in range(3)]
+    # Match the preserved bounded MFG validation contract. The community\n    # runtime has proven Create/Evaluate at 256x256 and practical video\n    # resolutions; 64x64 reaches CreateFeature but returns InvalidParameter.\n    width = VALIDATION_WIDTH\n    height = VALIDATION_HEIGHT\n    frames = [_frame(width, height, frame_id) for frame_id in range(3)]
     reset_motion = bytes(width * height * 4)
     motion = b"".join(struct.pack("<ee", 1.0, 0.0) for _ in range(width * height))
     expected = profile(runtime_profile)

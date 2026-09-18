@@ -343,3 +343,35 @@ def test_v10_protocol_client_poison_terminates_owned_simulator():
 def test_v10_create_schema_rejects_invalid_gpu_ordinal(ordinal):
     with pytest.raises(V10ProtocolError, match="gpu_ordinal"):
         CreateRequest(256, 256, gpu_ordinal=ordinal).validate()
+
+
+def test_v10_experimental_native_host_requires_exact_environment_ack(monkeypatch, tmp_path):
+    from src.backends import dlss5_v10_host as host
+
+    monkeypatch.delenv("NVE_DLSS5_V10_NATIVE", raising=False)
+    assert (
+        host.experimental_native_server(
+            tmp_path / "runtime",
+            tmp_path / "preflight.json",
+        )
+        == 77
+    )
+
+
+def test_v10_client_experimental_start_requires_exact_ack(tmp_path):
+    from src.backends.dlss5_v10_client import V10ProtocolClient
+
+    client = V10ProtocolClient()
+    with pytest.raises(adapter.V10ExecutionDisabled, match="exact acknowledgement"):
+        client.start_native_experimental(
+            tmp_path / "runtime",
+            tmp_path / "preflight.json",
+            acknowledgement="wrong",
+        )
+    assert client.process is None
+
+
+def test_v10_normal_serve_path_remains_blocked():
+    from src.backends import dlss5_v10_host as host
+
+    assert host.main(["--serve"]) == 78

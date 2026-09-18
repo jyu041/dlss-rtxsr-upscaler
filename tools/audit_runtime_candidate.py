@@ -21,6 +21,7 @@ from src.runtime_manager.core import (
     sha256_file,
     verify_artifact,
 )
+from src.core.pe_static import inspect_pe
 
 
 MANIFEST = ROOT / "src" / "runtime_manager" / "manifest.json"
@@ -107,6 +108,8 @@ def audit_static_archive(
                 "size_bytes": path.stat().st_size,
                 "sha256": sha256_file(path),
             }
+            if path.suffix.lower() in {".dll", ".exe"}:
+                record["pe"] = inspect_pe(path)
             if include_authenticode:
                 record["authenticode"] = _authenticode(path)
             files.append(record)

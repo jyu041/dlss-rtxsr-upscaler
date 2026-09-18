@@ -79,6 +79,15 @@ def test_dlss5_v10_lifetime_contract_does_not_reuse_v3_shutdown_assumptions():
     assert LIFETIME_CONTRACT["normal_close_unloads_driver_modules"] is False
 
 
+def test_instrumented_workflow_requires_explicit_gpu_validation_switch():
+    workflow = (ROOT / "tools" / "build_validate_dlssg_instrumented.ps1").read_text(encoding="utf-8")
+    assert "[switch]$Validate256" in workflow
+    assert "if (-not $Validate256)" in workflow
+    assert "GPU_VALIDATION_SKIPPED" in workflow
+    assert "bin-instrumented" in workflow
+    assert "validate_dlssg_instrumented.py" in workflow
+
+
 def test_dlssg_instrumented_build_does_not_default_to_validated_worker_directory():
     build = (ROOT / "native" / "dlssg_sm86_offline" / "build.ps1").read_text(encoding="utf-8")
     assert '[string]$Output = "$PSScriptRoot\\bin-instrumented"' in build

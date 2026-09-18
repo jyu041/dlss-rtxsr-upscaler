@@ -89,6 +89,8 @@ The source-checkout workflow assumes the following are already installed:
 
 The project setup owns the Conda environment and managed backend files. Users should not need to collect backend executables/DLLs from other repositories or paste runtime paths into the normal UI.
 
+Run `setup.bat` from a normal network-enabled terminal. Sandboxed automation shells that intentionally inject a local discard proxy such as `127.0.0.1:9` are rejected up front rather than bypassed or allowed to hang during Conda/runtime downloads.
+
 ### Install and run
 
 From a Git-enabled terminal:
@@ -100,7 +102,7 @@ setup.bat
 start.bat
 ```
 
-`setup.bat` performs the provisioning step. It:
+`setup.bat` performs the provisioning step. The normal fresh-install contract is therefore **clone → setup → start**; no backend path entry is required in the UI. It:
 
 1. creates or updates the dedicated `dlss-rtxsr-upscaler` Conda environment;
 2. installs the pinned Python dependencies, including NVIDIA VFX and CUDA-enabled PyTorch;
@@ -114,6 +116,17 @@ start.bat
 10. writes `config/source_env.bat` so `start.bat` uses the managed runtime locations automatically.
 
 All downloaded managed components are checked against source-controlled identity policy before activation. `setup.bat` is an explicit user-initiated network action; ordinary `start.bat` startup does not silently download or replace runtime files. DLSS 5 v3 is additionally opt-in because it remains experimental and its worker is executed only after the extra local security gates pass.
+
+If DLSS 5 v3 is selected, setup downloads the pinned ~467 MB upstream archive once and keeps a verified copy under `runtime/cache/dlss5-v3/` so a later UAC, provisioning, or Feature-18 retry does not normally require another full download. The flow can request Windows elevation for the exact outbound firewall rule and requires Microsoft Defender to be available for the managed approval path.
+
+Optional setup controls for unattended or repeat installs are:
+
+```bat
+set NVE_SETUP_DLSS5=1
+setup.bat
+```
+
+Use `NVE_SETUP_DLSS5=0` to skip the DLSS 5 prompt. If the exact pinned v3.0 archive is already available, set `NVE_DLSS5_ARCHIVE=C:\\path\\to\\DLSS.5.Visual.Enhancer.v3.0.zip` before running setup; all hash, scan, firewall, approval, and self-test gates still apply.
 
 If a hardware validation fails, setup keeps the other verified backends usable and reports the affected backend as unavailable/needs validation rather than asking the user to browse for a DLL. The Runtime Manager remains available for inspection, repair, updates, and experimental components. The newer SM86 `candidate-0.3.1` proxy generation remains available there for explicit research, but it is not substituted for the validated C55 direct-host profile.
 
@@ -198,8 +211,13 @@ Read the full audit in [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md).
 Primary development and hardware validation has been performed on:
 
 - Phase 4C / beta.2 validation: NVIDIA GeForce RTX 3070 Ti 8 GB, Windows 11
-  build 26200, NVIDIA driver 610.62
-- DLSS-G direct-host validation on RTX 3070 Ti includes 2X, 3X and 4X using the pinned `5f62ff44...` SM86 runtime profile.
+  build 26200, NVIDIA driver 610.62.
+- DLSS-G direct-host validation on that RTX 3070 Ti passed the bounded 256×256
+  **2X, 3X and 4X** matrix with both deterministic external motion vectors and
+  NVIDIA Optical Flow, using the pinned `5f62ff44...` SM86 runtime profile.
+- DLSS 5 v3 Feature-18 provisioning and hardware self-test also passed on the
+  RTX 3070 Ti with the managed hash/Defender/firewall/approval gates in place;
+  the validated Ampere execution path remains the experimental 1.0× mode.
 - Other development testing also includes RTX 3070 where separately documented.
 
 This is a development and validation configuration, not a minimum requirement or a claim of official NVIDIA support for every backend. Backend availability depends on the installed GPU, driver, and exact runtime combination; in particular, this does not establish official DLSS 5 support on RTX 30-series hardware. GPU smoke tests count as validation only when the relevant local runtime is actually present.

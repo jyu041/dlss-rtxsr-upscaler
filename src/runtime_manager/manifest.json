@@ -90,7 +90,7 @@
         {"path": "version.dll", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/5f62ff44a9c08f9841fa605e7b7160f79ccd2c40/version.dll", "sha256": "C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2", "size_bytes": 15667520},
         {"path": "dlssg_sm86.ini", "url": "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/5f62ff44a9c08f9841fa605e7b7160f79ccd2c40/dlssg_sm86.ini", "sha256": "FD7F0722194E6E8D8C085327D9826EFFB411925A69A5E7549D70EFF26A9F18B5", "size_bytes": 581}
       ],
-      "constraints": {"multipliers": [2, 3, 4], "compatibility_test_required": false, "status": "validated C55 direct-host runtime; RTX 3070 Ti 2X/3X/4X evidence retained"}
+      "constraints": {"multipliers": [2, 3, 4], "compatibility_test_required": false, "ignored_generated_files": ["dlssg_sm86/logs/*.jsonl"], "status": "validated C55 direct-host runtime; RTX 3070 Ti 2X/3X/4X evidence retained"}
     },
     {
       "id": "dlssg-sm86-0.3.1-candidate",
@@ -136,6 +136,26 @@
       "redistributable": false,
       "direct_user_download": true,
       "constraints": {"static_only": true, "status": "static-only; native adapter and RTX30 compatibility test required", "output_scales": [1.0, 0.75, 0.5, 0.25]}
+    },
+    {
+      "id": "dlss5-neuroframe-v10-static-candidate",
+      "name": "DLSS5 Neuroframe v10 static candidate",
+      "backend": "dlss5-neuroframe",
+      "version": "v10.0-7781107b",
+      "source": "https://github.com/Merserk/dlss5-visual-enhancer",
+      "source_url": "https://github.com/Merserk/dlss5-visual-enhancer/commit/7781107b89057f4d62d7c0a35fc3c1e90e7d9c31",
+      "artifact_url": "https://github.com/Merserk/dlss5-visual-enhancer/releases/download/v10.0/Visual.Enhancer.v10.0.zip",
+      "sha256": "394BED6FBB3CCA1A994AE02A0A1152213D43030D6761437F86ABAA863C33D515",
+      "size_bytes": 690203043,
+      "archive_type": "selective-zip",
+      "allowlist": ["bin/runtime/dlssnr/nvngx_dlssnr.dll", "bin/runtime/dlssnr/neuroframe_engine_neural_rendering.dll", "bin/runtime/dlssnr/neuroframe_caller.dll", "bin/runtime/dlssnr/LICENSE-NVIDIA-DLSS.txt", "bin/runtime/dlssnr/LICENSE-Merserk.txt"],
+      "destination": "dlss5/neuroframe-v10-candidate",
+      "policy": "UPSTREAM_DOWNLOAD",
+      "channel": "candidate-static-only",
+      "license_name": "Merserk Source License 1.0 for project-owned v10 material; NVIDIA and other archive materials retain their respective terms",
+      "redistributable": false,
+      "direct_user_download": true,
+      "constraints": {"static_only": true, "feature_id_observed": 18, "host_architecture": "in-process D3D12/NGX bridge plus caller shim", "processing_scales": [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0], "processing_scale_is_lanczos_pre_resize": true, "native_output_scaling_unverified": true, "static_audit": {"workflow_run_id": 35311872691, "executed": false, "all_runtime_dlls_x86_64": true, "all_runtime_dlls_authenticode": "NotSigned", "direct_network_imports_observed": false, "direct_process_launch_imports_observed": false, "dynamic_resolution_present": true}, "extracted_files": {"nvngx_dlssnr.dll": {"size_bytes": 165830144, "sha256": "6EB209E764F39872625DEBD6ABAF45E2BB6322F6F270F781F70C059AE30B3927"}, "neuroframe_engine_neural_rendering.dll": {"size_bytes": 571904, "sha256": "F657D20E569F97DEC25E02141F64354CD4B3E1DC51FA1DFE48ACEEBCC3CC43D5"}, "neuroframe_caller.dll": {"size_bytes": 104960, "sha256": "B3611046837BC2F2E957A694CE0817E3C1B304BD653D0C7A193148E5BDD02437"}, "LICENSE-NVIDIA-DLSS.txt": {"size_bytes": 27176, "sha256": "21B5DAEC892B12BEA692E66BC8FE45CF5902CCAF3A7B831E78050D8859881C37"}, "LICENSE-Merserk.txt": {"size_bytes": 1064, "sha256": "6D3939094F12AA118F86B6A99C46EA525FF4F203A062C2F377873A3498FFE7EC"}}, "status": "static archive identity/ABI/import audit complete; DLLs are unsigned; isolated bounded execution path exists but no v10 RTX30 native run has occurred and normal backend execution remains disabled"}
     }
   ]
 }

@@ -5,6 +5,7 @@
 
 struct ID3D12Device;
 struct ID3D12CommandQueue;
+struct ID3D12Resource;
 
 struct NvofFlowVector {
     float x;
@@ -16,6 +17,13 @@ struct NvofTimings {
     double executeMs = 0.0;
     double readbackMs = 0.0;
     double conversionMs = 0.0;
+};
+
+struct NvofGpuTimings {
+    bool valid = false;
+    double bracketMs = 0.0;
+    double conversionMs = 0.0;
+    uint64_t frequency = 0;
 };
 
 struct NvofFlowStatistics {
@@ -42,6 +50,7 @@ public:
     bool ConfigureGpuConversion(ID3D12Resource *motionResource);
     bool ComputeForwardGpu(const uint8_t *currentRgba, ID3D12Resource *motionResource,
         NvofTimings *timings = nullptr);
+    bool ConsumeGpuTimings(NvofGpuTimings *timings);
     bool ComputeForward(const uint8_t *currentRgba, bool resetTemporalHints,
         std::vector<uint8_t> &motionR16G16Float,
         std::vector<NvofFlowVector> *flowPixels = nullptr,

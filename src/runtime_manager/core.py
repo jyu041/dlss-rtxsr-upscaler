@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import os
@@ -461,14 +462,19 @@ class RuntimeManager:
                 shutil.rmtree(staging_parent, ignore_errors=True)
 
     def _installed_file_records(self, spec: RuntimeSpec, destination: Path) -> list[dict[str, object]]:
-        """Return the exact allowlisted file identities for an active runtime."""
+        """Return exact managed identities while ignoring narrowly declared runtime output."""
         if not destination.is_dir():
             raise ValueError("runtime destination is not a directory")
+        ignored_patterns = spec.constraints.get("ignored_generated_files", [])
+        if not isinstance(ignored_patterns, list) or any(not isinstance(item, str) for item in ignored_patterns):
+            raise ValueError("ignored_generated_files must be a list of path patterns")
         actual: list[dict[str, object]] = []
         for path in destination.rglob("*"):
             if not path.is_file() or path.is_symlink():
                 continue
             relative = path.relative_to(destination).as_posix()
+            if any(fnmatch.fnmatchcase(relative.casefold(), pattern.replace("\\", "/").casefold()) for pattern in ignored_patterns):
+                continue
             actual.append({"path": relative, "sha256": sha256_file(path), "size_bytes": path.stat().st_size})
         actual.sort(key=lambda item: str(item["path"]).casefold())
         expected = sorted((str(PurePosixPath(path.replace("\\", "/"))) for path in spec.allowlist), key=str.casefold)

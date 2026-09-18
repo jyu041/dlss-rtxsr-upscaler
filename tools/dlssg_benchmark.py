@@ -19,6 +19,7 @@ from src.backends.dlssg_worker import (  # noqa: E402
     MOTION_MODE_EXTERNAL_R16G16_FLOAT,
     MOTION_MODE_NVIDIA_OPTICAL_FLOW,
 )
+from src.core.dlssg_gpu_timing import summarize_gpu_timestamps  # noqa: E402
 
 
 def _frame(width: int, height: int, x: int) -> bytes:
@@ -62,7 +63,9 @@ def main() -> int:
     args = parser.parse_args()
     motion_mode = MOTION_MODE_NVIDIA_OPTICAL_FLOW if args.motion_provider == "nvof" else MOTION_MODE_EXTERNAL_R16G16_FLOAT
     worker_log = args.worker_log.open("w", encoding="utf-8") if args.worker_log else None
+    worker_lines: list[str] = []
     def _worker_line(line: str) -> None:
+        worker_lines.append(line)
         if args.diagnostics:
             print(line, file=sys.stderr, flush=True)
         if worker_log:
@@ -104,6 +107,7 @@ def main() -> int:
         "settings": {"width": args.width, "height": args.height, "multiplier": args.multiplier, "frames": args.frames, "warmup": args.warmup, "motion_provider": args.motion_provider},
         "samples": samples,
         "stages_ms": {key: {"median": statistics.median([sample[key] for sample in samples]), "p95": _percentile([sample[key] for sample in samples], 95)} for key in samples[0] if key != "generated_count"},
+        "gpu_timestamps": summarize_gpu_timestamps(worker_lines),
         "group_rate_median": 1000.0 / statistics.median([sample["total_ms"] for sample in samples]),
         "output_rate_median": args.multiplier * 1000.0 / statistics.median([sample["total_ms"] for sample in samples]),
         "wall_seconds": time.perf_counter() - start,

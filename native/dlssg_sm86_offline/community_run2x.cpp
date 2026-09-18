@@ -628,6 +628,99 @@ static double Milliseconds(Clock::time_point begin, Clock::time_point end) {
     return std::chrono::duration<double, std::milli>(end - begin).count();
 }
 
+struct GpuTimestampProbe {
+    static constexpr UINT kCapacity = 16;
+    static_assert(kCapacity >= 12, "4X GPU timing requires twelve timestamp slots");
+    ID3D12QueryHeap *heap = nullptr;
+    ID3D12Resource *readback = nullptr;
+    UINT64 frequency = 0;
+    bool enabled = false;
+
+    ~GpuTimestampProbe() { Release(); }
+
+    void Release() {
+        RunRelease(readback);
+        RunRelease(heap);
+        frequency = 0;
+        enabled = false;
+    }
+
+    bool Initialize(ID3D12Device *device, ID3D12CommandQueue *queue, bool requested) {
+        Release();
+        if (!requested) return true;
+        if (!device || !queue || FAILED(queue->GetTimestampFrequency(&frequency)) || !frequency) {
+            RunLog("GPU_TIMESTAMP_INIT available=0 reason=frequency");
+            return true;
+        }
+        D3D12_QUERY_HEAP_DESC desc{};
+        desc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
+        desc.Count = kCapacity;
+        if (FAILED(device->CreateQueryHeap(&desc, IID_PPV_ARGS(&heap)))) {
+            RunLog("GPU_TIMESTAMP_INIT available=0 reason=query_heap");
+            frequency = 0;
+            return true;
+        }
+        readback = MakeBuffer(device, static_cast<UINT64>(kCapacity) * sizeof(UINT64),
+            D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+        if (!readback) {
+            RunRelease(heap);
+            frequency = 0;
+            RunLog("GPU_TIMESTAMP_INIT available=0 reason=readback");
+            return true;
+        }
+        enabled = true;
+        RunLog("GPU_TIMESTAMP_INIT available=1 frequency=%llu capacity=%u",
+            static_cast<unsigned long long>(frequency), kCapacity);
+        return true;
+    }
+
+    void Mark(ID3D12GraphicsCommandList *list, UINT slot) const {
+        if (enabled && list && slot < kCapacity) list->EndQuery(heap, D3D12_QUERY_TYPE_TIMESTAMP, slot);
+    }
+
+    void Resolve(ID3D12GraphicsCommandList *list, UINT count) const {
+        if (!enabled || !list || !count || count > kCapacity) return;
+        list->ResolveQueryData(heap, D3D12_QUERY_TYPE_TIMESTAMP, 0, count, readback, 0);
+    }
+
+    bool LogGroup(uint64_t frameId, uint32_t generatedCount) const {
+        if (!enabled) return true;
+        const UINT groupEnd = 2u + 3u * generatedCount;
+        const UINT queryCount = groupEnd + 1u;
+        if (!readback || queryCount > kCapacity) return false;
+        const SIZE_T bytes = static_cast<SIZE_T>(queryCount) * sizeof(UINT64);
+        D3D12_RANGE range{0, bytes};
+        UINT64 *ticks = nullptr;
+        const HRESULT mapped = readback->Map(0, &range, reinterpret_cast<void **>(&ticks));
+        if (FAILED(mapped) || !ticks) {
+            RunLog("GPU_TIMESTAMP_READBACK_FAILED frame=%llu hr=0x%08X",
+                static_cast<unsigned long long>(frameId), static_cast<unsigned>(mapped));
+            return false;
+        }
+        const auto emit = [&](const char *stage, uint32_t index, UINT begin, UINT end) {
+            const UINT64 start = ticks[begin], finish = ticks[end];
+            const double ms = finish >= start
+                ? (static_cast<double>(finish - start) * 1000.0 / static_cast<double>(frequency))
+                : 0.0;
+            RunLog("GPU_TIMESTAMP frame=%llu stage=%s index=%u ms=%.6f frequency=%llu",
+                static_cast<unsigned long long>(frameId), stage, index, ms,
+                static_cast<unsigned long long>(frequency));
+        };
+        emit("input_upload", 0, 0, 1);
+        for (uint32_t index = 0; index < generatedCount; ++index) {
+            const UINT evaluateBegin = 2u + 3u * index;
+            const UINT evaluateEnd = evaluateBegin + 1u;
+            const UINT copyEnd = evaluateBegin + 2u;
+            emit("dlssg_evaluate", index + 1u, evaluateBegin, evaluateEnd);
+            emit("output_copy", index + 1u, evaluateEnd, copyEnd);
+        }
+        emit("group_total", 0, 0, groupEnd);
+        D3D12_RANGE written{0, 0};
+        readback->Unmap(0, &written);
+        return true;
+    }
+};
+
 struct HistoryState {
     bool valid = false;
     bool hasFrameId = false;
@@ -650,7 +743,11 @@ public:
         wchar_t experimental[8]{};
         gpuFlowEnabled_ = GetEnvironmentVariableW(L"DLSSG_NVOF_GPU_FLOW", experimental, static_cast<DWORD>(std::size(experimental))) != 0 &&
             _wcsicmp(experimental, L"1") == 0;
+        wchar_t timestampMode[8]{};
+        gpuTimestampsEnabled_ = GetEnvironmentVariableW(L"DLSSG_GPU_TIMESTAMPS", timestampMode, static_cast<DWORD>(std::size(timestampMode))) != 0 &&
+            _wcsicmp(timestampMode, L"1") == 0;
         RunLog("WORKER_MODE=%s", diagnosticMode_ ? "DIAGNOSTIC" : "PRODUCTION");
+        RunLog("WORKER_GPU_TIMESTAMPS=%d", gpuTimestampsEnabled_ ? 1 : 0);
         runtimeDir_ = runtimeDir;
         IDXGIAdapter1 *candidate = nullptr;
         if (FAILED(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory_)))) return false;
@@ -673,6 +770,7 @@ public:
             FAILED(device_->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_)))) return false;
         if (FAILED(list_->Close())) return false;
         event_ = CreateEventW(nullptr, FALSE, FALSE, nullptr); if (!event_) return false;
+        if (!gpuTimestamps_.Initialize(device_, queue_, gpuTimestampsEnabled_)) return false;
         runtimePaths_[0] = runtimeDir_.c_str(); common_.PathListInfo.Path = runtimePaths_; common_.PathListInfo.Length = 1;
         const NVSDK_NGX_Result official = NVSDK_NGX_D3D12_Init_with_ProjectID(projectId_,
             NVSDK_NGX_ENGINE_TYPE_CUSTOM, "1.0", runtimeDir, device_, &common_, NVSDK_NGX_Version_API);
@@ -855,8 +953,10 @@ public:
         std::vector<uint8_t> &generated, Clock::time_point totalStart, Clock::time_point uploadStart,
         Clock::time_point uploadEnd, const NvofTimings &nvofTimings, bool gpuFlow, bool effectiveReset) {
         if (!ResetList(allocator_, list_, "WORKER_GROUP_EVALUATE")) return Status::NativeFailure;
+        gpuTimestamps_.Mark(list_, 0);
         if (gpuFlow && !effectiveReset) RecordTextureUpload(color_, list_, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         else { RecordTextureUpload(color_, list_, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE); RecordTextureUpload(motion_, list_, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE); }
+        gpuTimestamps_.Mark(list_, 1);
         RecordDisableZero(disable_, list_);
         if (diagnosticMode_ || !effectiveReset) RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         NVSDK_NGX_DLSSG_Opt_Eval_Params options{};
@@ -865,21 +965,40 @@ public:
             const bool reset = effectiveReset;
             if (!SetOptions(parameters_, color_.gpu, depth_.gpu, gpuFlow && !reset ? motionGpu_.gpu : motion_.gpu,
                 output_.gpu, disable_.gpu, reset, request.frameId, count, index, options, false, diagnosticMode_, width_, height_)) return Status::NativeFailure;
+            const UINT timestampBase = 2u + 3u * (index - 1u);
+            gpuTimestamps_.Mark(list_, timestampBase);
             const auto evaluateStart = Clock::now(); ++evaluateSubmissionCount_;
             const NVSDK_NGX_Result result = evaluate_(list_, feature_, parameters_, nullptr);
+            gpuTimestamps_.Mark(list_, timestampBase + 1u);
             response.evaluateCpuMs += Milliseconds(evaluateStart, Clock::now()); ++evaluateCount_;
             if (diagnosticMode_) RunLog("WORKER_GROUP_EVALUATE frame=%llu reset=%d generatedCount=%u generatedIndex=%u result=0x%08X evaluateCount=%u",
                 request.frameId, reset ? 1 : 0, count, index, result, evaluateCount_);
             if (NVSDK_NGX_FAILED(result)) return Status::NativeFailure;
             RecordReadbackSlot(output_, disable_, readbackSlots_[index - 1], list_);
+            gpuTimestamps_.Mark(list_, timestampBase + 2u);
             ++outputCopyCount_; ++disableCopyCount_;
         }
+        const UINT timestampGroupEnd = 2u + 3u * count;
+        gpuTimestamps_.Mark(list_, timestampGroupEnd);
+        gpuTimestamps_.Resolve(list_, timestampGroupEnd + 1u);
         if (FAILED(list_->Close())) return Status::NativeFailure;
         ID3D12CommandList *commands[] = {list_}; queue_->ExecuteCommandLists(1, commands); ++commandListSubmissionCount_; ++groupFenceSignalCount_;
         const auto waitStart = Clock::now();
         if (!WaitFence(queue_, fence_, ++fenceValue_, event_, device_, "WORKER_GROUP_COMPLETE")) return Status::NativeFailure;
         response.gpuWaitMs = Milliseconds(waitStart, Clock::now()); ++groupWaitCount_;
         ++totalCpuWaitCount_;
+        if (!gpuTimestamps_.LogGroup(request.frameId, count)) return Status::NativeFailure;
+        if (gpuFlow && !effectiveReset) {
+            NvofGpuTimings nvofGpu{};
+            if (nvof_.ConsumeGpuTimings(&nvofGpu) && nvofGpu.valid) {
+                RunLog("GPU_TIMESTAMP frame=%llu stage=nvof_bracket index=0 ms=%.6f frequency=%llu",
+                    static_cast<unsigned long long>(request.frameId), nvofGpu.bracketMs,
+                    static_cast<unsigned long long>(nvofGpu.frequency));
+                RunLog("GPU_TIMESTAMP frame=%llu stage=nvof_conversion index=0 ms=%.6f frequency=%llu",
+                    static_cast<unsigned long long>(request.frameId), nvofGpu.conversionMs,
+                    static_cast<unsigned long long>(nvofGpu.frequency));
+            }
+        }
         if (diagnosticMode_) RunLog("WORKER_GROUP_SYNC frame=%llu generatedCount=%u commandSubmissions=1 outputCopies=%u disableCopies=%u slotsUsed=%u blockingCpuWaits=1 gpuWaitMs=%.3f",
             request.frameId, count, count, count, count, response.gpuWaitMs);
         response.uploadMs = Milliseconds(uploadStart, uploadEnd); response.nvofUploadMs = nvofTimings.uploadMs;
@@ -1014,10 +1133,12 @@ private:
     uint64_t outputHashCount_ = 0;
     uint64_t outputHashBytes_ = 0;
     double outputHashMsTotal_ = 0.0;
+    GpuTimestampProbe gpuTimestamps_{};
     NvofD3D12 nvof_{}; std::vector<uint8_t> previousColor_{};
     bool nvofHistoryValid_ = false;
     bool diagnosticMode_ = false;
     bool gpuFlowEnabled_ = false;
+    bool gpuTimestampsEnabled_ = false;
     uint32_t width_ = 0, height_ = 0, motionMode_ = 0, generatedPerGroup_ = 1;
     int capabilityMax_ = 1;
     bool created_ = false; uint32_t initCount_ = 0, createCount_ = 0, evaluateCount_ = 0, generatedCount_ = 0;

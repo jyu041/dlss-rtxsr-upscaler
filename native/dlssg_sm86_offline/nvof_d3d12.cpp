@@ -6,7 +6,7 @@
 #include <nvOpticalFlowD3D12.h>
 
 #include "nvof_d3d12.h"
-#include "flow_convert_bytecode.h"
+#include <flow_convert_bytecode.h>
 
 #include <algorithm>
 #include <array>
@@ -31,6 +31,12 @@ bool DiagnosticLoggingEnabled() {
         return GetEnvironmentVariableA("DLSSG_WORKER_DIAGNOSTIC", value, sizeof(value)) != 0;
     }();
     return enabled;
+}
+
+bool GpuTimestampEnabled() {
+    char value[8]{};
+    return GetEnvironmentVariableA("DLSSG_GPU_TIMESTAMPS", value, sizeof(value)) != 0 &&
+        std::strcmp(value, "1") == 0;
 }
 
 bool IsVerboseDiagnosticMarker(const char *format) {
@@ -186,6 +192,9 @@ struct NvofD3D12::Impl {
     bool forwardOnly = false;
     uint32_t width = 0;
     uint32_t height = 0;
+    uint32_t outputGrid = 1;
+    uint32_t flowWidth = 0;
+    uint32_t flowHeight = 0;
     ID3D12Resource *previous = nullptr;
     ID3D12Resource *current = nullptr;
     ID3D12Resource *forward = nullptr;
@@ -208,6 +217,11 @@ struct NvofD3D12::Impl {
     ID3D12PipelineState *conversionPso = nullptr;
     ID3D12CommandAllocator *conversionAllocator = nullptr;
     ID3D12GraphicsCommandList *conversionList = nullptr;
+    ID3D12QueryHeap *timingHeap = nullptr;
+    ID3D12Resource *timingReadback = nullptr;
+    uint64_t timingFrequency = 0;
+    bool timingEnabled = false;
+    bool timingPending = false;
     D3D12_CPU_DESCRIPTOR_HANDLE conversionCpu{};
     D3D12_GPU_DESCRIPTOR_HANDLE conversionGpu{};
     NvOFGPUBufferHandle previousHandle = nullptr;
@@ -287,7 +301,7 @@ struct NvofD3D12::Impl {
         if (!motion || !device) return false;
         D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
         D3D12_RESOURCE_DESC flowDesc{}; flowDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-        flowDesc.Width = width; flowDesc.Height = height; flowDesc.DepthOrArraySize = 1; flowDesc.MipLevels = 1;
+        flowDesc.Width = flowWidth; flowDesc.Height = flowHeight; flowDesc.DepthOrArraySize = 1; flowDesc.MipLevels = 1;
         flowDesc.Format = DXGI_FORMAT_R16G16_SINT; flowDesc.SampleDesc.Count = 1; flowDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
         if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &flowDesc,
             D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&flowCopy)))) return false;
@@ -304,7 +318,7 @@ struct NvofD3D12::Impl {
         D3D12_DESCRIPTOR_RANGE uavRange{D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND};
         params[1].DescriptorTable = {1, &uavRange};
         params[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-        params[2].Constants = {0, 0, 2};
+        params[2].Constants = {0, 0, 4};
         D3D12_ROOT_SIGNATURE_DESC rootDesc{}; rootDesc.NumParameters = 3; rootDesc.pParameters = params;
         rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
         ID3DBlob *serialized = nullptr, *error = nullptr;
@@ -351,6 +365,10 @@ struct NvofD3D12::Impl {
     }
 
     bool ReadFlow(ID3D12Resource *flow, std::vector<NV_OF_FLOW_VECTOR> &raw) {
+        if (outputGrid != 1) {
+            Log("NVOF_CPU_READBACK_GRID_UNSUPPORTED grid=%u", outputGrid);
+            return false;
+        }
         if (!ResetList()) return false;
         Transition(list, flow, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_SOURCE);
         D3D12_TEXTURE_COPY_LOCATION source{}, destination{};
@@ -405,18 +423,32 @@ bool NvofD3D12::Initialize(ID3D12Device *device, ID3D12CommandQueue *queue, uint
     std::vector<uint32_t> grids;
     std::vector<DXGI_FORMAT> inputs;
     std::vector<DXGI_FORMAT> outputs;
+    wchar_t gridSetting[16]{};
+    if (GetEnvironmentVariableW(L"DLSSG_NVOF_OUTPUT_GRID", gridSetting, static_cast<DWORD>(std::size(gridSetting))) != 0) {
+        if (_wcsicmp(gridSetting, L"4") == 0) {
+            state.outputGrid = 4;
+        } else if (_wcsicmp(gridSetting, L"1") != 0) {
+            Log("NVOF_OUTPUT_GRID_INVALID value=%ls", gridSetting);
+            return false;
+        }
+    }
+    const uint32_t selectedGrid = state.outputGrid == 4
+        ? static_cast<uint32_t>(NV_OF_OUTPUT_VECTOR_GRID_SIZE_4)
+        : static_cast<uint32_t>(NV_OF_OUTPUT_VECTOR_GRID_SIZE_1);
     if (!QueryValues(state.api, state.handle, NV_OF_CAPS_SUPPORTED_OUTPUT_GRID_SIZES, grids) ||
-        std::find(grids.begin(), grids.end(), static_cast<uint32_t>(NV_OF_OUTPUT_VECTOR_GRID_SIZE_1)) == grids.end() ||
+        std::find(grids.begin(), grids.end(), selectedGrid) == grids.end() ||
         !QueryFormats(state.api, state.handle, NV_OF_BUFFER_USAGE_INPUT, inputs) ||
         std::find(inputs.begin(), inputs.end(), DXGI_FORMAT_B8G8R8A8_UNORM) == inputs.end() ||
         !QueryFormats(state.api, state.handle, NV_OF_BUFFER_USAGE_OUTPUT, outputs) ||
         std::find(outputs.begin(), outputs.end(), DXGI_FORMAT_R16G16_SINT) == outputs.end()) return false;
-    Log("NVOF_GRID_1X1_SUPPORTED=1");
+    state.flowWidth = (width + state.outputGrid - 1) / state.outputGrid;
+    state.flowHeight = (height + state.outputGrid - 1) / state.outputGrid;
+    Log("NVOF_OUTPUT_GRID_SELECTED=%u flowWidth=%u flowHeight=%u", state.outputGrid, state.flowWidth, state.flowHeight);
 
     NV_OF_INIT_PARAMS init{};
     init.width = width;
     init.height = height;
-    init.outGridSize = NV_OF_OUTPUT_VECTOR_GRID_SIZE_1;
+    init.outGridSize = state.outputGrid == 4 ? NV_OF_OUTPUT_VECTOR_GRID_SIZE_4 : NV_OF_OUTPUT_VECTOR_GRID_SIZE_1;
     init.mode = NV_OF_MODE_OPTICALFLOW;
     // The production video path is throughput-bound by NVOF at 720p/1080p.
     // HIGH is the SDK-supported performance tier; it does not alter the
@@ -439,10 +471,28 @@ bool NvofD3D12::Initialize(ID3D12Device *device, ID3D12CommandQueue *queue, uint
     state.eventHandle = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     if (!state.eventHandle) return false;
 
+    if (GpuTimestampEnabled()) {
+        D3D12_QUERY_HEAP_DESC timingDesc{};
+        timingDesc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
+        timingDesc.Count = 3;
+        if (SUCCEEDED(queue->GetTimestampFrequency(&state.timingFrequency)) && state.timingFrequency &&
+            SUCCEEDED(device->CreateQueryHeap(&timingDesc, IID_PPV_ARGS(&state.timingHeap)))) {
+            state.timingReadback = CreateBuffer(
+                device,
+                3 * sizeof(uint64_t),
+                D3D12_HEAP_TYPE_READBACK,
+                D3D12_RESOURCE_STATE_COPY_DEST);
+            state.timingEnabled = state.timingReadback != nullptr;
+        }
+        Log("NVOF_GPU_TIMESTAMP_INIT available=%d frequency=%llu",
+            state.timingEnabled ? 1 : 0,
+            static_cast<unsigned long long>(state.timingFrequency));
+    }
+
     state.previous = CreateTexture(device, width, height, DXGI_FORMAT_B8G8R8A8_UNORM, D3D12_RESOURCE_STATE_COMMON);
     state.current = CreateTexture(device, width, height, DXGI_FORMAT_B8G8R8A8_UNORM, D3D12_RESOURCE_STATE_COMMON);
-    state.forward = CreateTexture(device, width, height, DXGI_FORMAT_R16G16_SINT, D3D12_RESOURCE_STATE_COMMON);
-    state.backward = CreateTexture(device, width, height, DXGI_FORMAT_R16G16_SINT, D3D12_RESOURCE_STATE_COMMON);
+    state.forward = CreateTexture(device, state.flowWidth, state.flowHeight, DXGI_FORMAT_R16G16_SINT, D3D12_RESOURCE_STATE_COMMON);
+    state.backward = CreateTexture(device, state.flowWidth, state.flowHeight, DXGI_FORMAT_R16G16_SINT, D3D12_RESOURCE_STATE_COMMON);
     if (!state.previous || !state.current || !state.forward || !state.backward) return false;
     const auto inputDesc = state.previous->GetDesc();
     const auto outputDesc = state.backward->GetDesc();
@@ -456,7 +506,8 @@ bool NvofD3D12::Initialize(ID3D12Device *device, ID3D12CommandQueue *queue, uint
         FAILED(state.currentUpload->Map(0, nullptr, reinterpret_cast<void **>(&state.currentUploadMapped)))) return false;
     if (!state.Register(state.previous, state.previousHandle) || !state.Register(state.current, state.currentHandle) ||
         !state.Register(state.forward, state.forwardHandle) || !state.Register(state.backward, state.backwardHandle)) return false;
-    Log("NVOF_RESOURCES_REGISTERED width=%u height=%u inputFormat=%u outputFormat=%u", width, height,
+    Log("NVOF_RESOURCES_REGISTERED width=%u height=%u flowWidth=%u flowHeight=%u grid=%u inputFormat=%u outputFormat=%u",
+        width, height, state.flowWidth, state.flowHeight, state.outputGrid,
         static_cast<unsigned>(DXGI_FORMAT_B8G8R8A8_UNORM), static_cast<unsigned>(DXGI_FORMAT_R16G16_SINT));
     return true;
 }
@@ -477,12 +528,19 @@ bool NvofD3D12::ComputeForwardGpu(const uint8_t *currentRgba, ID3D12Resource *mo
         static_cast<void *>(motionResource), static_cast<void *>(state.conversionMotion), static_cast<void *>(state.conversionPso));
     if (!state.forwardOnly || !state.historyValid || !currentRgba ||
         motionResource != state.conversionMotion || !state.conversionPso) { Log("NVOF_GPU_PRECONDITION_FAILED"); return false; }
+    if (state.timingEnabled && state.timingPending) {
+        Log("NVOF_GPU_TIMESTAMP_PENDING_UNCONSUMED");
+        return false;
+    }
     const auto uploadStart = Clock::now();
     if (!state.MapUpload(state.currentUpload, currentRgba)) { Log("NVOF_GPU_STAGE_MAP_UPLOAD_FAILED"); return false; }
     Log("NVOF_GPU_STAGE_MAP_UPLOAD_OK");
     if (!state.ResetList()) { Log("NVOF_GPU_STAGE_UPLOAD_LIST_RESET_FAILED"); return false; }
     Log("NVOF_GPU_STAGE_UPLOAD_LIST_RESET_OK");
     state.RecordUpload(state.currentUpload, state.current);
+    if (state.timingEnabled) {
+        state.list->EndQuery(state.timingHeap, D3D12_QUERY_TYPE_TIMESTAMP, 0);
+    }
     const HRESULT uploadCloseHr = state.list->Close();
     if (FAILED(uploadCloseHr)) { LogDeviceFailure(state.device, "GPU_UPLOAD_LIST_CLOSE", uploadCloseHr); return false; }
     Log("NVOF_GPU_STAGE_UPLOAD_CLOSE_OK");
@@ -521,13 +579,16 @@ bool NvofD3D12::ComputeForwardGpu(const uint8_t *currentRgba, ID3D12Resource *mo
     const HRESULT conversionListHr = state.conversionList->Reset(state.conversionAllocator, state.conversionPso);
     if (FAILED(conversionListHr)) { LogDeviceFailure(state.device, "GPU_CONVERSION_LIST_RESET", conversionListHr); return false; }
     Log("NVOF_GPU_CONVERSION_LIST_RESET_OK");
+    if (state.timingEnabled) {
+        state.conversionList->EndQuery(state.timingHeap, D3D12_QUERY_TYPE_TIMESTAMP, 1);
+    }
     ID3D12DescriptorHeap *heaps[] = {state.conversionHeap}; state.conversionList->SetDescriptorHeaps(1, heaps);
     state.conversionList->SetComputeRootSignature(state.conversionRoot);
     state.conversionList->SetComputeRootDescriptorTable(0, state.conversionGpu);
     auto uavGpu = state.conversionGpu; uavGpu.ptr += state.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     state.conversionList->SetComputeRootDescriptorTable(1, uavGpu);
-    const uint32_t dimensions[] = {state.width, state.height};
-    state.conversionList->SetComputeRoot32BitConstants(2, 2, dimensions, 0);
+    const uint32_t dimensions[] = {state.width, state.height, state.outputGrid, 0};
+    state.conversionList->SetComputeRoot32BitConstants(2, 4, dimensions, 0);
     Transition(state.conversionList, state.forward, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_SOURCE);
     Transition(state.conversionList, state.flowCopy, state.flowCopyState, D3D12_RESOURCE_STATE_COPY_DEST);
     D3D12_TEXTURE_COPY_LOCATION source{}, destination{};
@@ -542,6 +603,17 @@ bool NvofD3D12::ComputeForwardGpu(const uint8_t *currentRgba, ID3D12Resource *mo
     D3D12_RESOURCE_BARRIER uavBarrier{}; uavBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
     state.conversionList->ResourceBarrier(1, &uavBarrier);
     Transition(state.conversionList, state.conversionMotion, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    if (state.timingEnabled) {
+        state.conversionList->EndQuery(state.timingHeap, D3D12_QUERY_TYPE_TIMESTAMP, 2);
+        state.conversionList->ResolveQueryData(
+            state.timingHeap,
+            D3D12_QUERY_TYPE_TIMESTAMP,
+            0,
+            3,
+            state.timingReadback,
+            0);
+        state.timingPending = true;
+    }
     const HRESULT conversionCloseHr = state.conversionList->Close();
     if (FAILED(conversionCloseHr)) { LogDeviceFailure(state.device, "GPU_CONVERSION_LIST_CLOSE", conversionCloseHr); return false; }
     Log("NVOF_GPU_CONVERSION_LIST_CLOSE_OK");
@@ -557,6 +629,7 @@ bool NvofD3D12::ComputeForward(const uint8_t *currentRgba, bool resetTemporalHin
     std::vector<uint8_t> &motionR16G16Float, std::vector<NvofFlowVector> *flowPixels,
     NvofFlowStatistics *statistics, NvofTimings *timings) {
     Log("NVOF_CPU_BEGIN historyValid=%d resetTemporalHints=%d", impl_->historyValid ? 1 : 0, resetTemporalHints ? 1 : 0);
+    if (impl_->outputGrid != 1) { Log("NVOF_CPU_GRID_UNSUPPORTED grid=%u", impl_->outputGrid); return false; }
     if (!impl_->forwardOnly || !currentRgba || !impl_->historyValid) { Log("NVOF_CPU_PRECONDITION_FAILED"); return false; }
     auto &state = *impl_;
     NvofTimings measured{};
@@ -634,6 +707,7 @@ bool NvofD3D12::ComputeBackward(const uint8_t *previousRgba, const uint8_t *curr
     bool resetTemporalHints, std::vector<uint8_t> &motionR16G16Float,
     std::vector<NvofFlowVector> *flowPixels, NvofFlowStatistics *statistics, NvofTimings *timings) {
     Log("NVOF_BACKWARD_BEGIN resetTemporalHints=%d", resetTemporalHints ? 1 : 0);
+    if (impl_->outputGrid != 1) { Log("NVOF_BACKWARD_GRID_UNSUPPORTED grid=%u", impl_->outputGrid); return false; }
     if (!impl_->handle || !previousRgba || !currentRgba) { Log("NVOF_BACKWARD_PRECONDITION_FAILED"); return false; }
     auto &state = *impl_;
     NvofTimings measured{};
@@ -763,6 +837,37 @@ bool NvofD3D12::ComputeBackward(const uint8_t *previousRgba, const uint8_t *curr
     return true;
 }
 
+bool NvofD3D12::ConsumeGpuTimings(NvofGpuTimings *timings) {
+    if (!timings || !impl_) return false;
+    *timings = {};
+    auto &state = *impl_;
+    if (!state.timingEnabled || !state.timingPending || !state.timingReadback || !state.timingFrequency) {
+        return false;
+    }
+
+    uint64_t *ticks = nullptr;
+    D3D12_RANGE range{0, 3 * sizeof(uint64_t)};
+    const HRESULT mapped = state.timingReadback->Map(0, &range, reinterpret_cast<void **>(&ticks));
+    if (FAILED(mapped) || !ticks) {
+        Log("NVOF_GPU_TIMESTAMP_READBACK_FAILED hr=0x%08X", static_cast<unsigned>(mapped));
+        return false;
+    }
+    const auto elapsed = [&](uint32_t begin, uint32_t end) {
+        return ticks[end] >= ticks[begin]
+            ? static_cast<double>(ticks[end] - ticks[begin]) * 1000.0 /
+                static_cast<double>(state.timingFrequency)
+            : 0.0;
+    };
+    timings->valid = true;
+    timings->bracketMs = elapsed(0, 1);
+    timings->conversionMs = elapsed(1, 2);
+    timings->frequency = state.timingFrequency;
+    D3D12_RANGE written{0, 0};
+    state.timingReadback->Unmap(0, &written);
+    state.timingPending = false;
+    return true;
+}
+
 void NvofD3D12::Shutdown() {
     if (!impl_) return;
     auto &state = *impl_;
@@ -801,6 +906,11 @@ void NvofD3D12::Shutdown() {
     Release(state.conversionMotion);
     Release(state.flowCopy);
     Release(state.conversionList);
+    Release(state.timingReadback);
+    Release(state.timingHeap);
+    state.timingEnabled = false;
+    state.timingPending = false;
+    state.timingFrequency = 0;
     Release(state.conversionAllocator);
     Release(state.conversionPso);
     Release(state.conversionRoot);

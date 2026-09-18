@@ -77,7 +77,8 @@ and distribution terms continue to apply. The setup flow records Authenticode
 observations, requires a clean Microsoft Defender scan for automatic approval,
 and does not copy these binaries into this Git repository or a project release.
 
-The newer DLSS 5 Neuroframe v9 release remains a separate static-only research
-candidate and is not substituted for the validated v3 execution path.
+Visual Enhancer v10 is the newest DLSS 5 Neuroframe static-only research
+candidate and is not substituted for the validated v3 execution path. The
+earlier v9 candidate is retained as historical static-audit evidence.
 
 FFmpeg/FFprobe and Python dependencies retain their own upstream licenses.

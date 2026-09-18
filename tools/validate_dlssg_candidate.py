@@ -36,6 +36,7 @@ from src.core.dlssg_attestation import ATTESTATION_PATH, current, write_result
 from src.core.dlssg_official_runtime import identity, policy_satisfied
 from src.core.dlssg_profiles import C55_WORKER_SHA256, managed_runtime_paths, profile
 from src.core.dlssg_readiness import sha256_file
+from src.core.dlssg_gpu_timing import summarize_gpu_timestamps
 
 DEFAULT_WORKER = ROOT / "native" / "dlssg_sm86_offline" / "bin" / "dlssg_sm86_offline.exe"
 PER_RUN_TIMEOUT = 30
@@ -84,13 +85,22 @@ def _child(
     runtime_profile: str,
     multiplier: int,
     motion_mode: int,
+    *,
+    instrumented_timing: bool = False,
+    width: int = VALIDATION_WIDTH,
+    height: int = VALIDATION_HEIGHT,
+    timing_frames: int = 3,
 ) -> int:
-    # Match the preserved bounded MFG validation contract. The community
-    # runtime has proven Create/Evaluate at 256x256 and practical video
-    # resolutions; 64x64 reaches CreateFeature but returns InvalidParameter.
-    width = VALIDATION_WIDTH
-    height = VALIDATION_HEIGHT
-    frames = [_frame(width, height, frame_id) for frame_id in range(3)]
+    # Normal validation remains fixed at 256x256. Explicit child-only
+    # instrumented timing may supply practical video geometry after the bounded
+    # 256x256 gate has passed.
+    if width < 256 or height < 256 or width > 1920 or height > 1080:
+        raise RuntimeError(f"instrumented validation geometry is out of bounds: {width}x{height}")
+    if timing_frames < 3 or timing_frames > 12:
+        raise RuntimeError(f"instrumented timing frame count is out of bounds: {timing_frames}")
+    if timing_frames != 3 and not instrumented_timing:
+        raise RuntimeError("non-default timing frame count requires --instrumented-timing")
+    frames = [_frame(width, height, frame_id) for frame_id in range(timing_frames)]
     reset_motion = bytes(width * height * 4)
     motion = b"".join(struct.pack("<ee", 1.0, 0.0) for _ in range(width * height))
     expected = profile(runtime_profile)
@@ -101,7 +111,7 @@ def _child(
         expected_community_sha256=expected.runtime_sha256,
         strict_runtime_hash=True,
         diagnostic_callback=lambda line: print(f"WORKER {line}", file=sys.stderr, flush=True),
-        diagnostic_mode=True,
+        diagnostic_mode=not instrumented_timing,
     ) as client:
         client.create(width, height, multiplier=multiplier, motion_mode=motion_mode)
         reset = client.process(
@@ -112,7 +122,7 @@ def _child(
         )
         validate_reset(reset)
         results = []
-        for frame_id in range(3):
+        for frame_id in range(timing_frames):
             result = client.process(
                 frame_id + 1,
                 frames[frame_id],
@@ -262,6 +272,10 @@ def _run_one(args: argparse.Namespace, multiplier: int, motion_mode: int) -> dic
             )
 
     tail = " | ".join(lines[-12:])
+    gpu_timestamps = summarize_gpu_timestamps(
+        line[7:] if line.startswith("CHILD ") else line
+        for line in lines
+    )
     if timed_out:
         detail = f": {tail}" if tail else ""
         raise TimeoutError(
@@ -271,7 +285,11 @@ def _run_one(args: argparse.Namespace, multiplier: int, motion_mode: int) -> dic
         raise RuntimeError(
             f"{multiplier}X {args.profile} validation failed with exit {process.returncode}: {tail}"
         )
-    return {"multiplier": multiplier, "output": lines[-1] if lines else ""}
+    return {
+        "multiplier": multiplier,
+        "output": lines[-1] if lines else "",
+        "gpu_timestamps": gpu_timestamps,
+    }
 
 
 def main() -> int:
@@ -284,12 +302,23 @@ def main() -> int:
     parser.add_argument("--child", action="store_true")
     parser.add_argument("--multiplier", type=int)
     parser.add_argument("--motion-mode", type=int, default=MOTION_MODE_EXTERNAL_R16G16_FLOAT)
+    parser.add_argument("--instrumented-timing", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--timing-frames", type=int, default=3, help=argparse.SUPPRESS)
+    parser.add_argument("--width", type=int, default=VALIDATION_WIDTH, help=argparse.SUPPRESS)
+    parser.add_argument("--height", type=int, default=VALIDATION_HEIGHT, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.runtime is None:
         args.runtime = managed_runtime_paths(ROOT, args.profile)[0]
     args.worker = args.worker.resolve()
     args.runtime = args.runtime.resolve()
     args.official = args.official.resolve()
+
+    if args.instrumented_timing and not args.child:
+        raise SystemExit("BLOCKED: --instrumented-timing is reserved for bounded child validation")
+    if not args.child and (args.width != VALIDATION_WIDTH or args.height != VALIDATION_HEIGHT):
+        raise SystemExit("BLOCKED: practical geometry is reserved for instrumented child validation")
+    if args.child and not args.instrumented_timing and (args.width != VALIDATION_WIDTH or args.height != VALIDATION_HEIGHT):
+        raise SystemExit("BLOCKED: non-default child geometry requires --instrumented-timing")
 
     if args.child:
         return _child(
@@ -299,6 +328,10 @@ def main() -> int:
             args.profile,
             args.multiplier,
             args.motion_mode,
+            instrumented_timing=args.instrumented_timing,
+            width=args.width,
+            height=args.height,
+            timing_frames=args.timing_frames,
         )
 
     expected = profile(args.profile)

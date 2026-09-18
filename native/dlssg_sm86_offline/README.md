@@ -44,15 +44,18 @@ object, one loaded community runtime, and one DLSS-G feature alive for many
 frames. Standard input and output carry the versioned binary protocol in
 `worker_protocol.h`; all native diagnostics go to standard error.
 
-Protocol version 3 supports `HELLO`, `CREATE`, `PROCESS`, `RESET_HISTORY`, and
-`CLOSE`. The first `PROCESS` after `CREATE` or `RESET_HISTORY` is forced to be a
-reset/bootstrap frame and intentionally returns no generated frame. Every later
-successful `PROCESS` returns one tightly packed RGBA8 midpoint frame.
+Protocol version 4 supports `HELLO`, `CREATE`, `PROCESS`, `RESET_HISTORY`, and
+`CLOSE`. CREATE selects 2X, 3X, or 4X, corresponding to one, two, or three
+generated frames per completed group. The first PROCESS after CREATE or
+RESET_HISTORY is forced to be a reset/bootstrap frame and intentionally returns
+no generated frame. Every later successful PROCESS returns the complete ordered
+group of tightly packed RGBA8 generated frames.
 Frame IDs must increase monotonically for the lifetime of the worker, including
 across history resets.
 
-The implementation supports fixed-resolution 2X sessions up to 3840x2160 and
-internally maintained constant R32_FLOAT depth 0.5. A later CREATE can recreate
+The implementation supports fixed-resolution 2X/3X/4X sessions and internally
+maintained constant R32_FLOAT depth 0.5. Practical-resolution support remains
+bounded by the validated runtime/hardware matrix. A later CREATE can recreate
 size-dependent resources and the feature without restarting the worker. The
 caller supplies RGBA8 color and selects either:
 
@@ -78,7 +81,7 @@ The Python API is `src.backends.dlssg_worker.DlssgWorker`:
 from src.backends.dlssg_worker import DlssgWorker
 
 with DlssgWorker(worker_exe, community_version_dll, official_runtime_dir) as worker:
-    worker.create(256, 256)
+    worker.create(256, 256, multiplier=4)
     worker.process(0, rgba0, zero_motion, reset=True)  # bootstrap; no output
     midpoint = worker.process(1, rgba1, motion1).output
     worker.reset_history()

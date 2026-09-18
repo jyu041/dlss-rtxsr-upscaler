@@ -140,6 +140,30 @@ def test_verify_detects_modified_managed_file(tmp_path):
     assert "integrity" in result["detail"]
 
 
+
+def test_verify_ignores_only_declared_generated_runtime_files(tmp_path):
+    manifest = tmp_path / "manifest.json"
+    demo = spec(
+        allowlist=("payload.bin",),
+        policy="USER_SUPPLIED",
+        constraints={"ignored_generated_files": ["logs/*.jsonl"]},
+    )
+    manifest.write_text(json.dumps({"runtimes": [demo.__dict__]}), encoding="utf-8")
+    archive = tmp_path / "demo.zip"
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.writestr("payload.bin", b"ok")
+    manager = RuntimeManager(manifest, tmp_path / "install")
+    destination = manager.import_zip("demo", archive)
+    (destination / "logs").mkdir()
+    (destination / "logs" / "runtime.jsonl").write_text("{}\n", encoding="utf-8")
+    result = manager.verify("demo")
+    assert result["ok"] is True
+
+    (destination / "unexpected.dll").write_bytes(b"not managed")
+    result = manager.verify("demo")
+    assert result["ok"] is False
+    assert "integrity" in result["detail"]
+
 def test_manifest_loads_pinned_multifile_candidate():
     manager = RuntimeManager(Path("src/runtime_manager/manifest.json"), Path("runtime"))
     spec = manager.specs["dlssg-sm86-0.3.1-candidate"]
@@ -259,3 +283,37 @@ def test_candidate_install_is_files_verified_but_validation_required(tmp_path):
     assert manager.inspect("demo")[1].value == "VALIDATION_REQUIRED"
     result = manager.verify("demo")
     assert result["ok"] is True and result["files_verified"] is True and result["backend_ready"] is False
+
+
+def test_manifest_loads_dlss5_v10_static_candidate():
+    manager = RuntimeManager(Path("src/runtime_manager/manifest.json"), Path("runtime"))
+    candidate = manager.specs["dlss5-neuroframe-v10-static-candidate"]
+    assert candidate.version == "v10.0-7781107b"
+    assert candidate.sha256 == "394BED6FBB3CCA1A994AE02A0A1152213D43030D6761437F86ABAA863C33D515"
+    assert candidate.size_bytes == 690203043
+    assert candidate.channel == "candidate-static-only"
+    assert candidate.redistributable is False
+    assert candidate.direct_user_download is True
+    assert candidate.destination == "dlss5/neuroframe-v10-candidate"
+    assert candidate.allowlist == (
+        "bin/runtime/dlssnr/nvngx_dlssnr.dll",
+        "bin/runtime/dlssnr/neuroframe_engine_neural_rendering.dll",
+        "bin/runtime/dlssnr/neuroframe_caller.dll",
+        "bin/runtime/dlssnr/LICENSE-NVIDIA-DLSS.txt",
+        "bin/runtime/dlssnr/LICENSE-Merserk.txt",
+    )
+    assert candidate.constraints["static_only"] is True
+    assert candidate.constraints["feature_id_observed"] == 18
+    assert candidate.constraints["processing_scale_is_lanczos_pre_resize"] is True
+    assert candidate.constraints["native_output_scaling_unverified"] is True
+    audit = candidate.constraints["static_audit"]
+    assert audit["workflow_run_id"] == 35311872691
+    assert audit["executed"] is False
+    assert audit["all_runtime_dlls_x86_64"] is True
+    assert audit["all_runtime_dlls_authenticode"] == "NotSigned"
+    assert audit["direct_network_imports_observed"] is False
+    assert audit["direct_process_launch_imports_observed"] is False
+    files = candidate.constraints["extracted_files"]
+    assert files["nvngx_dlssnr.dll"]["sha256"] == "6EB209E764F39872625DEBD6ABAF45E2BB6322F6F270F781F70C059AE30B3927"
+    assert files["neuroframe_engine_neural_rendering.dll"]["sha256"] == "F657D20E569F97DEC25E02141F64354CD4B3E1DC51FA1DFE48ACEEBCC3CC43D5"
+    assert files["neuroframe_caller.dll"]["sha256"] == "B3611046837BC2F2E957A694CE0817E3C1B304BD653D0C7A193148E5BDD02437"

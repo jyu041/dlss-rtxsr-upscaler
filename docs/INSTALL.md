@@ -186,8 +186,9 @@ The currently exercised RTX 3070-family/Ampere v3 path accepts 1.0x DLSS 5
 output. Higher output scales remain blocked for that validated pairing because
 they reproducibly fell back with NGX `InvalidParameter (0xBAD00005)`.
 
-The pinned Neuroframe v9 research candidate remains separate and static-only;
-setup does not substitute v9 for the validated v3 execution path. See
+The pinned Neuroframe v10 research candidate remains separate and static-only;
+setup does not substitute v10 for the validated v3 execution path. The earlier
+v9 candidate is retained as historical static-audit evidence. See
 `docs/DLSS5_APPROVAL.md` for the complete approval and hardware-scope contract.
 
 ## Startup behavior

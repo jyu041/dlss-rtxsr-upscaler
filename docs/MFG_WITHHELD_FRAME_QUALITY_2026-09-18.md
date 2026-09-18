@@ -126,7 +126,7 @@ the coarse-grid candidate.
 The tool:
 
 - accepts a user-supplied higher-frame-rate source clip;
-- is currently bounded to 1280x720 or 1920x1080;
+- is currently bounded to 640x480, 1280x720, or 1920x1080;
 - supports 2X and 4X only for this comparison;
 - retains every M-th source frame as the anchor stream;
 - uses the real frames between anchors as withheld ground truth;
@@ -157,8 +157,12 @@ automatically namespaced as:
 `<source-stem>-<source-sha12>/<multiplier>x/start-<frame>/`
 
 so different multipliers and different source segments cannot silently overwrite
-each other. The combined report also records the selected start/end frame plus
-source-frame and anchor-frame intervals in milliseconds.
+each other. The combined report also records the selected start/end frame, source FPS,
+derived anchor FPS, and source-frame/anchor-frame intervals. A 29.97-fps source
+used for a 2X withheld-frame comparison therefore produces an approximately
+14.985-fps anchor stream. That remains useful as a grid-1 versus grid-4
+coarse-temporal stress test, but it must not be presented as a direct proxy for
+a 60-fps source reduced to 30-fps anchors.
 
 No automatic pass/fail quality threshold is encoded yet. A metric delta is
 evidence, not a promotion rule. Temporal flicker, motion boundaries,

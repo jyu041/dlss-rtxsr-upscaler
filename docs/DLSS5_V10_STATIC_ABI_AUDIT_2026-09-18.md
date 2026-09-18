@@ -183,17 +183,22 @@ Therefore the exact extracted identities for:
 - `LICENSE-NVIDIA-DLSS.txt`;
 - `LICENSE-Merserk.txt`;
 
-remain to be generated from the authentic release archive using:
+remain to be generated from the authentic release archive.
+
+A pinned Windows helper now performs that research workflow:
 
 ```powershell
-python tools\audit_runtime_candidate.py dlss5-neuroframe-v10-static-candidate ^
-  --archive C:\path\to\Visual.Enhancer.v10.0.zip ^
-  --authenticode ^
-  --output runtime\audit\dlss5-v10-static.json
+powershell -ExecutionPolicy Bypass -File tools\audit_dlss5_v10.ps1
 ```
 
-This command extracts into temporary storage, records evidence, and executes no
-candidate binary.
+It downloads only the exact upstream GitHub v10 asset when absent, verifies
+archive size `690203043` and SHA-256
+`394BED6FBB3CCA1A994AE02A0A1152213D43030D6761437F86ABAA863C33D515`
+**before extraction**, and then invokes `tools/audit_runtime_candidate.py` with
+Authenticode collection. A pre-existing archive can be used with `-NoDownload`.
+
+The audit extracts into temporary storage, records hashes, PE imports/imported
+symbols/exports, and signatures, and executes no candidate binary.
 
 ## Promotion gate
 

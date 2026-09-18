@@ -941,9 +941,9 @@ public:
         gpuTimestamps_.Mark(list_, 0);
         if (gpuFlow && !effectiveReset) RecordTextureUpload(color_, list_, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         else { RecordTextureUpload(color_, list_, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE); RecordTextureUpload(motion_, list_, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE); }
+        gpuTimestamps_.Mark(list_, 1);
         RecordDisableZero(disable_, list_);
         if (diagnosticMode_ || !effectiveReset) RecordTextureUpload(output_, list_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        gpuTimestamps_.Mark(list_, 1);
         NVSDK_NGX_DLSSG_Opt_Eval_Params options{};
         const uint32_t count = generatedPerGroup_;
         for (uint32_t index = 1; index <= count; ++index) {

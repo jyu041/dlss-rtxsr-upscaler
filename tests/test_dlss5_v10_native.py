@@ -4,7 +4,13 @@ from pathlib import Path
 import pytest
 
 import src.backends.dlss5_v10_native as native
-from src.backends.dlss5_v10_contract import REQUIRED_EXPORTS
+from src.backends.dlss5_v10_contract import (
+    FORMAT_RGBA8,
+    MEMORY_HOST,
+    MEMORY_NONE,
+    REQUIRED_EXPORTS,
+)
+from src.backends.dlss5_v10_protocol import CreateRequest
 from src.backends.dlss5_v10_static import V10StaticStatus
 
 
@@ -114,3 +120,93 @@ def test_v10_production_host_does_not_import_native_binding_module():
     ).read_text(encoding="utf-8")
     assert "dlss5_v10_native" not in source
     assert "load_bridge" not in source
+
+
+def test_v10_host_descriptor_builder_matches_upstream_host_rgba_contract():
+    request = CreateRequest(
+        64,
+        64,
+        gpu_ordinal=2,
+        processing_scale=1.0,
+        style=1,
+        intensity=1.25,
+        nr_passes=2,
+        local_tone=0.8,
+        local_structure=0.7,
+        skin_structure=-0.5,
+        color_strength=0.6,
+        tone_preservation=0.2,
+        face_skin_protection=0.3,
+        grain_preservation=0.4,
+        shimmer_suppression=0.5,
+        automatic_mask=False,
+        prefer_nvof=True,
+    )
+    source_bytes = bytearray(64 * 64 * 4)
+    destination_bytes = bytearray(64 * 64 * 4)
+    source, destination, owners = native.build_host_rgba_descriptors(
+        request, source_bytes, destination_bytes, timestamp=123
+    )
+
+    assert source.memory_type == MEMORY_HOST
+    assert source.pixel_format == FORMAT_RGBA8
+    assert (source.width, source.height) == (64, 64)
+    assert source.strides[0] == 64 * 4
+    assert source.planes[0] != 0
+    assert source.timestamp == 123
+
+    assert destination.memory_type == MEMORY_HOST
+    assert destination.pixel_format == FORMAT_RGBA8
+    assert (destination.width, destination.height) == (64, 64)
+    assert destination.strides[0] == 64 * 4
+    assert destination.planes[0] != 0
+    assert destination.timestamp == 123
+    assert len(owners) == 2
+
+
+def test_v10_render_parameter_builder_matches_create_contract():
+    request = CreateRequest(
+        64,
+        64,
+        style=2,
+        intensity=1.5,
+        nr_passes=4,
+        local_tone=1.2,
+        local_structure=0.9,
+        skin_structure=-0.25,
+        color_strength=0.75,
+        tone_preservation=0.25,
+        face_skin_protection=0.5,
+        grain_preservation=0.4,
+        shimmer_suppression=0.6,
+        automatic_mask=True,
+        prefer_nvof=True,
+    )
+    params = native.build_render_parameters(request, reset=True)
+    assert params.style == 2
+    assert params.intensity == pytest.approx(1.5)
+    assert params.nr_passes == 4
+    assert params.tone == pytest.approx(1.2)
+    assert params.structure == pytest.approx(0.9)
+    assert params.skin == pytest.approx(-0.25)
+    assert params.color_strength == pytest.approx(0.75)
+    assert params.tone_preservation == pytest.approx(0.25)
+    assert params.face_skin_protection == pytest.approx(0.5)
+    assert params.grain_preservation == pytest.approx(0.4)
+    assert params.shimmer_suppression == pytest.approx(0.6)
+    assert params.automask == 1
+    assert params.reset == 1
+    assert params.prefer_nvof == 1
+    assert params.mask_memory_type == MEMORY_NONE
+    assert params.mask_plane == 0
+
+
+def test_v10_host_descriptor_builder_rejects_wrong_buffer_lengths():
+    request = CreateRequest(64, 64)
+    with pytest.raises(ValueError, match="source RGBA8 buffer"):
+        native.build_host_rgba_descriptors(
+            request,
+            bytearray(1),
+            bytearray(64 * 64 * 4),
+            timestamp=0,
+        )

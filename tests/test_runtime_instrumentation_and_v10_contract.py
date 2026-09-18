@@ -163,3 +163,12 @@ def test_nvof_gpu_timestamp_samples_cannot_be_silently_overwritten():
 def test_nvof_header_forward_declares_resource_type():
     header = (ROOT / "native" / "dlssg_sm86_offline" / "nvof_d3d12.h").read_text(encoding="utf-8")
     assert "struct ID3D12Resource;" in header
+
+
+def test_mfg_gpu_timestamp_probe_covers_4x_and_releases_resources():
+    source = (ROOT / "native" / "dlssg_sm86_offline" / "community_run2x.cpp").read_text(encoding="utf-8")
+    assert "static constexpr UINT kCapacity = 16;" in source
+    assert 'static_assert(kCapacity >= 12, "4X GPU timing requires twelve timestamp slots");' in source
+    assert "~GpuTimestampProbe() { Release(); }" in source
+    assert "RunRelease(readback);" in source
+    assert "RunRelease(heap);" in source

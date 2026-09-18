@@ -9,6 +9,18 @@ import tools.capture_mfg_grid_quality_ab as capture
 
 
 
+
+def test_quality_runner_builds_selftests_then_invokes_capture_tool():
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "tools" / "run_mfg_grid_quality_ab.ps1").read_text(encoding="utf-8")
+    assert "build_validate_dlssg_instrumented.ps1" in source
+    assert "capture_mfg_grid_quality_ab.py" in source
+    assert "[ValidateSet(2,4)]" in source
+    assert "[ValidateRange(1,24)]" in source
+    assert "'--worker', $worker" in source
+    assert "'--runtime', $runtime" in source
+    assert "'--official', $official" in source
+
 def test_evidence_root_namespaces_source_identity_and_multiplier(tmp_path):
     base = tmp_path / "quality"
     source = tmp_path / "My Clip.mp4"

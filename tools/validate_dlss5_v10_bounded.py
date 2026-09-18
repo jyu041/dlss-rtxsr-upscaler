@@ -176,7 +176,6 @@ def run_bounded(
             preflight,
             acknowledgement=EXPERIMENT_ACK,
         )
-        report["native_executed"] = True
         report["hello"] = hello
 
         create = client.create(
@@ -201,6 +200,7 @@ def run_bounded(
             )
         )
         report["create"] = create
+        report["native_executed"] = bool(create.get("native_loaded") is True)
 
         initialization = create.get("initialization", {})
         gpu_name = str(initialization.get("gpu_name", ""))

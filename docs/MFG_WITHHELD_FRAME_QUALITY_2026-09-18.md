@@ -115,3 +115,43 @@ small high-FPS source set containing:
 
 Generate 2X/3X/4X anchor-stream outputs, construct explicit scorer manifests,
 and retain the metric reports alongside timing evidence.
+
+## Automated grid 1 versus grid 4 capture
+
+`tools/capture_mfg_grid_quality_ab.py` now automates the first quality gate for
+the coarse-grid candidate.
+
+The tool:
+
+- accepts a user-supplied higher-frame-rate source clip;
+- is currently bounded to 1280x720 or 1920x1080;
+- supports 2X and 4X only for this comparison;
+- retains every M-th source frame as the anchor stream;
+- uses the real frames between anchors as withheld ground truth;
+- runs the same instrumented worker twice, once with NVOF grid 1 and once with grid 4;
+- writes one shared immutable reference set plus separate generated sets;
+- scores both runs with the existing RGB MAE/RMSE/PSNR/global-SSIM contract;
+- emits a combined `grid-ab-quality-report.json` with grid4-minus-grid1 metric deltas.
+
+Runtime safety gates remain in force:
+
+- the worker must live under `bin-instrumented`;
+- the production C55 hash is explicitly rejected;
+- the legacy community runtime and NVIDIA provider hashes must match the pinned validated identities;
+- grid environment variables are restored after each run.
+
+Example:
+
+```powershell
+python tools\capture_mfg_grid_quality_ab.py `
+  --input C:\path\to\high-fps-test.mp4 `
+  --multiplier 2 `
+  --groups 8
+```
+
+The output tree defaults to `runtime/quality/mfg-grid-ab`.
+
+No automatic pass/fail quality threshold is encoded yet. A metric delta is
+evidence, not a promotion rule. Temporal flicker, motion boundaries,
+occlusion/disocclusion, text/UI, thin detail, scene cuts, faces and hands still
+require targeted perceptual review.

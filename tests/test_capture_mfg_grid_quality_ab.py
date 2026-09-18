@@ -29,6 +29,7 @@ def test_quality_delta_direction():
                 "mean_rmse": 12.0,
                 "mean_psnr_db": 25.0,
                 "mean_ssim_rgb": 0.90,
+                "mean_edge_mae": 15.0,
             }
         }
     }
@@ -39,6 +40,7 @@ def test_quality_delta_direction():
                 "mean_rmse": 13.5,
                 "mean_psnr_db": 24.0,
                 "mean_ssim_rgb": 0.88,
+                "mean_edge_mae": 18.0,
             }
         }
     }
@@ -47,7 +49,60 @@ def test_quality_delta_direction():
     assert delta["grid4_minus_grid1_mean_rmse"] == pytest.approx(1.5)
     assert delta["grid4_minus_grid1_mean_psnr_db"] == pytest.approx(-1.0)
     assert delta["grid4_minus_grid1_mean_ssim_rgb"] == pytest.approx(-0.02)
+    assert delta["grid4_minus_grid1_mean_edge_mae"] == pytest.approx(3.0)
 
+
+
+def test_paired_quality_counts_per_sample_wins_and_deltas():
+    def report(mae, psnr):
+        return {
+            "samples": [
+                {
+                    "group": 0,
+                    "generated_index": 1,
+                    "mae": mae[0],
+                    "rmse": mae[0] + 1,
+                    "psnr_db": psnr[0],
+                    "ssim_rgb": 0.90 if mae[0] < 10 else 0.80,
+                    "edge_mae": mae[0] + 2,
+                },
+                {
+                    "group": 1,
+                    "generated_index": 1,
+                    "mae": mae[1],
+                    "rmse": mae[1] + 1,
+                    "psnr_db": psnr[1],
+                    "ssim_rgb": 0.85,
+                    "edge_mae": mae[1] + 3,
+                },
+            ]
+        }
+
+    result = capture._paired_quality(
+        report((8.0, 10.0), (30.0, 25.0)),
+        report((9.0, 9.0), (29.0, 26.0)),
+    )
+    assert len(result["samples"]) == 2
+    assert result["wins"]["mae"] == {
+        "grid1": 1,
+        "grid4": 1,
+        "tie": 0,
+        "comparable": 2,
+    }
+    assert result["wins"]["psnr_db"] == {
+        "grid1": 1,
+        "grid4": 1,
+        "tie": 0,
+        "comparable": 2,
+    }
+    assert result["samples"][0]["grid4_minus_grid1"]["mae"] == pytest.approx(1.0)
+
+
+def test_paired_quality_rejects_mismatched_sample_keys():
+    grid1 = {"samples": [{"group": 0, "generated_index": 1}]}
+    grid4 = {"samples": [{"group": 1, "generated_index": 1}]}
+    with pytest.raises(RuntimeError, match="identical sample keys"):
+        capture._paired_quality(grid1, grid4)
 
 def test_capture_grid_writes_shared_reference_manifest(tmp_path, monkeypatch):
     width, height, multiplier, groups = 1280, 720, 2, 1

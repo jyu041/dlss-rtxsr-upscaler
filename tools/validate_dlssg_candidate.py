@@ -36,6 +36,7 @@ from src.core.dlssg_attestation import ATTESTATION_PATH, current, write_result
 from src.core.dlssg_official_runtime import identity, policy_satisfied
 from src.core.dlssg_profiles import C55_WORKER_SHA256, managed_runtime_paths, profile
 from src.core.dlssg_readiness import sha256_file
+from src.core.dlssg_gpu_timing import summarize_gpu_timestamps
 
 DEFAULT_WORKER = ROOT / "native" / "dlssg_sm86_offline" / "bin" / "dlssg_sm86_offline.exe"
 PER_RUN_TIMEOUT = 30
@@ -262,6 +263,10 @@ def _run_one(args: argparse.Namespace, multiplier: int, motion_mode: int) -> dic
             )
 
     tail = " | ".join(lines[-12:])
+    gpu_timestamps = summarize_gpu_timestamps(
+        line[7:] if line.startswith("CHILD ") else line
+        for line in lines
+    )
     if timed_out:
         detail = f": {tail}" if tail else ""
         raise TimeoutError(
@@ -271,7 +276,11 @@ def _run_one(args: argparse.Namespace, multiplier: int, motion_mode: int) -> dic
         raise RuntimeError(
             f"{multiplier}X {args.profile} validation failed with exit {process.returncode}: {tail}"
         )
-    return {"multiplier": multiplier, "output": lines[-1] if lines else ""}
+    return {
+        "multiplier": multiplier,
+        "output": lines[-1] if lines else "",
+        "gpu_timestamps": gpu_timestamps,
+    }
 
 
 def main() -> int:

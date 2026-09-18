@@ -7,6 +7,7 @@ The native host start path remains fail-closed.
 from __future__ import annotations
 
 import json
+import os
 import queue
 from pathlib import Path
 import subprocess
@@ -15,6 +16,8 @@ import threading
 import time
 
 from .dlss5_v10_adapter import V10ExecutionDisabled
+EXPERIMENT_ACK = "BOUNDED_256_ONE_FRAME"
+
 from .dlss5_v10_protocol import (
     CLOSE,
     CREATE,
@@ -59,6 +62,7 @@ class V10ProtocolClient:
         self._poisoned = False
         self._poison_reason: str | None = None
         self._closed = False
+        self._native_mode = False
 
     @property
     def poisoned(self) -> bool:
@@ -74,26 +78,33 @@ class V10ProtocolClient:
 
     def start(self) -> None:
         raise V10ExecutionDisabled(
-            "Native DLSS5 v10 host start remains disabled; use start_protocol_selftest()"
+            "Native DLSS5 v10 host start remains disabled; use an explicit bounded experimental entry point"
         )
 
-    def start_protocol_selftest(self) -> dict[str, object]:
+    def _spawn(self, command: list[str], *, env: dict[str, str] | None = None) -> None:
         if self.process is not None:
             raise V10ProtocolError("v10 protocol client is already started")
         self.process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=0,
+            env=env,
+        )
+        self._start_readers()
+
+    def start_protocol_selftest(self) -> dict[str, object]:
+        self._native_mode = False
+        self._spawn(
             [
                 self.python,
                 "-u",
                 "-m",
                 "src.backends.dlss5_v10_host",
                 "--protocol-selftest-server",
-            ],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            bufsize=0,
+            ]
         )
-        self._start_readers()
         command, request_id, payload = self._wait(self.start_timeout)
         if command != HELLO or request_id != 0:
             self._poison(f"expected HELLO request 0, received command={command} request={request_id}")
@@ -101,6 +112,51 @@ class V10ProtocolClient:
         value = decode_json(payload)
         if not isinstance(value, dict) or value.get("native_loaded") is not False:
             self._poison("invalid protocol selftest HELLO")
+            raise V10ProtocolError(self._poison_reason)
+        return value
+
+    def start_native_experimental(
+        self,
+        runtime_dir: str | Path,
+        preflight_report: str | Path,
+        *,
+        acknowledgement: str,
+    ) -> dict[str, object]:
+        if acknowledgement != EXPERIMENT_ACK:
+            raise V10ExecutionDisabled(
+                "bounded native v10 start requires the exact acknowledgement token"
+            )
+        self._native_mode = True
+        env = dict(os.environ)
+        env["NVE_DLSS5_V10_NATIVE"] = EXPERIMENT_ACK
+        self._spawn(
+            [
+                self.python,
+                "-u",
+                "-m",
+                "src.backends.dlss5_v10_host",
+                "--experimental-native-serve",
+                "--runtime-dir",
+                str(Path(runtime_dir).expanduser().resolve()),
+                "--preflight-report",
+                str(Path(preflight_report).expanduser().resolve()),
+            ],
+            env=env,
+        )
+        command, request_id, payload = self._wait(self.start_timeout)
+        if command != HELLO or request_id != 0:
+            self._poison(
+                f"expected HELLO request 0, received command={command} request={request_id}"
+            )
+            raise V10ProtocolError(self._poison_reason)
+        value = decode_json(payload)
+        if (
+            not isinstance(value, dict)
+            or value.get("native_loaded") is not False
+            or value.get("experimental_native_mode") is not True
+            or value.get("normal_backend_enabled") is not False
+        ):
+            self._poison("invalid bounded native HELLO")
             raise V10ProtocolError(self._poison_reason)
         return value
 
@@ -197,7 +253,11 @@ class V10ProtocolClient:
             self.abort()
             raise V10ProtocolError(self._poison_reason)
         value = decode_json(payload)
-        if not isinstance(value, dict) or value.get("native_loaded") is not False:
+        expected_native_loaded = bool(self._native_mode)
+        if (
+            not isinstance(value, dict)
+            or value.get("native_loaded") is not expected_native_loaded
+        ):
             self._poison("invalid CREATE acknowledgement")
             self.abort()
             raise V10ProtocolError(self._poison_reason)
@@ -234,7 +294,12 @@ class V10ProtocolClient:
                         f"expected CLOSE response, received {response_command}"
                     )
                 value = decode_json(payload)
-                if not isinstance(value, dict) or value.get("native_loaded") is not False:
+                if not isinstance(value, dict):
+                    raise V10ProtocolError("invalid CLOSE acknowledgement")
+                if self._native_mode:
+                    if value.get("ngx_shutdown_called") is not False or value.get("module_unload_called") is not False:
+                        raise V10ProtocolError("native CLOSE violated process-lifetime NGX contract")
+                elif value.get("native_loaded") is not False:
                     raise V10ProtocolError("invalid CLOSE acknowledgement")
                 self.process.wait(timeout=self.close_grace)
                 if self.process.returncode != 0:

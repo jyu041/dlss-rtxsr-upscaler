@@ -170,35 +170,35 @@ process-launch imports as `STATIC_REVIEW_REQUIRED` even after exact hashes and
 ABI checks pass. Absence of such direct imports is useful evidence but is not a
 proof of no dynamic API resolution or runtime networking.
 
-## Remaining static blocker
+## Exact binary audit completed
 
-The authentic v10 release archive is pinned at archive level, but this
-environment could not retrieve the ~690 MB GitHub release asset.
+The authentic v10 archive was successfully downloaded and statically audited on
+a Windows GitHub Actions runner in research workflow run `35311872691`.
 
-Therefore the exact extracted identities for:
+The workflow verified the pinned 690,203,043-byte archive SHA-256 before
+extraction, extracted only the manifest allowlist, collected PE
+imports/imported symbols/exports and Authenticode observations, asserted
+`executed=false`, and uploaded only JSON evidence.
 
-- `nvngx_dlssnr.dll`;
-- `neuroframe_engine_neural_rendering.dll`;
-- `neuroframe_caller.dll`;
-- `LICENSE-NVIDIA-DLSS.txt`;
-- `LICENSE-Merserk.txt`;
+The three runtime DLL identities are now pinned:
 
-remain to be generated from the authentic release archive.
+- `nvngx_dlssnr.dll` — 165,830,144 bytes —
+  `6EB209E764F39872625DEBD6ABAF45E2BB6322F6F270F781F70C059AE30B3927`
+- `neuroframe_engine_neural_rendering.dll` — 571,904 bytes —
+  `F657D20E569F97DEC25E02141F64354CD4B3E1DC51FA1DFE48ACEEBCC3CC43D5`
+- `neuroframe_caller.dll` — 104,960 bytes —
+  `B3611046837BC2F2E957A694CE0817E3C1B304BD653D0C7A193148E5BDD02437`
 
-A pinned Windows helper now performs that research workflow:
+All are x86-64 PE32+ files. All three report Authenticode `NotSigned`.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\audit_dlss5_v10.ps1
-```
+Every required project ABI-6 bridge export is present. No one of the three
+runtime DLLs directly imports Winsock/WinHTTP/WinINet/URLMon or
+`CreateProcess*`/`ShellExecute*`/`WinExec`. Dynamic resolution functions
+(`LoadLibrary*` / `GetProcAddress`) are present, so the direct-import result
+must not be overstated as proof of no runtime dynamic resolution.
 
-It downloads only the exact upstream GitHub v10 asset when absent, verifies
-archive size `690203043` and SHA-256
-`394BED6FBB3CCA1A994AE02A0A1152213D43030D6761437F86ABAA863C33D515`
-**before extraction**, and then invokes `tools/audit_runtime_candidate.py` with
-Authenticode collection. A pre-existing archive can be used with `-NoDownload`.
-
-The audit extracts into temporary storage, records hashes, PE imports/imported
-symbols/exports, and signatures, and executes no candidate binary.
+Full retained findings are in
+`docs/DLSS5_V10_BINARY_STATIC_EVIDENCE_2026-09-18.md`.
 
 ## Promotion gate
 

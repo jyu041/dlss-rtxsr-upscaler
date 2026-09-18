@@ -76,5 +76,7 @@ def test_instrumented_validator_matrices_are_bounded_in_source():
     assert '"geometries": ((1280, 720), (1920, 1080))' in source
     assert '"multipliers": (2, 3, 4)' in source
     assert '"multipliers": (2, 4)' in source
-    assert '(("external", 1), ("nvof", 2))' in source
+    assert 'cells.append(("external", 1, default_grid))' in source
+    assert 'cells.append((f"nvof-grid{grid}", 2, grid))' in source
+    assert '"nvof_only": True' in source
     assert '"validation_geometries"' in source

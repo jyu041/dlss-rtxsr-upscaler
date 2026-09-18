@@ -206,3 +206,25 @@ def test_process_segmented_io_rejects_bad_response(tmp_path, mutator, error):
     client._process = FakeProcess(bad, read_chunk=1, write_chunk=1)
     with pytest.raises(worker.DlssgWorkerProtocolError):
         client.process(7, b"rgba")
+
+
+def test_native_error_with_deque_diagnostics_preserves_tail(tmp_path):
+    client = worker.DlssgWorker(
+        tmp_path / "worker.exe",
+        tmp_path / "version.dll",
+        tmp_path / "runtime",
+    )
+    client._diagnostics.extend(["one", "two", "three", "four", "five", "six"])
+    response = worker.RESPONSE_HEADER.pack(
+        worker.MAGIC,
+        worker.PROTOCOL_VERSION,
+        worker.COMMAND_HELLO,
+        1,
+        -5,
+        0,
+    )
+    client._process = FakeProcess(response, read_chunk=2, write_chunk=2)
+    with pytest.raises(worker.DlssgNativeError, match="six") as exc:
+        client._exchange(worker.COMMAND_HELLO)
+    assert "one" not in str(exc.value)
+    assert "two" in str(exc.value)

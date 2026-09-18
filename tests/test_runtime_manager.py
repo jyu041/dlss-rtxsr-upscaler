@@ -275,6 +275,8 @@ def test_manifest_loads_dlss5_v10_static_candidate():
         "bin/runtime/dlssnr/nvngx_dlssnr.dll",
         "bin/runtime/dlssnr/neuroframe_engine_neural_rendering.dll",
         "bin/runtime/dlssnr/neuroframe_caller.dll",
+        "bin/runtime/dlssnr/LICENSE-NVIDIA-DLSS.txt",
+        "bin/runtime/dlssnr/LICENSE-Merserk.txt",
     )
     assert candidate.constraints["static_only"] is True
     assert candidate.constraints["feature_id_observed"] == 18

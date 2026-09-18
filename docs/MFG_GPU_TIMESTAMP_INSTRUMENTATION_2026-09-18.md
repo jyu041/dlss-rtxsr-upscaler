@@ -168,3 +168,42 @@ The normal `tools/validate_dlssg_candidate.py` C55 identity gate is unchanged.
 The isolated validator is intentionally **not** wired into normal setup or
 startup. It is a developer evidence tool only. The standard C55 validator still
 requires the exact pinned production worker hash.
+
+
+## Final static build/synchronization audit
+
+Before requesting a local MSVC build, the instrumented source was re-audited for
+queue ordering, query capacity, generated build artifacts, and resource
+lifetime.
+
+Findings:
+
+- The DLSS-G timestamp probe uses 16 query slots. 4X requires 12 slots:
+  timestamp 0/1 for input upload, three timestamps per generated frame, and the
+  final group timestamp. A compile-time assertion now protects this invariant.
+- The NVOF bracket resolve is submitted on the same D3D12 direct queue before
+  the DLSS-G group command list. The existing group fence is signalled after
+  both the NVOF conversion/resolve work and the DLSS-G group work, so
+  `ConsumeGpuTimings()` maps the readback only after the query resolve is
+  complete.
+- An enabled NVOF timing sample may not be overwritten. If a prior sample is
+  still pending, the next GPU-flow call fails closed with
+  `NVOF_GPU_TIMESTAMP_PENDING_UNCONSUMED`.
+- The timestamp query heap and readback resource now have an explicit release
+  path/destructor. Normal worker CLOSE still ends with the established
+  `ExitProcess(0)` lifecycle; this cleanup primarily makes abnormal/alternate
+  teardown internally complete.
+- `nvof_d3d12.h` now forward-declares `ID3D12Resource`, removing dependency
+  on include order.
+- The native build no longer rewrites the tracked
+  `native/dlssg_sm86_offline/flow_convert_bytecode.h`. FXC emits the CSO and
+  generated C header under the requested build output directory, and that
+  directory is placed first on the compiler include path.
+- The build now explicitly throws when `cl.exe` returns a non-zero exit code.
+
+No protocol-v4 layout, validated runtime identity, or normal application startup
+path changed as part of these hardening edits.
+
+At this point the next MFG gate is a **local compile + GPU-free selftest** using
+`tools/build_validate_dlssg_instrumented.ps1` without `-Validate256`. The
+256x256 six-cell GPU matrix should only follow if that build/selftest succeeds.

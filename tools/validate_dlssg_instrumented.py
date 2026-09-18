@@ -21,6 +21,11 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.core.dlssg_gpu_timing import summarize_gpu_timestamps
+
 INSTRUMENTED_ROOT = (
     ROOT / "native" / "dlssg_sm86_offline" / "bin-instrumented"
 ).resolve()
@@ -115,6 +120,7 @@ def _run_cell(
         str(multiplier),
         "--motion-mode",
         str(motion_mode),
+        "--instrumented-timing",
     ]
     started = time.monotonic()
     completed = subprocess.run(
@@ -124,7 +130,12 @@ def _run_cell(
         text=True,
         timeout=timeout,
         check=False,
-        env={**os.environ, "DLSSG_WORKER_DIAGNOSTIC": "1"},
+        env={
+            **os.environ,
+            "DLSSG_GPU_TIMESTAMPS": "1",
+            "DLSSG_NVOF_DIRECTION": "forward",
+            "DLSSG_NVOF_GPU_FLOW": "1",
+        },
     )
     elapsed = time.monotonic() - started
     merged = "\n".join(part for part in (completed.stdout, completed.stderr) if part)
@@ -139,10 +150,22 @@ def _run_cell(
         for line in merged.splitlines()
         if "GPU_TIMESTAMP " in line
     ]
+    timestamp_summary = summarize_gpu_timestamps(timestamp_lines)
+    required_stages = {"input_upload", "dlssg_evaluate", "output_copy", "group_total"}
+    if motion_mode == 2:
+        required_stages.update({"nvof_bracket", "nvof_conversion"})
+    observed_stages = set(timestamp_summary["stages_ms"])
+    missing_stages = sorted(required_stages - observed_stages)
+    if missing_stages:
+        raise RuntimeError(
+            f"{multiplier}X motion_mode={motion_mode} is missing GPU timestamp stages: "
+            + ", ".join(missing_stages)
+        )
     return {
         "multiplier": multiplier,
         "motion_mode": motion_mode,
         "elapsed_seconds": elapsed,
+        "gpu_timestamps": timestamp_summary,
         "gpu_timestamp_lines": timestamp_lines,
         "output_tail": merged.splitlines()[-30:],
     }

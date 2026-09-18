@@ -21,7 +21,12 @@ from .dlss5_v10_contract import (
     FrameResultV1,
     RenderParametersV6,
 )
-from .dlss5_v10_protocol import CreateRequest, rgba_bytes
+from .dlss5_v10_protocol import (
+    CreateRequest,
+    FrameRequest,
+    OutputEvidence,
+    rgba_bytes,
+)
 from .dlss5_v10_static import V10_EXPECTED_FILES, inspect_v10_runtime
 
 
@@ -270,6 +275,155 @@ def load_bridge(
         gpu_name=_text(library.dlss5nr_gpu_name()) or "unknown",
         adapter_luid=_text(library.dlss5nr_adapter_luid()),
     )
+
+
+class V10NativeSessionError(RuntimeError):
+    pass
+
+
+class V10NativeSession:
+    """One-process, one-CREATE host-memory ABI-6 session.
+
+    This class is not instantiated by dlss5_v10_host.py at the static milestone.
+    Parent process timeout/termination is the hard watchdog for native hangs.
+    """
+
+    def __init__(
+        self,
+        bound: BoundBridge,
+        runtime_dir: str | Path,
+        request: CreateRequest,
+    ) -> None:
+        self.bound = bound
+        self.runtime_dir = Path(runtime_dir).expanduser().resolve()
+        self.request = request.validate()
+        self.initialized = False
+        self.closed = False
+        self.poisoned = False
+        self.poison_reason: str | None = None
+
+    def _poison(self, reason: str) -> None:
+        self.poisoned = True
+        self.poison_reason = str(reason)[:2048] or "unspecified native failure"
+
+    def _require_live(self) -> None:
+        if self.closed:
+            raise V10NativeSessionError("v10 native session is closed")
+        if self.poisoned:
+            raise V10NativeSessionError(
+                f"v10 native session is poisoned: {self.poison_reason}"
+            )
+
+    def initialize(self) -> dict[str, object]:
+        self._require_live()
+        if self.initialized:
+            raise V10NativeSessionError("v10 native session is already initialized")
+        error = ctypes.create_string_buffer(4096)
+        try:
+            ok = self.bound.library.dlss5nr_init(
+                self.request.gpu_ordinal,
+                str(self.runtime_dir),
+                error,
+                len(error),
+            )
+        except BaseException as exc:
+            self._poison(f"native initialization exception: {exc}")
+            raise V10NativeSessionError(self.poison_reason) from exc
+        if not ok:
+            detail = _text(error.value) or "unknown initialization failure"
+            self._poison(detail)
+            raise V10NativeSessionError(
+                f"Feature-18 bridge initialization failed: {detail}"
+            )
+        self.initialized = True
+        return {
+            "bridge_version": self.bound.version,
+            "bridge_abi_version": self.bound.frame_abi_version,
+            "gpu_name": _text(self.bound.library.dlss5nr_gpu_name()) or self.bound.gpu_name,
+            "adapter_luid": _text(self.bound.library.dlss5nr_adapter_luid()) or self.bound.adapter_luid,
+            "gpu_ordinal": self.request.gpu_ordinal,
+        }
+
+    def process_frame(self, frame: FrameRequest) -> OutputEvidence:
+        self._require_live()
+        if not self.initialized:
+            raise V10NativeSessionError("v10 native session is not initialized")
+        frame.validate(self.request.input_width, self.request.input_height)
+
+        source_bytes = bytearray(frame.rgba)
+        output_width, output_height = self.request.output_size
+        destination_bytes = bytearray(rgba_bytes(output_width, output_height))
+        source, destination, owners = build_host_rgba_descriptors(
+            self.request,
+            source_bytes,
+            destination_bytes,
+            timestamp=frame.timestamp,
+        )
+        params = build_render_parameters(self.request, reset=frame.reset)
+        result = FrameResultV1.empty()
+        error = ctypes.create_string_buffer(4096)
+
+        try:
+            ok = self.bound.library.dlss5nr_process_frame_v6(
+                ctypes.byref(source),
+                ctypes.byref(destination),
+                ctypes.byref(params),
+                ctypes.byref(result),
+                error,
+                len(error),
+            )
+            # Keep host buffers alive through return from native code.
+            _ = owners
+        except BaseException as exc:
+            self._poison(f"native evaluation exception: {exc}")
+            raise V10NativeSessionError(self.poison_reason) from exc
+
+        if not ok:
+            detail = _text(error.value) or "unknown Feature-18 evaluation failure"
+            self._poison(detail)
+            raise V10NativeSessionError(
+                f"Feature-18 evaluation failed: {detail}"
+            )
+
+        return OutputEvidence(
+            width=output_width,
+            height=output_height,
+            timestamp=int(result.timestamp or frame.timestamp),
+            ngx_create_result=int(result.ngx_create_result),
+            ngx_evaluate_result=int(result.ngx_evaluate_result),
+            cuda_result=int(result.cuda_result),
+            scene_reset=int(result.scene_reset),
+            scene_score=float(result.scene_score),
+            upload_bytes=int(result.upload_bytes),
+            download_bytes=int(result.download_bytes),
+            rgba=bytes(destination_bytes),
+        )
+
+    def close(self) -> str:
+        if self.closed:
+            return "ALREADY_CLOSED"
+        self.closed = True
+        release = getattr(self.bound.library, "dlss5nr_release_session", None)
+        if release is None:
+            return "CLOSED_NO_RELEASE_EXPORT"
+        if self.poisoned:
+            return "CLOSED_POISONED_RELEASE_SKIPPED"
+        try:
+            ok = release()
+        except BaseException as exc:
+            self._poison(f"session release exception: {exc}")
+            return "CLOSED_RELEASE_EXCEPTION"
+        if not ok:
+            self._poison("session release returned failure")
+            return "CLOSED_RELEASE_FAILED"
+        return "CLOSED_RELEASED"
+
+    def __enter__(self) -> "V10NativeSession":
+        self.initialize()
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self.close()
 
 
 def pinned_runtime_hashes() -> dict[str, str]:

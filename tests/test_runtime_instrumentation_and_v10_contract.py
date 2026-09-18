@@ -94,6 +94,20 @@ def test_dlssg_instrumented_build_does_not_default_to_validated_worker_directory
     assert '[string]$Output = "$PSScriptRoot\\bin"' not in build
 
 
+def test_nvof_gpu_timestamp_is_labeled_as_cross_engine_bracket():
+    source = (ROOT / "native" / "dlssg_sm86_offline" / "nvof_d3d12.cpp").read_text(encoding="utf-8")
+    worker = (ROOT / "native" / "dlssg_sm86_offline" / "community_run2x.cpp").read_text(encoding="utf-8")
+    header = (ROOT / "native" / "dlssg_sm86_offline" / "nvof_d3d12.h").read_text(encoding="utf-8")
+    assert "NvofGpuTimings" in header
+    assert "state.queue->Wait(state.ofFence, state.ofFenceValue)" in source
+    assert "D3D12_QUERY_HEAP_TYPE_TIMESTAMP" in source
+    assert "timings->bracketMs = elapsed(0, 1);" in source
+    assert "timings->conversionMs = elapsed(1, 2);" in source
+    assert "stage=nvof_bracket" in worker
+    assert "stage=nvof_conversion" in worker
+    assert "stage=nvof_execute" not in worker
+
+
 def test_dlssg_gpu_timestamp_instrumentation_is_diagnostic_only_and_protocol_v4():
     source = (ROOT / "native" / "dlssg_sm86_offline" / "community_run2x.cpp").read_text(encoding="utf-8")
     protocol = (ROOT / "native" / "dlssg_sm86_offline" / "worker_protocol.h").read_text(encoding="utf-8")

@@ -79,7 +79,9 @@ request_id   = uint32
 payload_size = uint32
 ```
 
-Payloads are bounded to 64 MiB.
+Payloads are bounded to 128 MiB. This is large enough for the upstream
+7680×4320 RGBA8 boundary (126.6 MiB plus protocol metadata) while remaining a
+hard transport cap.
 
 Reserved commands:
 
@@ -176,6 +178,33 @@ Current constants are deliberately conservative:
 
 These are contract values only at this milestone; the host still cannot execute
 a v10 DLL.
+
+## Non-native subprocess integration test
+
+`src/backends/dlss5_v10_client.py` now exercises the real parent/child pipe
+transport against an explicit `--protocol-selftest-server` mode in the host.
+
+That simulator:
+
+- reports `native_loaded=false` and `execution_allowed=false` in HELLO;
+- validates the same CREATE/FRAME/CLOSE schemas and request ordering;
+- supports only 1.0x FRAME echoing, so it cannot be mistaken for a resizing or
+  Neural Rendering implementation;
+- returns `-2147483648` for NGX create/evaluate/CUDA result fields as a
+  reserved simulation sentinel;
+- never loads a v10 DLL.
+
+The parent supervisor uses real subprocess pipes and implements:
+
+- 15 s bounded startup;
+- 30 s bounded request round-trip;
+- strict response request-ID matching;
+- session poisoning on timeout/protocol/host error;
+- owned-process termination after poison;
+- 1 s bounded close grace.
+
+The normal `start()` method remains blocked with `V10ExecutionDisabled`;
+only `start_protocol_selftest()` can spawn a process at this milestone.
 
 ## Intended execution architecture
 

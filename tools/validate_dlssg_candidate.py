@@ -85,6 +85,8 @@ def _child(
     runtime_profile: str,
     multiplier: int,
     motion_mode: int,
+    *,
+    instrumented_timing: bool = False,
 ) -> int:
     # Match the preserved bounded MFG validation contract. The community
     # runtime has proven Create/Evaluate at 256x256 and practical video
@@ -102,7 +104,7 @@ def _child(
         expected_community_sha256=expected.runtime_sha256,
         strict_runtime_hash=True,
         diagnostic_callback=lambda line: print(f"WORKER {line}", file=sys.stderr, flush=True),
-        diagnostic_mode=True,
+        diagnostic_mode=not instrumented_timing,
     ) as client:
         client.create(width, height, multiplier=multiplier, motion_mode=motion_mode)
         reset = client.process(
@@ -293,6 +295,7 @@ def main() -> int:
     parser.add_argument("--child", action="store_true")
     parser.add_argument("--multiplier", type=int)
     parser.add_argument("--motion-mode", type=int, default=MOTION_MODE_EXTERNAL_R16G16_FLOAT)
+    parser.add_argument("--instrumented-timing", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.runtime is None:
         args.runtime = managed_runtime_paths(ROOT, args.profile)[0]
@@ -308,6 +311,7 @@ def main() -> int:
             args.profile,
             args.multiplier,
             args.motion_mode,
+            instrumented_timing=args.instrumented_timing,
         )
 
     expected = profile(args.profile)

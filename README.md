@@ -202,7 +202,7 @@ Read the full audit in [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md).
 - DLSS-G behavior remains hardware/runtime dependent; the normal Ampere path is pinned to the exact C55-validated direct-host runtime. A research-only `grid4-gpu-candidate` profile now carries the tested forward/GPU-resident/4x4 NVOF settings, but it is not the normal default or a replacement for the pinned C55 binary.
 - DLSS 5 is experimental, hardware- and runtime-dependent, and may alter semantic content.
 - The currently validated RTX 3070-family/Ampere v3 path is restricted to 1.0× output; higher v3 output scales remain blocked because the tested pairing reproducibly fell back with NGX `InvalidParameter (0xBAD00005)`.
-- Visual Enhancer v10 is the newest Neuroframe research candidate. Its normal backend remains disabled; an isolated, explicitly acknowledged 256×256/one-frame native Feature-18 gate has now passed on the RTX 3070 Ti, but v10 is still not substituted for the validated v3 execution path and multi-frame temporal stability remains unvalidated.
+- Visual Enhancer v10 is the newest Neuroframe research candidate. Its normal backend remains disabled; an isolated, explicitly acknowledged 256×256/one-frame native Feature-18 gate has passed on the RTX 3070 Ti. A separate three-frame temporal gate is now implemented but not yet hardware-validated, and v10 is still not substituted for the validated v3 execution path.
 - Performance and output quality vary substantially by source media, codec, resolution, driver, and backend runtime.
 - NVIDIA runtimes and community runtime files remain subject to their own licenses and are not covered by this repository's MIT license.
 

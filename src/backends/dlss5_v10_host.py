@@ -40,7 +40,7 @@ from .dlss5_v10_static import V10_EXPECTED_FILES
 
 
 EXPERIMENT_ACK = "BOUNDED_256_ONE_FRAME"
-
+TEMPORAL_EXPERIMENT_ACK = "BOUNDED_256_THREE_FRAME"
 
 
 SIMULATED_NATIVE_RESULT = -2147483648
@@ -150,13 +150,22 @@ def protocol_selftest_server() -> int:
         return 2
 
 
-def experimental_native_server(runtime_dir: Path, preflight_report: Path) -> int:
-    if __import__("os").environ.get("NVE_DLSS5_V10_NATIVE") != EXPERIMENT_ACK:
+def experimental_native_server(
+    runtime_dir: Path,
+    preflight_report: Path,
+    *,
+    expected_ack: str = EXPERIMENT_ACK,
+    max_frames: int = 1,
+    temporal_sequence: bool = False,
+) -> int:
+    if __import__("os").environ.get("NVE_DLSS5_V10_NATIVE") != expected_ack:
         print(
             "BLOCKED: experimental native v10 host requires the exact bounded-test acknowledgement",
             file=sys.stderr,
         )
         return 77
+    if max_frames not in (1, 3):
+        raise ValueError("experimental native v10 max_frames must be 1 or 3")
 
     from .dlss5_v10_native import V10NativeSession, load_bridge
     from .dlss5_v10_security import validate_preflight_report
@@ -182,7 +191,7 @@ def experimental_native_server(runtime_dir: Path, preflight_report: Path) -> int
                 "bounded_contract": {
                     "input": [256, 256],
                     "processing_scale": 1.0,
-                    "max_frames": 1,
+                    "max_frames": max_frames,
                 },
             },
         )
@@ -230,11 +239,20 @@ def experimental_native_server(runtime_dir: Path, preflight_report: Path) -> int
                 guard.accept_frame(request_id)
                 if native_session is None:
                     raise V10ProtocolError("FRAME requires successful native CREATE")
-                if frame_count >= 1:
+                if frame_count >= max_frames:
                     raise V10ProtocolError(
-                        "bounded native v10 host permits exactly one FRAME"
+                        f"bounded native v10 host permits exactly {max_frames} FRAME request(s)"
                     )
                 frame = FrameRequest.decode(payload, 256, 256)
+                if temporal_sequence:
+                    if frame_count == 0 and not frame.reset:
+                        raise V10ProtocolError(
+                            "temporal v10 sequence requires reset=True on the first FRAME"
+                        )
+                    if frame_count > 0 and frame.reset:
+                        raise V10ProtocolError(
+                            "temporal v10 sequence requires reset=False after the first FRAME"
+                        )
                 output = native_session.process_frame(frame)
                 frame_count += 1
                 stdout.write(encode_message(OUTPUT, request_id, output.encode()))
@@ -311,6 +329,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--serve", action="store_true")
     parser.add_argument("--protocol-selftest-server", action="store_true")
     parser.add_argument("--experimental-native-serve", action="store_true")
+    parser.add_argument("--experimental-native-temporal-serve", action="store_true")
     parser.add_argument("--runtime-dir", type=Path)
     parser.add_argument("--preflight-report", type=Path)
     args = parser.parse_args(argv)
@@ -326,6 +345,19 @@ def main(argv: list[str] | None = None) -> int:
         if args.runtime_dir is None or args.preflight_report is None:
             parser.error("--experimental-native-serve requires --runtime-dir and --preflight-report")
         return experimental_native_server(args.runtime_dir, args.preflight_report)
+
+    if args.experimental_native_temporal_serve:
+        if args.runtime_dir is None or args.preflight_report is None:
+            parser.error(
+                "--experimental-native-temporal-serve requires --runtime-dir and --preflight-report"
+            )
+        return experimental_native_server(
+            args.runtime_dir,
+            args.preflight_report,
+            expected_ack=TEMPORAL_EXPERIMENT_ACK,
+            max_frames=3,
+            temporal_sequence=True,
+        )
 
     if args.serve:
         print(

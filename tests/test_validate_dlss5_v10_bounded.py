@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
     [
         "prepare_dlss5_v10_candidate.py",
         "validate_dlss5_v10_bounded.py",
+        "validate_dlss5_v10_temporal.py",
     ],
 )
 def test_v10_tools_support_direct_script_invocation_from_unrelated_cwd(tmp_path, tool_name):

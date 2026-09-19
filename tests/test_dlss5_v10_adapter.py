@@ -371,6 +371,34 @@ def test_v10_client_experimental_start_requires_exact_ack(tmp_path):
     assert client.process is None
 
 
+def test_v10_temporal_client_requires_exact_ack(tmp_path):
+    from src.backends.dlss5_v10_client import V10ProtocolClient
+
+    client = V10ProtocolClient()
+    with pytest.raises(adapter.V10ExecutionDisabled, match="exact acknowledgement"):
+        client.start_native_temporal_experimental(
+            tmp_path / "runtime",
+            tmp_path / "preflight.json",
+            acknowledgement="wrong",
+        )
+    assert client.process is None
+
+
+def test_v10_temporal_host_route_requires_exact_environment_ack(monkeypatch, tmp_path):
+    from src.backends import dlss5_v10_host as host
+
+    monkeypatch.delenv("NVE_DLSS5_V10_NATIVE", raising=False)
+    assert host.main(
+        [
+            "--experimental-native-temporal-serve",
+            "--runtime-dir",
+            str(tmp_path / "runtime"),
+            "--preflight-report",
+            str(tmp_path / "preflight.json"),
+        ]
+    ) == 77
+
+
 def test_v10_normal_serve_path_remains_blocked():
     from src.backends import dlss5_v10_host as host
 

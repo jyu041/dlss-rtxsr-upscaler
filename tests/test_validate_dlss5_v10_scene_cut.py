@@ -166,6 +166,7 @@ def test_scene_cut_fake_pass_proves_reset_parity(monkeypatch, tmp_path):
 
     assert report["status"] == "PASS"
     assert report["native_executed"] is True
+    assert report["native_execution_attempted"] is True
     assert report["normal_backend_changed"] is False
     assert report["scene_cut_frame_ids"] == [CUT_INDEX]
     assert report["no_cut_reset"]["reset_frame_ids"] == [0]
@@ -186,6 +187,89 @@ def test_scene_cut_fake_pass_proves_reset_parity(monkeypatch, tmp_path):
     assert report["reset_control"]["close"] == "CLOSED"
     assert report["firewall_removed"] is True
     assert report["review_images"] == ["cut-review.png"]
+
+
+def test_scene_cut_gate_accepts_below_threshold_effect_as_diagnostic(
+    monkeypatch, tmp_path
+):
+    class LowEffectClient(FakeSceneClient):
+        def process_frame(self, frame):
+            source = np.frombuffer(frame.rgba, dtype=np.uint8).reshape(256, 256, 4).copy()
+            # Deliberately below effect_observed(): one RGB value changes by one.
+            source[0, 0, 0] = np.uint8((int(source[0, 0, 0]) + 1) % 256)
+            return OutputEvidence(
+                width=256,
+                height=256,
+                timestamp=frame.timestamp,
+                ngx_create_result=1,
+                ngx_evaluate_result=1,
+                cuda_result=0,
+                scene_reset=int(frame.reset),
+                scene_score=1.0 if frame.reset else 0.0,
+                upload_bytes=256 * 256 * 4,
+                download_bytes=256 * 256 * 4,
+                rgba=source.tobytes(),
+            )
+
+    patch_safe_environment(monkeypatch)
+    monkeypatch.setattr(scene_gate, "V10ProtocolClient", LowEffectClient)
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    preflight = tmp_path / "preflight.json"
+    preflight.write_text("{}", encoding="utf-8")
+
+    report = scene_gate.run_scene_cut_gate(
+        tmp_path / "fake.mp4",
+        runtime,
+        preflight,
+        gpu_ordinal=0,
+        start_frame=0,
+        review_dir=tmp_path / "review",
+    )
+
+    assert report["status"] == "PASS"
+    assert report["native_executed"] is True
+    assert report["no_cut_reset"]["measurable_effect_frame_ids"] == []
+    assert report["scene_aware"]["measurable_effect_frame_ids"] == []
+    assert report["reset_control"]["measurable_effect_frame_ids"] == []
+    assert report["no_cut_reset"]["byte_identical_to_input_frame_ids"] == []
+    assert report["scene_reset_matches_reset_control"] is True
+
+
+def test_scene_cut_gate_rejects_replayed_output_for_different_input(
+    monkeypatch, tmp_path
+):
+    class ReplayClient(FakeSceneClient):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.first_output = None
+
+        def process_frame(self, frame):
+            output = super().process_frame(frame)
+            if self.first_output is None:
+                self.first_output = output.rgba
+                return output
+            return replace(output, rgba=self.first_output)
+
+    patch_safe_environment(monkeypatch)
+    monkeypatch.setattr(scene_gate, "V10ProtocolClient", ReplayClient)
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    preflight = tmp_path / "preflight.json"
+    preflight.write_text("{}", encoding="utf-8")
+
+    report = scene_gate.run_scene_cut_gate(
+        tmp_path / "fake.mp4",
+        runtime,
+        preflight,
+        gpu_ordinal=0,
+        start_frame=0,
+        review_dir=tmp_path / "review",
+    )
+
+    assert report["status"] == "FAIL"
+    assert "previously produced for a different input" in report["error"]
+    assert report["native_execution_attempted"] is True
 
 
 def test_scene_cut_gate_rejects_window_without_cut(monkeypatch, tmp_path):

@@ -44,6 +44,9 @@ TEMPORAL_EXPERIMENT_ACK = "BOUNDED_256_THREE_FRAME"
 VIDEO_AB_EXPERIMENT_ACK = "BOUNDED_256_VIDEO_AB_16"
 SCENE_CUT_EXPERIMENT_ACK = "BOUNDED_256_SCENE_CUT_32"
 SCENE_SOAK_EXPERIMENT_ACK = "BOUNDED_256_SCENE_AWARE_128"
+APP_EXPERIMENT_ACK = "EXPERIMENTAL_APP_SCENE_AWARE_V10"
+APP_MAX_LONG_EDGE = 1920
+APP_MAX_SHORT_EDGE = 1080
 
 
 SIMULATED_NATIVE_RESULT = -2147483648
@@ -337,6 +340,179 @@ def experimental_native_server(
         return 2
 
 
+def experimental_application_server(
+    runtime_dir: Path,
+    preflight_report: Path,
+) -> int:
+    """Serve the explicit application-facing v10 experimental session.
+
+    This path remains opt-in and fail-closed. It is intentionally limited to
+    1.0x host-memory RGBA8 and at most 1920x1080-equivalent geometry until the
+    broader application path is hardware-validated.
+    """
+    if __import__("os").environ.get("NVE_DLSS5_V10_NATIVE") != APP_EXPERIMENT_ACK:
+        print(
+            "BLOCKED: experimental application v10 host requires the exact acknowledgement",
+            file=sys.stderr,
+        )
+        return 77
+
+    from .dlss5_v10_native import V10NativeSession, load_bridge
+    from .dlss5_v10_security import validate_preflight_report
+
+    runtime_dir = runtime_dir.expanduser().resolve()
+    preflight_report = preflight_report.expanduser().resolve()
+    validate_preflight_report(runtime_dir, preflight_report)
+
+    guard = SessionGuard()
+    native_session = None
+    create: CreateRequest | None = None
+    frame_count = 0
+    stdout = sys.stdout.buffer
+    stdin = sys.stdin.buffer
+    stdout.write(
+        encode_json(
+            HELLO,
+            0,
+            {
+                "protocol_version": PROTOCOL_VERSION,
+                "native_loaded": False,
+                "experimental_native_mode": True,
+                "experimental_application_mode": True,
+                "normal_backend_enabled": False,
+                "application_contract": {
+                    "pixel_format": "rgba8",
+                    "memory_type": "host",
+                    "processing_scales": [1.0],
+                    "max_long_edge": APP_MAX_LONG_EDGE,
+                    "max_short_edge": APP_MAX_SHORT_EDGE,
+                    "scene_reset": "caller",
+                },
+            },
+        )
+    )
+    stdout.flush()
+
+    try:
+        while True:
+            command, request_id, payload = read_message(stdin)
+            if command == CREATE:
+                guard.accept_create(request_id)
+                create = CreateRequest.from_wire(decode_json(payload))
+                output_width, output_height = create.output_size
+                long_edge = max(create.input_width, create.input_height)
+                short_edge = min(create.input_width, create.input_height)
+                if create.processing_scale != 1.0:
+                    raise V10ProtocolError(
+                        "experimental application v10 currently requires processing_scale=1.0"
+                    )
+                if (output_width, output_height) != (
+                    create.input_width,
+                    create.input_height,
+                ):
+                    raise V10ProtocolError(
+                        "experimental application v10 currently requires 1.0x output geometry"
+                    )
+                if (
+                    long_edge > APP_MAX_LONG_EDGE
+                    or short_edge > APP_MAX_SHORT_EDGE
+                ):
+                    raise V10ProtocolError(
+                        "experimental application v10 currently supports up to "
+                        f"{APP_MAX_LONG_EDGE}x{APP_MAX_SHORT_EDGE}-equivalent input"
+                    )
+                bound = load_bridge(runtime_dir, allow_native_load=True)
+                native_session = V10NativeSession(bound, runtime_dir, create)
+                initialized = native_session.initialize()
+                stdout.write(
+                    encode_json(
+                        CREATE,
+                        request_id,
+                        {
+                            "status": "CREATED",
+                            "native_loaded": True,
+                            "experimental_native_mode": True,
+                            "experimental_application_mode": True,
+                            "output_size": [output_width, output_height],
+                            "initialization": initialized,
+                        },
+                    )
+                )
+                stdout.flush()
+                continue
+
+            if command == FRAME:
+                guard.accept_frame(request_id)
+                if native_session is None or create is None:
+                    raise V10ProtocolError("FRAME requires successful native CREATE")
+                frame = FrameRequest.decode(
+                    payload,
+                    create.input_width,
+                    create.input_height,
+                )
+                if frame_count == 0 and not frame.reset:
+                    raise V10ProtocolError(
+                        "experimental application v10 requires reset=True on the first FRAME"
+                    )
+                output = native_session.process_frame(frame)
+                frame_count += 1
+                stdout.write(encode_message(OUTPUT, request_id, output.encode()))
+                stdout.flush()
+                continue
+
+            if command == CLOSE:
+                guard.accept_close(request_id)
+                close_status = (
+                    native_session.close()
+                    if native_session is not None
+                    else "CLOSED_WITHOUT_NATIVE_SESSION"
+                )
+                stdout.write(
+                    encode_json(
+                        CLOSE,
+                        request_id,
+                        {
+                            "status": "CLOSED",
+                            "native_loaded": native_session is not None,
+                            "session_close": close_status,
+                            "frames_processed": frame_count,
+                            "ngx_shutdown_called": False,
+                            "module_unload_called": False,
+                        },
+                    )
+                )
+                stdout.flush()
+                return 0
+
+            raise V10ProtocolError(
+                f"command {command} is invalid for application v10 host input"
+            )
+    except (EOFError, V10ProtocolError, ValueError, RuntimeError) as exc:
+        guard.poison(str(exc))
+        if native_session is not None:
+            try:
+                native_session.close()
+            except Exception:
+                pass
+        try:
+            stdout.write(
+                encode_json(
+                    ERROR,
+                    guard.next_request_id,
+                    {
+                        "error": str(exc),
+                        "poisoned": True,
+                        "experimental_native_mode": True,
+                        "experimental_application_mode": True,
+                    },
+                )
+            )
+            stdout.flush()
+        except Exception:
+            pass
+        return 2
+
+
 def contract_report() -> dict[str, object]:
     validate_static_contract()
     return {
@@ -366,6 +542,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--experimental-native-scene-reset-serve", action="store_true")
     parser.add_argument("--experimental-native-scene-soak-serve", action="store_true")
     parser.add_argument("--experimental-native-scene-soak-reset-serve", action="store_true")
+    parser.add_argument("--experimental-native-app-serve", action="store_true")
     parser.add_argument("--runtime-dir", type=Path)
     parser.add_argument("--preflight-report", type=Path)
     args = parser.parse_args(argv)
@@ -491,6 +668,16 @@ def main(argv: list[str] | None = None) -> int:
             max_frames=128,
             reset_every_frame=True,
             scene_cut_mode="reset-control-soak",
+        )
+
+    if args.experimental_native_app_serve:
+        if args.runtime_dir is None or args.preflight_report is None:
+            parser.error(
+                "--experimental-native-app-serve requires --runtime-dir and --preflight-report"
+            )
+        return experimental_application_server(
+            args.runtime_dir,
+            args.preflight_report,
         )
 
     if args.serve:

@@ -77,8 +77,11 @@ and distribution terms continue to apply. The setup flow records Authenticode
 observations, requires a clean Microsoft Defender scan for automatic approval,
 and does not copy these binaries into this Git repository or a project release.
 
-Visual Enhancer v10 is the newest DLSS 5 Neuroframe static-only research
-candidate and is not substituted for the validated v3 execution path. The
-earlier v9 candidate is retained as historical static-audit evidence.
+Visual Enhancer v10 remains a separately staged DLSS 5 Neuroframe candidate
+and is not substituted for the validated v3 execution path. Its upstream
+runtime files remain under their respective licenses; the project's explicit
+v10 experimental application mode adds execution/containment gates without
+relicensing or redistributing those files. The earlier v9 candidate is retained
+as historical static-audit evidence.
 
 FFmpeg/FFprobe and Python dependencies retain their own upstream licenses.

@@ -22,11 +22,15 @@ def test_sm86_033_proxy_is_not_a_c55_executable_profile():
     assert "candidate-0.3.3" not in PROFILES
 
 
-def test_dlss5_v10_candidate_is_static_only_and_not_v3_destination():
+def test_dlss5_v10_candidate_stays_separate_from_v3_and_requires_explicit_app_gate():
     manager = RuntimeManager(MANIFEST, ROOT / "runtime")
     candidate = manager.specs["dlss5-neuroframe-v10-static-candidate"]
+    # Runtime Manager keeps the archive on its selective/static channel; the
+    # separately gated application path is explicit and never setup-activated.
     assert candidate.channel == "candidate-static-only"
     assert candidate.constraints["static_only"] is True
+    assert candidate.constraints["experimental_app_enabled"] is True
+    assert candidate.constraints["experimental_app_processing_scales"] == [1.0]
     assert candidate.destination != "dlss5-v3"
 
 

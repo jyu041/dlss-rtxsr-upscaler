@@ -53,10 +53,11 @@ Use synthetic or owned media. Do not run unrestricted recursive pytest
 discovery when an extracted local runtime tree exists; target `tests`
 explicitly.
 
-## DLSS5 v10 bounded research gates
+## DLSS5 v10 research and experimental application gates
 
-The normal v10 application backend remains disabled. The isolated research
-sequence is intentionally progressive:
+The normal/default v10 backend remains disabled. The validated research
+sequence remains available, and the application exposes a separate explicit
+`DLSS 5 v10 Experimental` mode rather than silently replacing v3:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_bounded.ps1 -Execute
@@ -64,7 +65,15 @@ powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_temporal.ps1 -Exe
 powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_video_ab.ps1 -Execute -Input "C:\path\to\clip.mp4"
 powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_scene_cut.ps1 -Execute -Input "C:\path\to\clip.mp4"
 powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_scene_soak.ps1 -Execute -Input "C:\path\to\clip.mp4"
+powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_app_smoke.ps1 -Execute -Input "C:\path\to\clip.mp4"
 ```
+
+Application-level hardware evidence is recorded in
+[`DLSS5_V10_APP_HARDWARE_2026-09-19.md`](DLSS5_V10_APP_HARDWARE_2026-09-19.md).
+On the RTX 3070 Ti, the exact UI renderer path passed both a 90-frame 640x480
+smoke and a 30-frame 1920x1080 ceiling smoke at 1.0x. Both runs required the
+fresh static/Defender preflight, isolated host, per-frame validation, clean
+`CLOSED`, and firewall containment/cleanup before the wrapper emitted PASS.
 
 The real-video A/B defaults to 16 frames beginning at source frame 30 and
 compares a persistent temporal session against an all-reset control. The
@@ -89,7 +98,14 @@ after both bounded native sessions have closed, so it is diagnostic artifact
 generation rather than part of the native execution boundary. The wrapper
 requires all three review videos and prints their paths explicitly.
 
-These commands refresh the pinned runtime/static audit and Defender preflight
-before native execution. They are developer hardware gates, not ordinary
-pytest or normal application startup.
+The bounded research wrappers and the application smoke wrapper refresh the
+pinned runtime/static audit and Defender preflight before native execution. The
+application smoke runs the same `render_dlss5_v10()` path used by the UI for a
+short clip and requires the exact `EXPERIMENTAL_APP_SCENE_AWARE_V10`
+acknowledgement. The UI exposes a separate **Refresh DLSS 5 v10 preflight**
+button before experimental rendering. Current application constraints are SDR
+RGBA8, 1.0x processing scale, and up to 1920x1080-equivalent geometry.
+
+These remain explicit developer/experimental paths, not ordinary pytest and
+not an automatic replacement for DLSS 5 v3.
 

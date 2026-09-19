@@ -1,9 +1,10 @@
 # DLSS5 Runtime Approval
 
-DLSS 5 Neural Rendering remains an optional **experimental** backend. The
-validated execution path is the legacy Feature-18 v3 runtime. Visual Enhancer
-v10 is the newest separate static-only Neuroframe candidate; the earlier v9
-candidate is retained as historical static-audit evidence.
+DLSS 5 Neural Rendering remains optional and **experimental**. The validated
+legacy execution path is the Feature-18 v3 runtime. Visual Enhancer v10 remains
+separate from v3, but it now also has an explicitly gated application mode in
+addition to its retained research harnesses. The earlier v9 candidate remains
+historical static-audit evidence.
 
 ## Normal setup path
 
@@ -147,24 +148,33 @@ runtime folders and replacement DLLs are not accepted by the managed path.
 
 ## Neuroframe v10 remains separate
 
-Visual Enhancer v10 is represented only as a selective-extraction, static
-research candidate. It is not substituted for the validated v3 Feature-18
-execution runtime and is not executed by setup. The upstream v10 source
-describes an in-process D3D12/NGX Feature-18 bridge plus caller shim with
-bridge ABI 6, which is a materially different host boundary from the validated
-v3 RenoDX/ReShade-style five-file runtime. Upstream also treats NGX as
-process-lifetime state and avoids normal NGX shutdown/module unload after a
-successful Feature-18 evaluation because those operations have reportedly
-wedged; a future adapter must preserve that lifecycle distinction.
+Visual Enhancer v10 is still not substituted for the validated v3 Feature-18
+runtime and is not executed by setup. Runtime Manager retains the upstream
+archive as a selective/static candidate so ordinary install/start flows cannot
+silently activate it. The application now exposes a separate
+`DLSS 5 v10 Experimental` mode behind its own explicit preflight and execution
+boundary.
 
-Before any v10 execution, the project must establish exact extracted DLL
-identities, imports/exports, Authenticode observations, Defender results,
-network/process behavior and caller/bridge ABI. The source-level meaning of
-the application's 125-200% processing scales is already established: v10
-Lanczos-resizes the source to the requested neural dimensions before Feature 18
-runs. Those controls therefore do not establish a native >1.0x NGX output mode
-on Ampere.
+The v10 boundary preserves the materially different in-process D3D12/NGX bridge
+plus caller-shim lifecycle: bridge ABI 6, process-lifetime NGX state, isolated
+child execution, exact runtime identity, fresh Microsoft Defender preflight,
+temporary exact-interpreter outbound firewall blocking, process-tree checks,
+per-frame NGX/CUDA/timestamp/geometry/reset validation, scene-aware resets, and
+mandatory clean CLOSE/cleanup. It remains opt-in and never becomes the default
+or a silent replacement for v3.
+
+The application path is currently restricted to SDR RGBA8, 1.0x processing and
+up to 1920x1080-equivalent input. The upstream 125-200% controls remain
+Lanczos pre-resize controls and are not treated as evidence of native >1.0x NGX
+output scaling on Ampere.
+
+On 2026-09-19 the exact application renderer passed on the RTX 3070 Ti at both
+640x480 for 90 frames and 1920x1080 for 30 frames. Both runs completed the
+pinned archive/static gate and clean Defender scan, initialized bridge ABI 6 on
+GPU ordinal 0, preserved the application containment contract, returned a clean
+host `CLOSED`, and ended with `DLSS5_V10_APP_SMOKE_PASS`. This establishes the
+current experimental application boundary on that tested configuration; it is
+not a claim of official RTX 30-series DLSS 5 support or perceptual superiority.
+See `docs/DLSS5_V10_APP_HARDWARE_2026-09-19.md`.
 
 The earlier v9 candidate remains available as historical static-audit evidence.
-Neither v9 nor v10 may replace v3 without a separately reviewed adapter and
-RTX 3070 Ti execution evidence.

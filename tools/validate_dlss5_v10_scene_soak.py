@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import itertools
 import json
 from pathlib import Path
 import shutil
@@ -499,7 +500,7 @@ def _encode_review_video(
     frame_count = 0
     write_error: BaseException | None = None
     try:
-        for frame in __import__("itertools").chain((first,), iterator):
+        for frame in itertools.chain((first,), iterator):
             rgb = np.ascontiguousarray(frame, dtype=np.uint8)
             if rgb.shape != (height, width, 3):
                 raise ValueError(

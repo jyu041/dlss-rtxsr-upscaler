@@ -409,8 +409,46 @@ powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_temporal.ps1 -Exe
 That command refreshes the static/Defender preflight before native execution and
 writes `runtime/audit/dlss5-v10-temporal-hardware.json`.
 
-This temporal gate is implemented but has **not yet been counted as hardware
-validation**. Until it passes on the RTX 3070 Ti, the only v10 hardware result
-is the successful one-frame bounded compatibility run above. The normal v10
-application backend remains disabled.
+### Three-frame temporal hardware result
+
+The three-frame temporal gate passed on 2026-09-19 on the RTX 3070 Ti.
+
+The refreshed candidate/preflight remained clean and exact:
+
+- archive SHA-256:
+  `394BED6FBB3CCA1A994AE02A0A1152213D43030D6761437F86ABAA863C33D515`;
+- Microsoft Defender returned no threats;
+- preflight age at execution was approximately `0.201` seconds;
+- bridge ABI was `6`;
+- bridge version was `1.5.0-temporal-guides-frameabi-v6`;
+- GPU was `NVIDIA GeForce RTX 3070 Ti`, ordinal `0`.
+
+The sequence used the required reset pattern `[true, false, false]`. All three
+FRAME requests returned:
+
+- `ngx_create_result=1`;
+- `ngx_evaluate_result=1`;
+- `cuda_result=0`;
+- the expected timestamp and scene-reset state;
+- a measurable Neural Rendering effect.
+
+The two non-reset frames reported `scene_reset=0`, demonstrating that the
+persistent native session accepted sequential temporal frames without forcing a
+reset. All three output hashes were unique, so stale/replayed output did not
+satisfy the gate. No descendant process appeared after HELLO, CREATE or any
+FRAME. The host returned `CLOSED`, the temporary firewall rule was removed,
+and the final report status was `PASS`. Total bounded-run time was
+approximately `5.745` seconds.
+
+This establishes **bounded three-frame temporal Feature-18 compatibility** on
+the tested RTX 3070 Ti configuration. It is stronger evidence than the prior
+single-frame result, but it still does not establish full-video robustness,
+scene-cut handling, long-session stability, quality suitability, or production
+readiness. The normal v10 application backend remains disabled.
+
+The next v10 evidence gate should therefore be a short, separately
+acknowledged real-video sequence using the same isolated process and security
+boundary, with source-derived frames rather than synthetic frames. It should
+remain bounded in frame count and geometry before any normal application
+integration is considered.
 

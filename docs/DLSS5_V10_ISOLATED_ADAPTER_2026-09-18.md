@@ -332,8 +332,57 @@ Microsoft Defender preflight **before** invoking the one-frame validator with
 the exact `BOUNDED_256_ONE_FRAME` acknowledgement. It remains a developer
 research command and is not called by `setup.bat` or `start.bat`.
 
-The next evidence milestone is the first successful bounded native run on the
-RTX 3070 Ti. Until that occurs, v10 remains unvalidated for hardware execution
-and the validated v3 Feature-18 path remains the normal experimental DLSS 5
-implementation.
+## First bounded native v10 hardware result
+
+The first bounded native Visual Enhancer v10 run completed successfully on
+2026-09-19 on the RTX 3070 Ti.
+
+Pinned candidate identity and preflight:
+
+- archive size: `690203043` bytes;
+- archive SHA-256:
+  `394BED6FBB3CCA1A994AE02A0A1152213D43030D6761437F86ABAA863C33D515`;
+- static audit passed before and after staging;
+- Microsoft Defender custom scan returned clean;
+- bounded-run preflight age was approximately `0.247` seconds.
+
+Native CREATE evidence:
+
+- `native_loaded=true`;
+- output size `256x256`;
+- bridge ABI `6`;
+- bridge version `1.5.0-temporal-guides-frameabi-v6`;
+- GPU `NVIDIA GeForce RTX 3070 Ti`, ordinal `0`;
+- no descendant process after HELLO or CREATE.
+
+The single reset FRAME also passed:
+
+- `ngx_create_result=1`;
+- `ngx_evaluate_result=1`;
+- `cuda_result=0`;
+- `scene_reset=1`, `scene_score=1.0`;
+- upload/download payloads were each `786432` bytes;
+- no descendant process appeared after FRAME;
+- measured Neural Rendering effect was observed:
+  - mean absolute difference `6.207366943359375`;
+  - maximum absolute difference `52`;
+  - changed-pixel ratio `0.9996490478515625`;
+  - RMSE `8.218886375427246`;
+  - input and output SHA-256 values differed.
+
+The host returned `CLOSED`, the temporary outbound firewall rule was removed,
+the final report status was `PASS`, and
+`normal_backend_changed=false`. Total bounded-run time was approximately
+`7.95` seconds.
+
+This establishes **bounded v10 Feature-18 native compatibility on the tested
+RTX 3070 Ti configuration**. It does not promote v10 into the normal
+application backend, does not establish multi-frame temporal stability, and
+does not replace the validated v3 path.
+
+The next v10 milestone is a separately acknowledged, still-contained
+multi-frame temporal experiment at 256x256. That future gate should preserve
+the same fresh preflight, firewall, GPU/ABI, process-tree, NGX-result, CLOSE and
+cleanup requirements while proving that non-reset sequential frames can execute
+without stale output, state corruption, or fallback.
 

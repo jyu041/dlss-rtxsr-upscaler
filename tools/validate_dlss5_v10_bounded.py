@@ -19,13 +19,14 @@ import time
 import numpy as np
 import psutil
 
-from src.backends.dlss5_metrics import effect_metrics, effect_observed
-from src.backends.dlss5_v10_client import EXPERIMENT_ACK, V10ProtocolClient
-from src.backends.dlss5_v10_protocol import CreateRequest, FrameRequest
-from src.backends.dlss5_v10_security import validate_preflight_report
-
-
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.backends.dlss5_metrics import effect_metrics, effect_observed  # noqa: E402
+from src.backends.dlss5_v10_client import EXPERIMENT_ACK, V10ProtocolClient  # noqa: E402
+from src.backends.dlss5_v10_protocol import CreateRequest, FrameRequest  # noqa: E402
+from src.backends.dlss5_v10_security import validate_preflight_report  # noqa: E402
 DEFAULT_RUNTIME = (
     ROOT / "runtime" / "dlss5" / "neuroframe-v10-candidate"
     / "bin" / "runtime" / "dlssnr"

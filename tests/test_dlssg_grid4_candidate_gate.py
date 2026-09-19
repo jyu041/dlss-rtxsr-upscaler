@@ -11,6 +11,13 @@ def test_grid4_candidate_wrapper_is_explicit_and_fails_closed():
     assert "[Alias('Input')]" in source
     assert "[string]$InputPath" in source
     assert "[string]$Input," not in source
+    param_block = source.split(")\n\n$ErrorActionPreference", 1)[0]
+    assert "$PSScriptRoot" not in param_block
+    assert "if (-not $Output)" in source
+    assert "if (-not $CommunityRuntime)" in source
+    assert "if (-not $OfficialRuntimeDir)" in source
+    assert "Join-Path $root 'runtime\\dlssg\\legacy\\version.dll'" in source
+    assert "Join-Path $root 'runtime\\dlssg\\official'" in source
     assert "build_validate_dlssg_instrumented.ps1" in source
     assert "dlssg_video.py" in source
     assert "--multiplier 2" in source

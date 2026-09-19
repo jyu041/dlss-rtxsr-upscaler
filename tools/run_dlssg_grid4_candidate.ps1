@@ -2,16 +2,26 @@ param(
     [Parameter(Mandatory=$true)]
     [Alias('Input')]
     [string]$InputPath,
-    [string]$Output = "$PSScriptRoot\..\runtime\audit\dlssg-grid4-candidate.mp4",
+    [string]$Output,
     [string]$NgxSdk = 'C:\Users\mark\AppData\Local\Temp\dlssg-phase3-research\DLSS',
     [string]$NvApi = 'C:\Users\mark\Desktop\dlss-community-research\renodx\external\NVAPI',
     [string]$NvOfSdk = $env:NVOF_SDK,
-    [string]$CommunityRuntime = "$PSScriptRoot\..\runtime\dlssg\legacy\version.dll",
-    [string]$OfficialRuntimeDir = "$PSScriptRoot\..\runtime\dlssg\official"
+    [string]$CommunityRuntime,
+    [string]$OfficialRuntimeDir
 )
 
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+if (-not $Output) {
+    $Output = Join-Path $root 'runtime\audit\dlssg-grid4-candidate.mp4'
+}
+if (-not $CommunityRuntime) {
+    $CommunityRuntime = Join-Path $root 'runtime\dlssg\legacy\version.dll'
+}
+if (-not $OfficialRuntimeDir) {
+    $OfficialRuntimeDir = Join-Path $root 'runtime\dlssg\official'
+}
+
 $inputResolved = (Resolve-Path -LiteralPath $InputPath).Path
 $outputPath = [IO.Path]::GetFullPath($Output)
 $outputDir = [IO.Path]::GetDirectoryName($outputPath)

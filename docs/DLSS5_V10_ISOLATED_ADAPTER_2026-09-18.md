@@ -380,9 +380,37 @@ RTX 3070 Ti configuration**. It does not promote v10 into the normal
 application backend, does not establish multi-frame temporal stability, and
 does not replace the validated v3 path.
 
-The next v10 milestone is a separately acknowledged, still-contained
-multi-frame temporal experiment at 256x256. That future gate should preserve
-the same fresh preflight, firewall, GPU/ABI, process-tree, NGX-result, CLOSE and
-cleanup requirements while proving that non-reset sequential frames can execute
-without stale output, state corruption, or fallback.
+## Three-frame temporal milestone
+
+The next bounded v10 milestone is now implemented as a **separate** experiment
+rather than widening the already-proven one-frame path.
+
+It uses:
+
+- acknowledgement token `BOUNDED_256_THREE_FRAME`;
+- host mode `--experimental-native-temporal-serve`;
+- exactly three 256x256 / 1.0x frames;
+- reset pattern `[true, false, false]`;
+- the same fresh preflight, exact runtime identity, outbound firewall block,
+  RTX 3070/3070 Ti restriction, ABI-6 check, process-tree inspection, clean
+  CLOSE requirement and firewall cleanup requirement as the one-frame gate.
+
+Each frame must independently return successful NGX create/evaluate evidence,
+CUDA result 0, the expected timestamp and scene-reset state, and a measurable
+Neural Rendering effect. Output hashes must be unique across the three-frame
+sequence so stale/replayed output cannot satisfy the gate.
+
+The reproducible entry point is:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_temporal.ps1 -Execute
+```
+
+That command refreshes the static/Defender preflight before native execution and
+writes `runtime/audit/dlss5-v10-temporal-hardware.json`.
+
+This temporal gate is implemented but has **not yet been counted as hardware
+validation**. Until it passes on the RTX 3070 Ti, the only v10 hardware result
+is the successful one-frame bounded compatibility run above. The normal v10
+application backend remains disabled.
 

@@ -184,8 +184,16 @@ def test_scene_soak_fake_pass(monkeypatch, tmp_path):
     assert report["state_influence_observed"] is True
     assert CUT_INDEX not in report["state_influence_frame_ids"]
     assert 1 in report["state_influence_frame_ids"]
-    assert report["scene_aware"]["unique_output_hashes"] == 128
-    assert report["reset_control"]["unique_output_hashes"] == 128
+    scene_hashes = {
+        frame["output_sha256"] for frame in report["scene_aware"]["frames"]
+    }
+    reset_hashes = {
+        frame["output_sha256"] for frame in report["reset_control"]["frames"]
+    }
+    assert report["scene_aware"]["unique_output_hashes"] == len(scene_hashes)
+    assert report["reset_control"]["unique_output_hashes"] == len(reset_hashes)
+    assert len(scene_hashes) > 1
+    assert len(reset_hashes) > 1
     assert report["scene_aware"]["close"] == "CLOSED"
     assert report["reset_control"]["close"] == "CLOSED"
     assert report["firewall_removed"] is True

@@ -179,6 +179,22 @@ def test_temporal_v10_cli_is_blocked_without_exact_ack(monkeypatch, tmp_path):
     assert called["value"] is False
 
 
+def test_temporal_host_and_client_use_separate_three_frame_mode():
+    host_source = (ROOT / "src" / "backends" / "dlss5_v10_host.py").read_text(
+        encoding="utf-8"
+    )
+    client_source = (ROOT / "src" / "backends" / "dlss5_v10_client.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'TEMPORAL_EXPERIMENT_ACK = "BOUNDED_256_THREE_FRAME"' in host_source
+    assert "--experimental-native-temporal-serve" in host_source
+    assert "max_frames=3" in host_source
+    assert "temporal_sequence=True" in host_source
+    assert "start_native_temporal_experimental" in client_source
+    assert "--experimental-native-temporal-serve" in client_source
+    assert "TEMPORAL_EXPERIMENT_ACK" in client_source
+
+
 def test_temporal_v10_wrapper_refreshes_preflight_before_execution():
     source = (ROOT / "tools" / "run_dlss5_v10_temporal.ps1").read_text(
         encoding="utf-8"

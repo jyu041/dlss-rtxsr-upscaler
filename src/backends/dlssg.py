@@ -23,6 +23,18 @@ MANAGED_OFFICIAL_RUNTIME_DIR = ROOT / "runtime" / "dlssg" / "official"
 # satisfy the C55 direct-host startup contract.
 DEFAULT_RUNTIME_PROFILE = "legacy"
 
+VALIDATED_WORKER_SHA256 = "C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916"
+WORKER_IDENTITY_VALIDATED = "validated-c55"
+WORKER_IDENTITY_GRID4_RESEARCH = "grid4-research-candidate"
+WORKER_IDENTITY_POLICIES = (
+    WORKER_IDENTITY_VALIDATED,
+    WORKER_IDENTITY_GRID4_RESEARCH,
+)
+RESEARCH_INSTRUMENTED_WORKER = (
+    ROOT / "native" / "dlssg_sm86_offline" / "bin-instrumented"
+    / "dlssg_sm86_offline.exe"
+).resolve()
+
 
 @dataclass(frozen=True)
 class DlssgConfiguration:
@@ -31,6 +43,7 @@ class DlssgConfiguration:
     official_runtime_dir: Path
     runtime_profile: str
     expected_runtime_sha256: str
+    worker_identity_policy: str
 
 
 class DLSSGBackend(Backend):
@@ -42,11 +55,23 @@ class DLSSGBackend(Backend):
         community_runtime: str | Path | None = None,
         official_runtime_dir: str | Path | None = None,
         runtime_profile: str | None = None,
+        worker_identity_policy: str = WORKER_IDENTITY_VALIDATED,
     ):
         profile_name = runtime_profile or os.environ.get("DLSSG_RUNTIME_PROFILE", DEFAULT_RUNTIME_PROFILE)
         configured_runtime = community_runtime or os.environ.get("DLSSG_COMMUNITY_RUNTIME")
         if profile_name not in {"legacy", "candidate-0.3.1"}:
             raise ValueError(f"Unknown DLSS-G runtime profile: {profile_name}")
+        if worker_identity_policy not in WORKER_IDENTITY_POLICIES:
+            raise ValueError(
+                f"Unknown DLSS-G worker identity policy: {worker_identity_policy}"
+            )
+        if (
+            worker_identity_policy == WORKER_IDENTITY_GRID4_RESEARCH
+            and profile_name != "legacy"
+        ):
+            raise ValueError(
+                "grid4 research worker policy requires the validated legacy runtime profile"
+            )
         if configured_runtime is None and profile_name == "candidate-0.3.1":
             configured_runtime = MANAGED_CANDIDATE_RUNTIME
         self.configuration = DlssgConfiguration(
@@ -55,6 +80,7 @@ class DLSSGBackend(Backend):
             Path(official_runtime_dir or os.environ.get("DLSSG_OFFICIAL_RUNTIME_DIR", MANAGED_OFFICIAL_RUNTIME_DIR)).expanduser().resolve(),
             profile_name,
             get_profile(profile_name).runtime_sha256,
+            worker_identity_policy,
         )
 
     def status(self) -> BackendStatus:
@@ -80,8 +106,29 @@ class DLSSGBackend(Backend):
                 return BackendStatus("DLSS-G 2X/3X/4X", False, "IDENTITY MISMATCH", f"{config.runtime_profile} INI SHA-256 mismatch")
 
         worker_hash = sha256_file(config.worker)
-        if worker_hash != "C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916":
-            return BackendStatus("DLSS-G 2X/3X/4X", False, "IDENTITY MISMATCH", "worker SHA-256 is not the verified C55 identity")
+        if config.worker_identity_policy == WORKER_IDENTITY_VALIDATED:
+            if worker_hash != VALIDATED_WORKER_SHA256:
+                return BackendStatus(
+                    "DLSS-G 2X/3X/4X",
+                    False,
+                    "IDENTITY MISMATCH",
+                    "worker SHA-256 is not the verified C55 identity",
+                )
+        else:
+            if config.worker != RESEARCH_INSTRUMENTED_WORKER:
+                return BackendStatus(
+                    "DLSS-G 2X/3X/4X",
+                    False,
+                    "RESEARCH WORKER PATH MISMATCH",
+                    "grid4 research policy only permits the repository instrumented worker",
+                )
+            if worker_hash == VALIDATED_WORKER_SHA256:
+                return BackendStatus(
+                    "DLSS-G 2X/3X/4X",
+                    False,
+                    "RESEARCH WORKER REQUIRED",
+                    "grid4 research policy requires a freshly built non-C55 candidate worker",
+                )
 
         official_identity = official_runtime_identity(config.official_runtime_dir)
         if not policy_satisfied(official_identity):
@@ -102,6 +149,14 @@ class DLSSGBackend(Backend):
                     "COMPATIBILITY TEST REQUIRED",
                     "The 0.3.1 proxy candidate is not the validated C55 default and requires a current 2X/3X/4X compatibility attestation",
                 )
+
+        if config.worker_identity_policy == WORKER_IDENTITY_GRID4_RESEARCH:
+            return BackendStatus(
+                "DLSS-G 2X/3X/4X",
+                True,
+                "RESEARCH CANDIDATE",
+                "Explicit grid4 research worker accepted with the validated legacy and official runtimes; production C55 identity remains unchanged",
+            )
 
         return BackendStatus(
             "DLSS-G 2X/3X/4X",

@@ -45,8 +45,17 @@ if errorlevel 1 (
 )
 del /q "%NVE_BOOTSTRAP_ARCHIVE%" >nul 2>nul
 
+set "NVE_GRID4_ARCHIVE=%TEMP%\dlssg-grid4-worker-v1.zip"
+call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\manage_runtime.py verify project-grid4-worker-v1 >nul 2>nul
+if errorlevel 1 (
+  echo Installing the pinned hardware-validated grid4 DLSS-G worker candidate...
+  call conda run --no-capture-output %NVE_CONDA_TARGET% python tools\manage_runtime.py install project-grid4-worker-v1 --archive-target "%NVE_GRID4_ARCHIVE%" || exit /b 1
+)
+del /q "%NVE_GRID4_ARCHIVE%" >nul 2>nul
+
 set "DLSSG_WORKER_EXE=%~dp0runtime\dlssg\worker\dlssg_sm86_offline.exe"
 if not exist "%DLSSG_WORKER_EXE%" (echo Validated C55 worker bootstrap did not produce the expected file.& exit /b 1)
+if not exist "%~dp0runtime\dlssg\grid4-worker\dlssg_sm86_offline.exe" (echo Managed grid4 worker bootstrap did not produce the expected file.& exit /b 1)
 if not exist "%~dp0runtime\dlss-sr-host\dlss_sr_host.exe" (echo DLSS SR host bootstrap did not produce the expected file.& exit /b 1)
 if not exist "%~dp0runtime\dlss-sr-host\nvngx_dlss.dll" (echo DLSS SR runtime bootstrap did not produce the expected file.& exit /b 1)
 if not exist "%~dp0native\dlssg_sm86_offline\bin" mkdir "%~dp0native\dlssg_sm86_offline\bin" || exit /b 1
@@ -128,7 +137,7 @@ if defined NVE_CONDA_PREFIX (>>"config\source_env.bat" echo set "NVE_CONDA_PREFI
 
 echo.
 echo Environment ready: %NVE_CONDA_ENV%
-echo C55, DLSS SR, and the validated DLSS-G direct-host runtime/provider are installed from pinned public sources.
+echo C55, the managed grid4 candidate, DLSS SR, and the validated DLSS-G direct-host runtime/provider are installed from pinned public sources.
 echo Normal use does not require downloading backend DLLs manually or entering runtime paths in the UI.
 echo The newer SM86 0.3.1 proxy generation remains an advanced candidate only; normal C55 MFG uses the validated legacy direct-host profile.
 echo DLSS 5 v3 can also be provisioned from its pinned upstream release through the explicit setup opt-in; it remains experimental and fail-closed behind hash, scan, firewall, and Feature-18 self-test gates.

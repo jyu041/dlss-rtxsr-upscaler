@@ -107,7 +107,7 @@ start.bat
 1. creates or updates the dedicated `dlss-rtxsr-upscaler` Conda environment;
 2. installs the pinned Python dependencies, including NVIDIA VFX and CUDA-enabled PyTorch;
 3. verifies FFmpeg/FFprobe and H.264/HEVC NVENC support;
-4. downloads and verifies the project-owned C55 DLSS-G worker and validated DLSS SR host/runtime from the public `v0.1.0-beta.2` release;
+4. downloads and verifies the project-owned C55 DLSS-G worker and validated DLSS SR host/runtime from the public `v0.1.0-beta.2` release, plus the separately pinned hardware-validated grid4 worker from `dlssg-grid4-worker-v1`;
 5. downloads and verifies the C55-validated SM86 direct-host runtime from pinned upstream commit `5f62ff44a9c08f9841fa605e7b7160f79ccd2c40`;
 6. downloads the pinned official NVIDIA DLSS-G provider from the public Streamline release;
 7. optionally provisions the validated experimental DLSS 5 v3 runtime after explicit user consent, including pinned archive/file verification, Authenticode inspection, a required Microsoft Defender scan, an exact outbound firewall block, local approval generation, and the synthetic Feature-18 self-test;
@@ -144,7 +144,7 @@ The detailed setup is documented in [`docs/INSTALL.md`](docs/INSTALL.md). Develo
 | --- | --- |
 | RTX VSR | Compatible GPU/driver; the pinned NVIDIA VFX Python package is installed by setup |
 | DLSS SR | Compatible GPU/driver; host/runtime are installed automatically and setup attempts the local self-test |
-| DLSS-G | Compatible GPU/driver; C55, the validated SM86 direct-host runtime, and official NVIDIA provider are installed automatically and setup attempts bounded 2X/3X/4X validation |
+| DLSS-G | Compatible GPU/driver; C55, the separate pinned grid4 candidate worker, the validated SM86 direct-host runtime, and official NVIDIA provider are installed automatically; C55/grid1 remains the default and setup attempts bounded 2X/3X/4X validation |
 | DLSS 5 v3 | Explicit opt-in to the managed v3 provisioner; setup verifies the pinned upstream runtime, requires a clean Defender scan, installs/verifies the outbound worker block, writes local approval, and runs the Feature-18 self-test |
 | DLSS 5 v10 Experimental | Explicit UI preflight refresh or smoke wrapper; pinned v10 archive, exact static identity, fresh Defender scan, isolated child process, temporary exact-interpreter outbound firewall block; current app path is 1.0x and up to 1920x1080-equivalent input |
 
@@ -162,6 +162,11 @@ runtime/
 ├── dlssg/
 │   ├── worker/
 │   │   └── dlssg_sm86_offline.exe
+│   ├── grid4-worker/           # pinned experimental GPU-resident/grid4 worker
+│   │   ├── dlssg_sm86_offline.exe
+│   │   ├── BUILD-PROVENANCE.json
+│   │   ├── LICENSE-NVIDIA-RTX-SDK.txt
+│   │   └── THIRD_PARTY_NOTICES.md
 │   ├── legacy/                 # validated normal C55 direct-host profile
 │   │   ├── version.dll
 │   │   └── dlssg_sm86.ini
@@ -191,6 +196,7 @@ This project is designed for local, explicit, auditable processing:
 
 - The UI binds to localhost and does not enable Gradio sharing.
 - `setup.bat` explicitly retrieves pinned managed components from their recorded public sources and verifies archive/file identities before activation.
+- The project-owned grid4 worker is distributed as a separately pinned application release asset with its NVIDIA RTX SDK license, third-party notices, build provenance, exact archive hash, and exact worker hash. It does not bundle the external community DLSS-G runtime, NVIDIA provider, `nvapi64.dll`, or `nvofapi64.dll`.
 - The project does **not** redistribute the externally licensed DLSS-G direct-host/provider files, the optional 0.3.1 candidate, or the DLSS 5 v3 runtime archive in the Git repository; setup/Runtime Manager downloads them directly from their recorded public upstream sources after the relevant user action.
 - DLSS 5 v3 provisioning is opt-in and additionally requires exact five-file hashes, Authenticode inspection, a clean Microsoft Defender scan, a verified exact outbound firewall block for the worker, a local approval manifest, and successful Feature-18 self-test evidence.
 - DLSS 5 v10 application use is separately opt-in. The UI's explicit preflight refresh downloads/verifies only the pinned v10 archive, performs the static identity gate and fresh Defender scan, and stages the candidate. Each render then uses an isolated Python child with an exact-interpreter temporary outbound firewall block, process-tree checks, scene-aware resets, NGX/CUDA result validation, and mandatory cleanup.
@@ -204,7 +210,7 @@ Read the full audit in [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md).
 
 - The current pipeline targets SDR RGBA video.
 - DLSS SR uses estimated optical flow rather than engine-provided motion vectors and may fail around cuts, occlusion, hair, and transparency.
-- DLSS-G behavior remains hardware/runtime dependent; the normal Ampere path is pinned to the exact C55-validated direct-host runtime. The UI now exposes `grid4-gpu-candidate` as an explicit experimental NVOF profile carrying the tested forward/GPU-resident/4x4 settings. It uses the isolated instrumented worker, fails closed when that worker is absent or invalid, and never silently replaces the validated grid1/C55 default.
+- DLSS-G behavior remains hardware/runtime dependent; the normal Ampere path is pinned to the exact C55-validated direct-host runtime. The UI exposes `grid4-gpu-candidate` as an explicit experimental NVOF profile carrying the tested forward/GPU-resident/4x4 settings. `setup.bat` installs its exact managed worker (SHA-256 `E097BC87558D6E12ECE1963E67CD7330570BCFBF6C6ED336B10F1EF6DF2A5881`) from the pinned project release, fails closed if that identity changes or is absent, and never silently replaces the validated grid1/C55 default.
 - DLSS 5 is experimental, hardware- and runtime-dependent, and may alter semantic content.
 - The currently validated RTX 3070-family/Ampere v3 path is restricted to 1.0× output; higher v3 output scales remain blocked because the tested pairing reproducibly fell back with NGX `InvalidParameter (0xBAD00005)`.
 - Visual Enhancer v10 is the newest Neuroframe research candidate. The application now exposes it only as **DLSS 5 v10 Experimental**: an explicit 1.0x scene-aware video mode capped at 1920x1080-equivalent input and gated by the same pinned runtime, fresh Defender preflight, isolated child process, process-tree checks, NGX/CUDA evidence, temporary firewall block, scene resets, and clean CLOSE requirements used during research. It is never chosen by default and does not replace v3. The one-frame, temporal, real-video A/B, scene-cut, and 128-frame soak gates passed on the RTX 3070 Ti, but perceptual superiority remains unproven.
@@ -227,6 +233,15 @@ Primary development and hardware validation has been performed on:
   subsequently passed. The profile is therefore selectable in the application
   as an explicit experimental mode while the normal pinned C55/grid1 path
   remains the default and fallback.
+- The exact packaged grid4 worker now used by Runtime Manager (SHA-256
+  `E097BC87558D6E12ECE1963E67CD7330570BCFBF6C6ED336B10F1EF6DF2A5881`,
+  archive SHA-256
+  `5A6644CC78EFEFB3705C80E7859D53C0E75081AAAE33C676D0DC451BE74B80C9`)
+  passed the managed real-video gate on the RTX 3070 Ti at 640x480 / 2X:
+  442 input frames became exactly 884 output frames with preserved duration
+  and audio, no interpolation-disabled frames, no device-removal failure, and
+  clean worker/decoder/encoder exits. See
+  `docs/MFG_GRID4_MANAGED_WORKER_HARDWARE_2026-09-19.md`.
 - DLSS 5 v3 Feature-18 provisioning and hardware self-test also passed on the
   RTX 3070 Ti with the managed hash/Defender/firewall/approval gates in place;
   the validated Ampere execution path remains the experimental 1.0× mode.

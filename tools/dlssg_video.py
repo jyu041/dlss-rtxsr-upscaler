@@ -12,6 +12,8 @@ sys.path.insert(0, str(ROOT))
 
 from src.backends.dlssg import (  # noqa: E402
     DLSSGBackend,
+    MANAGED_GRID4_WORKER,
+    WORKER_IDENTITY_GRID4_MANAGED,
     WORKER_IDENTITY_GRID4_RESEARCH,
     WORKER_IDENTITY_VALIDATED,
 )
@@ -35,7 +37,7 @@ def main() -> int:
         "--nvof-profile",
         choices=NVOF_PROFILES,
         default="validated",
-        help="validated keeps the current C55 behavior; grid4-gpu-candidate is research-only",
+        help="validated keeps the current C55 behavior; grid4-gpu-candidate is an explicit experimental profile",
     )
     parser.add_argument("--no-audio", action="store_true")
     parser.add_argument("--terminal-frame-policy", default="duplicate", choices=("duplicate", "short"))
@@ -46,11 +48,14 @@ def main() -> int:
     parser.add_argument("--diagnostics", action="store_true", help="Enable slow per-generated-frame validation and visual artifacts")
     parser.add_argument("--no-encode-control", action="store_true", help="Measurement-only sink: consume/hash RGBA frames without FFmpeg encoding")
     args = parser.parse_args()
-    worker_identity_policy = (
-        WORKER_IDENTITY_GRID4_RESEARCH
-        if args.nvof_profile == NVOF_PROFILE_GRID4_GPU_CANDIDATE
-        else WORKER_IDENTITY_VALIDATED
-    )
+    if args.nvof_profile == NVOF_PROFILE_GRID4_GPU_CANDIDATE:
+        worker_identity_policy = (
+            WORKER_IDENTITY_GRID4_MANAGED
+            if args.worker.expanduser().resolve() == MANAGED_GRID4_WORKER
+            else WORKER_IDENTITY_GRID4_RESEARCH
+        )
+    else:
+        worker_identity_policy = WORKER_IDENTITY_VALIDATED
     backend = DLSSGBackend(
         args.worker,
         args.community_runtime,

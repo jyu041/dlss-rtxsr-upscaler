@@ -8,6 +8,10 @@ ROOT = Path(__file__).parents[1]
 MANIFEST = ROOT / "src" / "runtime_manager" / "manifest.json"
 BETA2_SHA256 = "F32F8D9586D3A3006D5E26549D9BAB74DD33E10326157D5AEE4620C9DD0006C8"
 C55_SHA256 = "C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916"
+GRID4_ARCHIVE_SHA256 = "5A6644CC78EFEFB3705C80E7859D53C0E75081AAAE33C676D0DC451BE74B80C9"
+GRID4_ARCHIVE_SIZE = 209_002
+GRID4_WORKER_SHA256 = "E097BC87558D6E12ECE1963E67CD7330570BCFBF6C6ED336B10F1EF6DF2A5881"
+GRID4_WORKER_SIZE = 613_376
 SR_HOST_SHA256 = "E23F3CD5BEB5E70001E9950C890027D46F84CEB4439A09CEA67E343AB34A34BB"
 SR_RUNTIME_SHA256 = "3975567B8943C53ACCE397F2B72380092F84F162D00B0D2C7D08A1025C563983"
 LEGACY_DLSSG_SHA256 = "C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2"
@@ -36,6 +40,26 @@ def test_public_release_bootstrap_manifest_is_exact_and_public():
     assert dict(sr.extract_map)[sr.archive_members[1]] == "nvngx_dlss.dll"
     assert sr.constraints["host_sha256"] == SR_HOST_SHA256
     assert sr.constraints["runtime_sha256"] == SR_RUNTIME_SHA256
+
+
+
+def test_public_grid4_worker_manifest_is_exact_and_public():
+    manager = RuntimeManager(MANIFEST, ROOT / "runtime")
+    grid4 = manager.specs["project-grid4-worker-v1"]
+    assert grid4.policy == "UPSTREAM_DOWNLOAD"
+    assert grid4.direct_user_download is True
+    assert grid4.redistributable is True
+    assert grid4.source_url.endswith("/releases/tag/dlssg-grid4-worker-v1")
+    assert grid4.artifact_url and grid4.artifact_url.endswith("/releases/download/dlssg-grid4-worker-v1/dlssg-grid4-worker-candidate.zip")
+    assert grid4.sha256 == GRID4_ARCHIVE_SHA256
+    assert grid4.size_bytes == GRID4_ARCHIVE_SIZE
+    assert grid4.destination == "dlssg/grid4-worker"
+    assert grid4.constraints["worker_sha256"] == GRID4_WORKER_SHA256
+    assert grid4.constraints["worker_size_bytes"] == GRID4_WORKER_SIZE
+    assert grid4.constraints["nvof_profile"] == "grid4-gpu-candidate"
+    assert grid4.constraints["output_grid"] == 4
+    assert grid4.constraints["replaces_c55_default"] is False
+    assert set(grid4.allowlist) == {"BUILD-PROVENANCE.json", "dlssg_sm86_offline.exe", "LICENSE-NVIDIA-RTX-SDK.txt", "THIRD_PARTY_NOTICES.md"}
 
 
 def test_dlssg_normal_runtime_is_the_validated_legacy_direct_host_pair():
@@ -75,6 +99,7 @@ def test_setup_bootstraps_validated_dlssg_path_and_persists_canonical_paths():
     setup = (ROOT / "setup.bat").read_text(encoding="utf-8")
     for runtime_id in (
         "project-c55-worker-beta2",
+        "project-grid4-worker-v1",
         "project-dlss-sr-beta2",
         "dlssg-official-provider-310.9.1",
         "dlssg-legacy-reference",
@@ -84,6 +109,7 @@ def test_setup_bootstraps_validated_dlssg_path_and_persists_canonical_paths():
     assert "tools\\validate_dlssg_candidate.py --profile legacy" in setup
     assert "tools\\check_dlss_sr_readiness.py --selftest" in setup
     assert "runtime\\dlssg\\worker\\dlssg_sm86_offline.exe" in setup
+    assert "runtime\\dlssg\\grid4-worker\\dlssg_sm86_offline.exe" in setup
     assert "runtime\\dlssg\\legacy\\version.dll" in setup
     assert "runtime\\dlssg\\official" in setup
     assert "DLSSG_WORKER_EXE" in setup

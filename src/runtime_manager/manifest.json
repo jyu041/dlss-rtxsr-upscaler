@@ -24,6 +24,28 @@
       "constraints": {"worker_sha256": "C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916", "worker_size_bytes": 602112}
     },
     {
+      "id": "project-grid4-worker-v1",
+      "name": "Project DLSS-G grid4 worker candidate",
+      "backend": "dlssg",
+      "version": "grid4-v1-E097BC87",
+      "source": "https://github.com/jyu041/dlss-rtxsr-upscaler",
+      "source_url": "https://github.com/jyu041/dlss-rtxsr-upscaler/releases/tag/dlssg-grid4-worker-v1",
+      "artifact_url": "https://github.com/jyu041/dlss-rtxsr-upscaler/releases/download/dlssg-grid4-worker-v1/dlssg-grid4-worker-candidate.zip",
+      "sha256": "5A6644CC78EFEFB3705C80E7859D53C0E75081AAAE33C676D0DC451BE74B80C9",
+      "size_bytes": 209002,
+      "archive_type": "selective-zip",
+      "allowlist": ["BUILD-PROVENANCE.json", "dlssg_sm86_offline.exe", "LICENSE-NVIDIA-RTX-SDK.txt", "THIRD_PARTY_NOTICES.md"],
+      "archive_members": ["dlssg-grid4-worker/BUILD-PROVENANCE.json", "dlssg-grid4-worker/dlssg_sm86_offline.exe", "dlssg-grid4-worker/LICENSE-NVIDIA-RTX-SDK.txt", "dlssg-grid4-worker/THIRD_PARTY_NOTICES.md"],
+      "extract_map": {"dlssg-grid4-worker/BUILD-PROVENANCE.json": "BUILD-PROVENANCE.json", "dlssg-grid4-worker/dlssg_sm86_offline.exe": "dlssg_sm86_offline.exe", "dlssg-grid4-worker/LICENSE-NVIDIA-RTX-SDK.txt": "LICENSE-NVIDIA-RTX-SDK.txt", "dlssg-grid4-worker/THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"},
+      "destination": "dlssg/grid4-worker",
+      "policy": "UPSTREAM_DOWNLOAD",
+      "channel": "experimental-project-hardware-validated",
+      "license_name": "Project-owned worker distributed with NVIDIA RTX SDK license/notices; NVIDIA SDK material remains under NVIDIA terms",
+      "redistributable": true,
+      "direct_user_download": true,
+      "constraints": {"worker_sha256": "E097BC87558D6E12ECE1963E67CD7330570BCFBF6C6ED336B10F1EF6DF2A5881", "worker_size_bytes": 613376, "source_commit": "76702915f5c55423786d6fdd92e69ef1f55bbfa5", "workflow_run_id": 35447075622, "nvof_profile": "grid4-gpu-candidate", "output_grid": 4, "tested_gpu": "NVIDIA GeForce RTX 3070 Ti", "hardware_evidence": "docs/MFG_GRID4_MANAGED_WORKER_HARDWARE_2026-09-19.md", "replaces_c55_default": false}
+    },
+    {
       "id": "project-dlss-sr-beta2",
       "name": "Project DLSS SR host and validated NVIDIA runtime",
       "backend": "dlss-sr",

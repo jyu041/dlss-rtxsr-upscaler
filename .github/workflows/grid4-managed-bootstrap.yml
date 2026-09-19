@@ -1,0 +1,49 @@
+name: grid4-managed-bootstrap
+
+on:
+  push:
+    branches:
+      - integrate/mfg-grid4-managed-worker
+    paths:
+      - "src/runtime_manager/**"
+      - "tools/manage_runtime.py"
+      - ".github/workflows/grid4-managed-bootstrap.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: windows-2022
+    steps:
+      - name: Check out project
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install exact public grid4 worker through Runtime Manager
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'dlssg-grid4-worker-v1.zip'
+          python tools\manage_runtime.py install project-grid4-worker-v1 --archive-target $archive
+          if ($LASTEXITCODE -ne 0) { throw "Runtime Manager install failed: $LASTEXITCODE" }
+
+      - name: Verify managed component and exact identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python tools\manage_runtime.py verify project-grid4-worker-v1
+          if ($LASTEXITCODE -ne 0) { throw "Runtime Manager verify failed: $LASTEXITCODE" }
+          $worker = '.\runtime\dlssg\grid4-worker\dlssg_sm86_offline.exe'
+          if (-not (Test-Path -LiteralPath $worker -PathType Leaf)) { throw 'managed grid4 worker missing' }
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $worker).Hash
+          if ($hash -ne 'E097BC87558D6E12ECE1963E67CD7330570BCFBF6C6ED336B10F1EF6DF2A5881') {
+            throw "managed grid4 worker identity mismatch: $hash"
+          }
+          if ((Get-Item -LiteralPath $worker).Length -ne 613376) { throw 'managed grid4 worker size mismatch' }
+          Write-Host "GRID4_MANAGED_BOOTSTRAP_PASS worker_sha256=$hash"

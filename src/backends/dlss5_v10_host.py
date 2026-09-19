@@ -42,6 +42,7 @@ from .dlss5_v10_static import V10_EXPECTED_FILES
 EXPERIMENT_ACK = "BOUNDED_256_ONE_FRAME"
 TEMPORAL_EXPERIMENT_ACK = "BOUNDED_256_THREE_FRAME"
 VIDEO_AB_EXPERIMENT_ACK = "BOUNDED_256_VIDEO_AB_16"
+SCENE_CUT_EXPERIMENT_ACK = "BOUNDED_256_SCENE_CUT_32"
 
 
 SIMULATED_NATIVE_RESULT = -2147483648
@@ -160,6 +161,8 @@ def experimental_native_server(
     temporal_sequence: bool = False,
     reset_every_frame: bool = False,
     video_ab_mode: str | None = None,
+    require_first_reset: bool = False,
+    scene_cut_mode: str | None = None,
 ) -> int:
     if __import__("os").environ.get("NVE_DLSS5_V10_NATIVE") != expected_ack:
         print(
@@ -167,12 +170,14 @@ def experimental_native_server(
             file=sys.stderr,
         )
         return 77
-    if max_frames not in (1, 3, 16):
-        raise ValueError("experimental native v10 max_frames must be 1, 3, or 16")
+    if max_frames not in (1, 3, 16, 32):
+        raise ValueError("experimental native v10 max_frames must be 1, 3, 16, or 32")
     if temporal_sequence and reset_every_frame:
         raise ValueError("experimental native v10 reset policies are mutually exclusive")
     if video_ab_mode not in (None, "persistent", "reset-control"):
         raise ValueError("invalid v10 video A/B mode")
+    if scene_cut_mode not in (None, "no-cut-reset", "scene-aware", "reset-control"):
+        raise ValueError("invalid v10 scene-cut mode")
 
     from .dlss5_v10_native import V10NativeSession, load_bridge
     from .dlss5_v10_security import validate_preflight_report
@@ -199,6 +204,8 @@ def experimental_native_server(
     }
     if video_ab_mode is not None:
         hello["video_ab_mode"] = video_ab_mode
+    if scene_cut_mode is not None:
+        hello["scene_cut_mode"] = scene_cut_mode
     stdout.write(encode_json(HELLO, 0, hello))
     stdout.flush()
 
@@ -257,6 +264,10 @@ def experimental_native_server(
                         raise V10ProtocolError(
                             "temporal v10 sequence requires reset=False after the first FRAME"
                         )
+                if require_first_reset and frame_count == 0 and not frame.reset:
+                    raise V10ProtocolError(
+                        "bounded native v10 sequence requires reset=True on the first FRAME"
+                    )
                 if reset_every_frame and not frame.reset:
                     raise V10ProtocolError(
                         "reset-control v10 sequence requires reset=True on every FRAME"
@@ -340,6 +351,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--experimental-native-temporal-serve", action="store_true")
     parser.add_argument("--experimental-native-video-persistent-serve", action="store_true")
     parser.add_argument("--experimental-native-video-reset-serve", action="store_true")
+    parser.add_argument("--experimental-native-scene-no-reset-serve", action="store_true")
+    parser.add_argument("--experimental-native-scene-aware-serve", action="store_true")
+    parser.add_argument("--experimental-native-scene-reset-serve", action="store_true")
     parser.add_argument("--runtime-dir", type=Path)
     parser.add_argument("--preflight-report", type=Path)
     args = parser.parse_args(argv)
@@ -395,6 +409,48 @@ def main(argv: list[str] | None = None) -> int:
             max_frames=16,
             reset_every_frame=True,
             video_ab_mode="reset-control",
+        )
+
+    if args.experimental_native_scene_no_reset_serve:
+        if args.runtime_dir is None or args.preflight_report is None:
+            parser.error(
+                "--experimental-native-scene-no-reset-serve requires --runtime-dir and --preflight-report"
+            )
+        return experimental_native_server(
+            args.runtime_dir,
+            args.preflight_report,
+            expected_ack=SCENE_CUT_EXPERIMENT_ACK,
+            max_frames=32,
+            temporal_sequence=True,
+            scene_cut_mode="no-cut-reset",
+        )
+
+    if args.experimental_native_scene_aware_serve:
+        if args.runtime_dir is None or args.preflight_report is None:
+            parser.error(
+                "--experimental-native-scene-aware-serve requires --runtime-dir and --preflight-report"
+            )
+        return experimental_native_server(
+            args.runtime_dir,
+            args.preflight_report,
+            expected_ack=SCENE_CUT_EXPERIMENT_ACK,
+            max_frames=32,
+            require_first_reset=True,
+            scene_cut_mode="scene-aware",
+        )
+
+    if args.experimental_native_scene_reset_serve:
+        if args.runtime_dir is None or args.preflight_report is None:
+            parser.error(
+                "--experimental-native-scene-reset-serve requires --runtime-dir and --preflight-report"
+            )
+        return experimental_native_server(
+            args.runtime_dir,
+            args.preflight_report,
+            expected_ack=SCENE_CUT_EXPERIMENT_ACK,
+            max_frames=32,
+            reset_every_frame=True,
+            scene_cut_mode="reset-control",
         )
 
     if args.serve:

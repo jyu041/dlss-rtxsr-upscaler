@@ -29,10 +29,10 @@ body {
 /* Compact shell header: status stays visible without pushing the workflow down. */
 .app-shell-header {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  padding: 4px 2px 10px;
+  gap: 16px;
+  padding: 3px 2px 8px;
 }
 
 .app-header h1 {
@@ -48,20 +48,65 @@ body {
   font-size: .82rem;
 }
 
+.status-menu {
+  position: relative;
+  z-index: 30;
+}
+
+.status-menu > summary {
+  list-style: none;
+  cursor: pointer;
+  border: 1px solid var(--nve-border);
+  background: rgba(16,22,31,.82);
+  color: #c5d0dd;
+  border-radius: 999px;
+  font-size: .75rem;
+  font-weight: 600;
+  padding: 6px 10px;
+  user-select: none;
+}
+
+.status-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.status-menu > summary:hover {
+  border-color: var(--nve-border-strong);
+  background: rgba(21,29,40,.95);
+}
+
+.status-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: var(--nve-green);
+  box-shadow: 0 0 0 3px rgba(118,185,0,.11);
+}
+
 .backend-status {
-  display: flex;
-  justify-content: flex-end;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 7px);
+  width: min(620px, calc(100vw - 40px));
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
   gap: 6px;
-  flex-wrap: wrap;
+  padding: 9px;
+  border: 1px solid var(--nve-border-strong);
+  background: #101720;
+  border-radius: 10px;
+  box-shadow: 0 14px 35px rgba(0,0,0,.35);
 }
 
 .status-badge {
   border: 1px solid var(--nve-border);
-  background: rgba(16,22,31,.75);
-  border-radius: 999px;
+  background: rgba(21,29,40,.8);
+  border-radius: 8px;
   color: #b7c2d0;
   font-size: .72rem;
-  padding: 4px 9px;
+  padding: 6px 8px;
   white-space: nowrap;
 }
 
@@ -351,15 +396,16 @@ button.primary {
   margin-top: 5px;
 }
 
-/* Configuration separates maintenance from the normal video workflow. */
-.configuration-grid {
-  align-items: flex-start;
-  gap: 14px;
-  margin-top: 8px;
+/* Configuration uses progressive disclosure: validation first, runtime inventory on demand. */
+.validation-grid {
+  align-items: stretch;
+  gap: 12px;
+  margin: 6px 0 8px;
 }
 
-.configuration-grid > * {
+.validation-grid > * {
   min-width: 0;
+  flex: 1 1 0;
 }
 
 .configuration-card,
@@ -368,17 +414,44 @@ button.primary {
   background: var(--nve-surface);
   border: 1px solid var(--nve-border);
   border-radius: var(--nve-radius);
-  padding: 12px 13px;
+  padding: 11px 12px;
+}
+
+.configuration-card {
+  margin-top: 10px;
   margin-bottom: 10px;
 }
 
 .configuration-card h3,
-.backend-readiness h3,
-.backend-readiness-v10 h3 {
+.backend-readiness h4,
+.backend-readiness-v10 h4 {
   margin-top: 0;
+  margin-bottom: 5px;
+}
+
+.backend-readiness p,
+.backend-readiness-v10 p {
+  color: #b5c0ce;
+  margin: 4px 0 8px;
+}
+
+.configuration-note {
+  margin: 5px 2px 0;
+  color: var(--nve-muted);
+  font-size: .78rem;
+}
+
+.runtime-result {
+  min-height: 0 !important;
+  color: #aeb9c8;
+  font-size: .78rem;
 }
 
 /* Diagnostics. */
+.diagnostics-shell {
+  max-width: 1380px;
+}
+
 .diagnostics-metrics {
   margin-top: 8px;
 }
@@ -423,7 +496,7 @@ button.primary {
   background: var(--nve-surface);
   border: 1px solid var(--nve-border);
   border-radius: 10px;
-  padding: 9px 11px;
+  padding: 8px 10px;
 }
 
 .advanced-diagnostics summary {
@@ -441,13 +514,11 @@ button.primary {
 /* Responsive behavior. */
 @media (max-width: 1399px) {
   .app-shell-header {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 8px;
+    align-items: center;
   }
 
   .backend-status {
-    justify-content: flex-start;
+    right: 0;
   }
 
   .main-workspace {
@@ -473,8 +544,22 @@ button.primary {
   }
 
   .main-workspace,
-  .configuration-grid {
+  .validation-grid {
     display: block;
+  }
+
+  .backend-readiness,
+  .backend-readiness-v10 {
+    margin-bottom: 10px;
+  }
+
+  .backend-status {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    top: 58px;
+    width: auto;
+    grid-template-columns: 1fr;
   }
 
   .workspace-card {
@@ -501,4 +586,10 @@ button.primary {
   .action-bar {
     flex-wrap: wrap;
   }
+}
+
+
+/* Keep the local app visually self-contained. */
+footer {
+  display: none !important;
 }

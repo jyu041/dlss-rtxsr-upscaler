@@ -332,6 +332,29 @@ def test_webui_is_task_first_and_separates_configuration_and_diagnostics():
 
 
 
+
+def test_webui_second_pass_uses_progressive_disclosure_for_status_and_runtime_inventory():
+    source = open("src/ui/app.py", encoding="utf-8").read()
+    css = open("src/ui/styles.css", encoding="utf-8").read()
+
+    status_source = source[source.index("def status_html():"):source.index("def runtime_cards_markdown()")]
+    assert '<details class="status-menu">' in status_source
+    assert '<summary><span class="status-dot"></span>Backend status</summary>' in status_source
+
+    configuration = source.index('with gr.Tab("Configuration")')
+    runtime_manager = source.index('gr.Markdown("### Runtime Manager")')
+    runtime_action = source.index('runtime_action_button = gr.Button("Run runtime action")')
+    inventory = source.index('with gr.Accordion("Managed component inventory", open=False)')
+    diagnostics = source.index('with gr.Tab("Diagnostics")')
+    assert configuration < runtime_manager < runtime_action < inventory < diagnostics
+
+    assert 'with gr.Row(elem_classes="validation-grid")' in source
+    assert 'gr.Markdown("### DLSS SR readiness")' in source
+    assert 'gr.Markdown("### DLSS 5 v10 experimental readiness")' in source
+    assert "footer {\n  display: none !important;\n}" in css
+
+
+
 def test_portable_launcher_verifies_manifest_before_embedded_python():
     source = open("start.bat", encoding="utf-8").read()
     check = source.index("check_portable_runtime.py")

@@ -43,6 +43,7 @@ EXPERIMENT_ACK = "BOUNDED_256_ONE_FRAME"
 TEMPORAL_EXPERIMENT_ACK = "BOUNDED_256_THREE_FRAME"
 VIDEO_AB_EXPERIMENT_ACK = "BOUNDED_256_VIDEO_AB_16"
 SCENE_CUT_EXPERIMENT_ACK = "BOUNDED_256_SCENE_CUT_32"
+SCENE_SOAK_EXPERIMENT_ACK = "BOUNDED_256_SCENE_AWARE_128"
 
 
 SIMULATED_NATIVE_RESULT = -2147483648
@@ -170,13 +171,22 @@ def experimental_native_server(
             file=sys.stderr,
         )
         return 77
-    if max_frames not in (1, 3, 16, 32):
-        raise ValueError("experimental native v10 max_frames must be 1, 3, 16, or 32")
+    if max_frames not in (1, 3, 16, 32, 128):
+        raise ValueError(
+            "experimental native v10 max_frames must be 1, 3, 16, 32, or 128"
+        )
     if temporal_sequence and reset_every_frame:
         raise ValueError("experimental native v10 reset policies are mutually exclusive")
     if video_ab_mode not in (None, "persistent", "reset-control"):
         raise ValueError("invalid v10 video A/B mode")
-    if scene_cut_mode not in (None, "no-cut-reset", "scene-aware", "reset-control"):
+    if scene_cut_mode not in (
+        None,
+        "no-cut-reset",
+        "scene-aware",
+        "reset-control",
+        "scene-aware-soak",
+        "reset-control-soak",
+    ):
         raise ValueError("invalid v10 scene-cut mode")
 
     from .dlss5_v10_native import V10NativeSession, load_bridge
@@ -354,6 +364,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--experimental-native-scene-no-reset-serve", action="store_true")
     parser.add_argument("--experimental-native-scene-aware-serve", action="store_true")
     parser.add_argument("--experimental-native-scene-reset-serve", action="store_true")
+    parser.add_argument("--experimental-native-scene-soak-serve", action="store_true")
+    parser.add_argument("--experimental-native-scene-soak-reset-serve", action="store_true")
     parser.add_argument("--runtime-dir", type=Path)
     parser.add_argument("--preflight-report", type=Path)
     args = parser.parse_args(argv)
@@ -451,6 +463,34 @@ def main(argv: list[str] | None = None) -> int:
             max_frames=32,
             reset_every_frame=True,
             scene_cut_mode="reset-control",
+        )
+
+    if args.experimental_native_scene_soak_serve:
+        if args.runtime_dir is None or args.preflight_report is None:
+            parser.error(
+                "--experimental-native-scene-soak-serve requires --runtime-dir and --preflight-report"
+            )
+        return experimental_native_server(
+            args.runtime_dir,
+            args.preflight_report,
+            expected_ack=SCENE_SOAK_EXPERIMENT_ACK,
+            max_frames=128,
+            require_first_reset=True,
+            scene_cut_mode="scene-aware-soak",
+        )
+
+    if args.experimental_native_scene_soak_reset_serve:
+        if args.runtime_dir is None or args.preflight_report is None:
+            parser.error(
+                "--experimental-native-scene-soak-reset-serve requires --runtime-dir and --preflight-report"
+            )
+        return experimental_native_server(
+            args.runtime_dir,
+            args.preflight_report,
+            expected_ack=SCENE_SOAK_EXPERIMENT_ACK,
+            max_frames=128,
+            reset_every_frame=True,
+            scene_cut_mode="reset-control-soak",
         )
 
     if args.serve:

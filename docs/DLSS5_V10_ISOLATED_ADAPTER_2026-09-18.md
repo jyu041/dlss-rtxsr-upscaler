@@ -446,9 +446,50 @@ single-frame result, but it still does not establish full-video robustness,
 scene-cut handling, long-session stability, quality suitability, or production
 readiness. The normal v10 application backend remains disabled.
 
-The next v10 evidence gate should therefore be a short, separately
-acknowledged real-video sequence using the same isolated process and security
-boundary, with source-derived frames rather than synthetic frames. It should
-remain bounded in frame count and geometry before any normal application
-integration is considered.
+## Sixteen-frame real-video temporal A/B milestone
+
+The next v10 evidence gate is now implemented as a separate 16-frame
+real-video A/B experiment. It still does not enable the normal v10 backend.
+
+The command is:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_video_ab.ps1 `
+    -Execute `
+    -Input "C:\path\to\clip.mp4"
+```
+
+Default `StartFrame` is 30 and can be overridden explicitly. The selected
+source frames are center-square-cropped and area-resized to 256x256 RGBA8 so
+the test does not stretch non-square input.
+
+The exact same 16 source frames are then processed in two independently created
+native sessions under acknowledgement `BOUNDED_256_VIDEO_AB_16`:
+
+1. `persistent`: frame 0 uses `reset=true`; frames 1-15 use
+   `reset=false`;
+2. `reset-control`: every frame uses `reset=true`.
+
+Both sessions retain the existing exact runtime identity, fresh static/Defender
+preflight, RTX 3070/3070 Ti restriction, ABI-6 check, exact-interpreter
+outbound firewall rule, per-frame NGX/CUDA checks, process-tree inspection,
+stale-output detection, clean CLOSE requirement and firewall cleanup.
+
+The validator additionally records:
+
+- per-frame persistent-versus-reset comparison metrics;
+- which non-initial frames differ between the two modes;
+- source-delta error MAE/RMSE for each mode;
+- enhancement-residual flicker MAE for each mode;
+- persistent-minus-reset deltas for those temporal metrics;
+- three source/persistent/reset review triptychs.
+
+This gate intentionally does **not** declare the persistent result higher
+quality based on one metric. Its pass criteria establish that both native paths
+execute correctly and that persistent temporal state measurably influences
+non-initial real-video outputs without stale replay. The metric deltas and
+review images are evidence for the subsequent quality decision.
+
+This 16-frame real-video A/B gate is implemented but has not yet been counted
+as hardware validation.
 

@@ -93,14 +93,20 @@ Run `setup.bat` from a normal network-enabled terminal. Sandboxed automation she
 
 ### Install and run
 
-From a Git-enabled terminal:
+From PowerShell:
 
-```bat
+```powershell
 git clone --recurse-submodules https://github.com/jyu041/dlss-rtxsr-upscaler.git
 cd dlss-rtxsr-upscaler
-setup.bat
-start.bat
+.\setup.bat
+.\start.bat
 ```
+
+From Command Prompt, use the same commands without the leading `.\` on the
+two batch files. `setup.bat` auto-discovers common Miniconda/Anaconda
+install locations when `conda` is not already on `PATH`, then records the
+exact Conda executable in `config/source_env.bat` so later `start.bat`
+launches do not depend on reopening the same Conda-enabled shell.
 
 `setup.bat` performs the provisioning step. The normal fresh-install contract is therefore **clone → setup → start**; no backend path entry is required in the UI. It:
 

@@ -112,12 +112,25 @@ def test_setup_bootstraps_validated_dlssg_path_and_persists_canonical_paths():
     assert "runtime\\dlssg\\grid4-worker\\dlssg_sm86_offline.exe" in setup
     assert "runtime\\dlssg\\legacy\\version.dll" in setup
     assert "runtime\\dlssg\\official" in setup
+    assert "NVE_CONDA_EXE" in setup
+    assert "where conda" in setup
+    assert "%USERPROFILE%\\miniconda3\\condabin\\conda.bat" in setup
+    assert 'echo if not defined NVE_CONDA_EXE set "NVE_CONDA_EXE=' in setup
     assert "DLSSG_WORKER_EXE" in setup
     assert "DLSSG_RUNTIME_PROFILE=legacy" in setup
     assert "DLSSG_COMMUNITY_RUNTIME" in setup
     assert "DLSSG_OFFICIAL_RUNTIME_DIR" in setup
     assert "manage_runtime.py install dlssg-sm86-0.3.1-candidate" not in setup
     assert "dlss-rtxsr-upscaler-resources" not in setup
+
+
+def test_start_reuses_setup_conda_executable_and_preserves_shell_overrides():
+    start = (ROOT / "start.bat").read_text(encoding="utf-8")
+    assert 'if exist "%~dp0config\\source_env.bat" call "%~dp0config\\source_env.bat"' in start
+    assert "NVE_CONDA_EXE" in start
+    assert 'call "%NVE_CONDA_EXE%" run --no-capture-output' in start
+    assert "where conda" in start
+    assert "%USERPROFILE%\\miniconda3\\condabin\\conda.bat" in start
 
 
 def test_setup_offers_fail_closed_managed_dlss5_v3_provisioning():

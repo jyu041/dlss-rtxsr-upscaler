@@ -1,3 +1,4 @@
+from dataclasses import replace
 import numpy as np
 import pytest
 
@@ -158,8 +159,7 @@ def test_bounded_v10_rejects_non_success_feature_results(monkeypatch, tmp_path, 
     class BadFeatureClient(FakeClient):
         def process_frame(self, frame):
             output = super().process_frame(frame)
-            setattr(output, field, value)
-            return output
+            return replace(output, **{field: value})
 
     runtime = tmp_path / "runtime"
     runtime.mkdir()

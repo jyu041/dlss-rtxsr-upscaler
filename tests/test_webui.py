@@ -207,7 +207,7 @@ def test_dlssg_grid4_profile_is_explicit_and_routes_to_research_backend(monkeypa
 def test_dlssg_ui_source_passes_selected_nvof_profile_to_renderer():
     source = open("src/ui/app.py", encoding="utf-8").read()
     assert 'label="NVOF profile"' in source
-    assert '"grid4-gpu-candidate"' in source
+    assert "NVOF_PROFILE_GRID4_GPU_CANDIDATE" in source
     assert "backend_for_nvof_profile(dlssg_nvof_profile)" in source
     assert "nvof_profile=dlssg_nvof_profile" in source
 

@@ -202,7 +202,7 @@ Read the full audit in [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md).
 - DLSS-G behavior remains hardware/runtime dependent; the normal Ampere path is pinned to the exact C55-validated direct-host runtime. A research-only `grid4-gpu-candidate` profile now carries the tested forward/GPU-resident/4x4 NVOF settings, but it is not the normal default or a replacement for the pinned C55 binary.
 - DLSS 5 is experimental, hardware- and runtime-dependent, and may alter semantic content.
 - The currently validated RTX 3070-family/Ampere v3 path is restricted to 1.0× output; higher v3 output scales remain blocked because the tested pairing reproducibly fell back with NGX `InvalidParameter (0xBAD00005)`.
-- Visual Enhancer v10 is the newest Neuroframe research candidate. Its normal backend remains disabled; the one-frame, three-frame temporal, 16-frame real-video A/B, and 32-frame scene-cut/reset gates have passed on the RTX 3070 Ti. The scene-cut run proved that explicit reset clears temporal carry-over at two real cuts. A 128-frame scene-aware soak with motion-compensated diagnostics is the next bounded milestone; visual-quality superiority is not yet established.
+- Visual Enhancer v10 is the newest Neuroframe research candidate. Its normal backend remains disabled; the one-frame, three-frame temporal, 16-frame real-video A/B, 32-frame scene-cut/reset, and 128-frame scene-aware soak gates have passed on the RTX 3070 Ti. Reset parity held at every tested soak cut and temporal-state influence remained active between cuts. Motion-compensated diagnostics did not establish visual-quality superiority, so the soak now exports synchronized playable A/B review clips before any normal-backend promotion is considered.
 - Performance and output quality vary substantially by source media, codec, resolution, driver, and backend runtime.
 - NVIDIA runtimes and community runtime files remain subject to their own licenses and are not covered by this repository's MIT license.
 
@@ -241,8 +241,15 @@ Primary development and hardware validation has been performed on:
   frames 5 and 23. At both cuts, scene-aware reset reproduced the all-reset
   control bit-for-bit, while the no-reset path differed across approximately
   99% and 97% of pixels respectively. This establishes real reset semantics on
-  the tested clip. The next bounded gate is a 128-frame scene-aware soak with
-  motion-compensated diagnostics; the normal v10 backend remains disabled.
+  the tested clip.
+- The 128-frame scene-aware soak also passed on the RTX 3070 Ti with detected
+  cuts at frames 5, 23, 63, 76 and 126. Scene-aware reset matched the all-reset
+  control bit-for-bit on frame 0 and every detected cut, while non-reset frames
+  retained temporal-state influence. Its motion-compensated residual-flicker
+  mean was higher than reset control while its p95/max were lower, so the
+  result is retained as diagnostic evidence rather than a visual-quality
+  verdict. The soak now exports synchronized playable comparison clips for
+  perceptual review; the normal v10 backend remains disabled.
 - Other development testing also includes RTX 3070 where separately documented.
 
 This is a development and validation configuration, not a minimum requirement or a claim of official NVIDIA support for every backend. Backend availability depends on the installed GPU, driver, and exact runtime combination; in particular, this does not establish official DLSS 5 support on RTX 30-series hardware. GPU smoke tests count as validation only when the relevant local runtime is actually present.

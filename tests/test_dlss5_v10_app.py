@@ -137,3 +137,44 @@ def test_v10_application_ack_is_separate_from_bounded_research_tokens():
     assert APP_EXPERIMENT_ACK == "EXPERIMENTAL_APP_SCENE_AWARE_V10"
     assert APP_EXPERIMENT_ACK != host.EXPERIMENT_ACK
     assert APP_EXPERIMENT_ACK != host.SCENE_SOAK_EXPERIMENT_ACK
+
+def test_v10_app_cli_requires_exact_ack(monkeypatch, tmp_path):
+    from tools import dlss5_v10_video as cli
+
+    called = {"value": False}
+
+    def fake_render(*args, **kwargs):
+        called["value"] = True
+        return {"frames": 1}
+
+    monkeypatch.setattr(cli, "render_dlss5_v10", fake_render)
+    base = [
+        "--input",
+        str(tmp_path / "input.mp4"),
+        "--output",
+        str(tmp_path / "output.mp4"),
+    ]
+    assert cli.main(base) == 2
+    assert called["value"] is False
+    assert cli.main(base + ["--execute", "--ack", "wrong"]) == 2
+    assert called["value"] is False
+
+
+def test_v10_app_smoke_wrapper_refreshes_preflight_before_renderer():
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "run_dlss5_v10_app_smoke.ps1"
+    ).read_text(encoding="utf-8")
+    assert "[switch]$Execute" in source
+    assert "[Alias('Input')]" in source
+    assert "audit_dlss5_v10.ps1" in source
+    assert "prepare_dlss5_v10_candidate.py" in source
+    assert "dlss5_v10_video.py" in source
+    assert "--ack EXPERIMENTAL_APP_SCENE_AWARE_V10" in source
+    assert source.index("& $audit -Archive $archivePath") < source.index(
+        "& $python $prepare"
+    )
+    assert source.index("& $python $prepare") < source.index("& $python $render")
+    assert "DLSS5_V10_APP_SMOKE_PASS" in source
+

@@ -608,14 +608,14 @@ def build():
                 gr.Markdown("### Backend validation")
                 with gr.Row(elem_classes="validation-grid"):
                     with gr.Group(elem_classes="backend-readiness"):
-                        gr.Markdown("#### DLSS SR")
+                        gr.Markdown("### DLSS SR readiness")
                         sr_readiness = gr.Markdown(f"Current state: {sr_initial_status.state} — {sr_initial_status.reason}")
                         sr_validate = gr.Button("Validate DLSS SR", interactive=sr_validation_enabled)
                     v10_initial_status = DLSS5V10ExperimentalBackend().status()
                     with gr.Group(elem_classes="backend-readiness-v10"):
-                        gr.Markdown("#### DLSS 5 v10 Experimental")
+                        gr.Markdown("### DLSS 5 v10 experimental readiness")
                         v10_readiness = gr.Markdown(f"Current state: {v10_initial_status.state} — {v10_initial_status.reason}")
-                        v10_refresh = gr.Button("Refresh v10 preflight")
+                        v10_refresh = gr.Button("Refresh DLSS 5 v10 preflight")
                 gr.Markdown("Normal runtime paths are provisioned by `setup.bat`. Missing backends are never silently substituted.", elem_classes="configuration-note")
 
                 with gr.Group(elem_classes="configuration-card"):

@@ -575,7 +575,7 @@ def build():
                         value=dlssg_nvof_default,
                         label="NVOF profile",
                     )
-                    gr.Markdown("Grid4 is the hardware-tested performance candidate. It uses the isolated instrumented worker and does not replace the pinned C55 fallback.")
+                    gr.Markdown("Grid4 is the hardware-tested performance candidate. setup.bat installs its exact pinned managed worker automatically; it remains opt-in and does not replace the pinned C55/grid1 default.")
                     with gr.Row():
                         dlssg_check = gr.Button("Check DLSS-G readiness")
                     dlssg_readiness = gr.Markdown("Managed runtime readiness has not been refreshed.")

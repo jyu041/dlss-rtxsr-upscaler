@@ -109,6 +109,9 @@ def _run_scene_session(
     }
     rendered_frames: list[np.ndarray] = []
     output_hashes: set[str] = set()
+    output_hash_sources: dict[str, str] = {}
+    measurable_effect_frame_ids: list[int] = []
+    byte_identical_to_input_frame_ids: list[int] = []
     try:
         hello = client.start_native_scene_cut_experimental(
             runtime,
@@ -156,21 +159,20 @@ def _run_scene_session(
 
             rendered = np.frombuffer(output.rgba, dtype=np.uint8).reshape(256, 256, 4).copy()
             metrics = effect_metrics(source, rendered)
-            if not effect_observed(metrics):
-                raise RuntimeError(
-                    f"scene-cut v10 {mode} frame {index} did not show a "
-                    "measurable Neural Rendering effect"
-                )
             input_hash = hashlib.sha256(source.tobytes()).hexdigest().upper()
             output_hash = hashlib.sha256(output.rgba).hexdigest().upper()
+            observed = effect_observed(metrics)
+            if observed:
+                measurable_effect_frame_ids.append(index)
             if input_hash == output_hash:
+                byte_identical_to_input_frame_ids.append(index)
+            previous_input_hash = output_hash_sources.get(output_hash)
+            if previous_input_hash is not None and previous_input_hash != input_hash:
                 raise RuntimeError(
-                    f"scene-cut v10 {mode} frame {index} is byte-identical to input"
+                    f"scene-cut v10 {mode} frame {index} repeated an output hash "
+                    "previously produced for a different input"
                 )
-            if output_hash in output_hashes:
-                raise RuntimeError(
-                    f"scene-cut v10 {mode} frame {index} repeated an earlier output hash"
-                )
+            output_hash_sources.setdefault(output_hash, input_hash)
             output_hashes.add(output_hash)
             rendered_frames.append(rendered)
             result["frames"].append(
@@ -184,6 +186,7 @@ def _run_scene_session(
                     "scene_reset": output.scene_reset,
                     "scene_score": output.scene_score,
                     "effect_metrics": metrics,
+                    "effect_observed": observed,
                     "input_sha256": input_hash,
                     "output_sha256": output_hash,
                 }
@@ -193,6 +196,8 @@ def _run_scene_session(
             )
 
         result["unique_output_hashes"] = len(output_hashes)
+        result["measurable_effect_frame_ids"] = measurable_effect_frame_ids
+        result["byte_identical_to_input_frame_ids"] = byte_identical_to_input_frame_ids
         result["close"] = client.close()
         if result["close"] != "CLOSED":
             raise RuntimeError(

@@ -509,3 +509,22 @@ A render manifest records the selected NVOF profile. This is a promotion
 **candidate**, not a production-default change: a newly built candidate worker
 still needs the existing native selftest/hardware gates before the distributed
 pinned C55 binary or normal UI default can change.
+
+The application-level candidate gate is:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run_dlssg_grid4_candidate.ps1 `
+    -Input "C:\path\to\clip.mp4"
+```
+
+It rebuilds and GPU-free self-tests the isolated instrumented worker, refuses
+the pinned production C55 SHA-256, renders the supplied source at 2X through
+the real video path with `grid4-gpu-candidate`, and then fails closed unless:
+
+- the render manifest reports `PASS` and the exact candidate profile;
+- no interpolation-disabled frame is recorded;
+- no device-removal result is recorded;
+- the native worker log confirms `NVOF_OUTPUT_GRID_SELECTED=4`.
+
+Passing that command is the next candidate-integration hardware gate. It still
+does not alter the normal UI/default worker automatically.

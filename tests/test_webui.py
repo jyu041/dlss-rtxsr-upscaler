@@ -349,8 +349,8 @@ def test_webui_second_pass_uses_progressive_disclosure_for_status_and_runtime_in
     assert configuration < runtime_manager < runtime_action < inventory < diagnostics
 
     assert 'with gr.Row(elem_classes="validation-grid")' in source
-    assert 'gr.Markdown("#### DLSS SR")' in source
-    assert 'gr.Markdown("#### DLSS 5 v10 Experimental")' in source
+    assert 'gr.Markdown("### DLSS SR readiness")' in source
+    assert 'gr.Markdown("### DLSS 5 v10 experimental readiness")' in source
     assert "footer {\n  display: none !important;\n}" in css
 
 

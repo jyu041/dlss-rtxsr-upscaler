@@ -27,14 +27,17 @@ the system `nvapi64.dll` dynamically.
 
 ## NVIDIA Optical Flow headers
 
-The build used `nvOpticalFlowD3D12.h` SHA-256
+The build uses `nvOpticalFlowD3D12.h` SHA-256
 `D1952D0946A26F1B77E76C320B4DFE9077D946FDC1A6195E01F0460362026305` and
 `nvOpticalFlowCommon.h` SHA-256
-`FB96FC6061C01EC2C5970ECEBEBACAC7535C033717FF39810CADA1F197C8EC9F` from
-header mirror commit `99e8d8eb8f269591e5e4bd5a7f3c248bbbc3a3b9`. Their exact
-headers carry NVIDIA MIT-style notices (Copyright (c) 2018-2023 and
-2020-2023). Preserve those notices. `nvofapi64.dll` is driver-provided and
-is not bundled.
+`FB96FC6061C01EC2C5970ECEBEBACAC7535C033717FF39810CADA1F197C8EC9F`.
+The managed grid4 candidate build retrieves those exact header bytes from the
+public `mbucchia/Optical-Flow-SDK` mirror at commit
+`54e68293b4898a530bc07e4d7df71efbc5d30f9b`; the earlier research build
+recorded the same hashes from inspected mirror commit
+`99e8d8eb8f269591e5e4bd5a7f3c248bbbc3a3b9`. The headers carry NVIDIA
+MIT-style notices (Copyright (c) 2018-2023 and 2020-2023). Preserve those
+notices. `nvofapi64.dll` is driver-provided and is not bundled.
 
 ## Community and official runtimes
 

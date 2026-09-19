@@ -218,11 +218,71 @@ def test_backend_factory_keeps_validated_default(monkeypatch):
     assert dlssg.backend_for_nvof_profile("validated") is sentinel
 
 
-def test_backend_factory_selects_instrumented_grid4_worker(monkeypatch, tmp_path: Path):
+def test_grid4_managed_worker_policy_pins_path_and_identity(monkeypatch, tmp_path: Path):
+    worker, runtime, official = _configured_dlssg_identity(
+        monkeypatch, tmp_path, worker_hash="MANAGED_GRID4_HASH"
+    )
+    managed = tmp_path / "runtime" / "dlssg" / "grid4-worker" / "dlssg_sm86_offline.exe"
+    managed.parent.mkdir(parents=True)
+    managed.write_bytes(b"managed")
+    original_sha = dlssg_backend.sha256_file
+    monkeypatch.setattr(dlssg_backend, "MANAGED_GRID4_WORKER", managed.resolve())
+    monkeypatch.setattr(dlssg_backend, "GRID4_MANAGED_WORKER_SHA256", "MANAGED_GRID4_HASH")
+    monkeypatch.setattr(
+        dlssg_backend,
+        "sha256_file",
+        lambda path: (
+            "MANAGED_GRID4_HASH"
+            if Path(path).resolve() == managed.resolve()
+            else original_sha(path)
+        ),
+    )
+    backend = DLSSGBackend(
+        managed,
+        runtime,
+        official,
+        worker_identity_policy=dlssg_backend.WORKER_IDENTITY_GRID4_MANAGED,
+    )
+    status = backend.status()
+    assert status.available
+    assert status.state == "EXPERIMENTAL MANAGED CANDIDATE"
+
+
+def test_grid4_managed_worker_policy_rejects_changed_identity(monkeypatch, tmp_path: Path):
+    worker, runtime, official = _configured_dlssg_identity(
+        monkeypatch, tmp_path, worker_hash="RESEARCH_WORKER_HASH"
+    )
+    managed = tmp_path / "runtime" / "dlssg" / "grid4-worker" / "dlssg_sm86_offline.exe"
+    managed.parent.mkdir(parents=True)
+    managed.write_bytes(b"changed")
+    original_sha = dlssg_backend.sha256_file
+    monkeypatch.setattr(dlssg_backend, "MANAGED_GRID4_WORKER", managed.resolve())
+    monkeypatch.setattr(dlssg_backend, "GRID4_MANAGED_WORKER_SHA256", "EXPECTED_GRID4_HASH")
+    monkeypatch.setattr(
+        dlssg_backend,
+        "sha256_file",
+        lambda path: (
+            "CHANGED_GRID4_HASH"
+            if Path(path).resolve() == managed.resolve()
+            else original_sha(path)
+        ),
+    )
+    backend = DLSSGBackend(
+        managed,
+        runtime,
+        official,
+        worker_identity_policy=dlssg_backend.WORKER_IDENTITY_GRID4_MANAGED,
+    )
+    status = backend.status()
+    assert not status.available
+    assert status.state == "GRID4 WORKER IDENTITY MISMATCH"
+
+
+def test_backend_factory_selects_managed_grid4_worker(monkeypatch, tmp_path: Path):
     from src.backends import dlssg
 
-    worker = tmp_path / "bin-instrumented" / "dlssg_sm86_offline.exe"
-    monkeypatch.setattr(dlssg, "RESEARCH_INSTRUMENTED_WORKER", worker.resolve())
+    worker = tmp_path / "runtime" / "dlssg" / "grid4-worker" / "dlssg_sm86_offline.exe"
+    monkeypatch.setattr(dlssg, "MANAGED_GRID4_WORKER", worker.resolve())
     captured = {}
 
     class Backend:
@@ -237,7 +297,7 @@ def test_backend_factory_selects_instrumented_grid4_worker(monkeypatch, tmp_path
     backend = dlssg.backend_for_nvof_profile("grid4-gpu-candidate")
     assert isinstance(backend, Backend)
     assert captured["kwargs"]["worker"] == worker.resolve()
-    assert captured["kwargs"]["worker_identity_policy"] == dlssg.WORKER_IDENTITY_GRID4_RESEARCH
+    assert captured["kwargs"]["worker_identity_policy"] == dlssg.WORKER_IDENTITY_GRID4_MANAGED
 
 
 def test_backend_factory_rejects_unknown_nvof_profile():

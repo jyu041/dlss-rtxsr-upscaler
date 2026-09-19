@@ -17,6 +17,9 @@ DEFAULT_WORKER = ROOT / "runtime" / "dlssg" / "worker" / "dlssg_sm86_offline.exe
 MANAGED_COMMUNITY_RUNTIME = ROOT / "runtime" / "dlssg" / "legacy" / "version.dll"
 MANAGED_CANDIDATE_RUNTIME = ROOT / "runtime" / "dlssg" / "candidate-0.3.1" / "version.dll"
 MANAGED_OFFICIAL_RUNTIME_DIR = ROOT / "runtime" / "dlssg" / "official"
+MANAGED_GRID4_WORKER = (
+    ROOT / "runtime" / "dlssg" / "grid4-worker" / "dlssg_sm86_offline.exe"
+).resolve()
 # The frozen C55 worker was validated end-to-end with the legacy 5f62ff44
 # direct-host runtime on RTX 3070 Ti, including 2X/3X/4X.  The newer 0.3.1
 # proxy generation is intentionally an opt-in candidate because it does not
@@ -24,11 +27,14 @@ MANAGED_OFFICIAL_RUNTIME_DIR = ROOT / "runtime" / "dlssg" / "official"
 DEFAULT_RUNTIME_PROFILE = "legacy"
 
 VALIDATED_WORKER_SHA256 = "C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916"
+GRID4_MANAGED_WORKER_SHA256 = "E097BC87558D6E12ECE1963E67CD7330570BCFBF6C6ED336B10F1EF6DF2A5881"
 WORKER_IDENTITY_VALIDATED = "validated-c55"
 WORKER_IDENTITY_GRID4_RESEARCH = "grid4-research-candidate"
+WORKER_IDENTITY_GRID4_MANAGED = "grid4-managed-candidate"
 WORKER_IDENTITY_POLICIES = (
     WORKER_IDENTITY_VALIDATED,
     WORKER_IDENTITY_GRID4_RESEARCH,
+    WORKER_IDENTITY_GRID4_MANAGED,
 )
 RESEARCH_INSTRUMENTED_WORKER = (
     ROOT / "native" / "dlssg_sm86_offline" / "bin-instrumented"
@@ -66,11 +72,14 @@ class DLSSGBackend(Backend):
                 f"Unknown DLSS-G worker identity policy: {worker_identity_policy}"
             )
         if (
-            worker_identity_policy == WORKER_IDENTITY_GRID4_RESEARCH
+            worker_identity_policy in {
+                WORKER_IDENTITY_GRID4_RESEARCH,
+                WORKER_IDENTITY_GRID4_MANAGED,
+            }
             and profile_name != "legacy"
         ):
             raise ValueError(
-                "grid4 research worker policy requires the validated legacy runtime profile"
+                "grid4 worker policies require the validated legacy runtime profile"
             )
         if configured_runtime is None and profile_name == "candidate-0.3.1":
             configured_runtime = MANAGED_CANDIDATE_RUNTIME
@@ -114,7 +123,7 @@ class DLSSGBackend(Backend):
                     "IDENTITY MISMATCH",
                     "worker SHA-256 is not the verified C55 identity",
                 )
-        else:
+        elif config.worker_identity_policy == WORKER_IDENTITY_GRID4_RESEARCH:
             if config.worker != RESEARCH_INSTRUMENTED_WORKER:
                 return BackendStatus(
                     "DLSS-G 2X/3X/4X",
@@ -128,6 +137,21 @@ class DLSSGBackend(Backend):
                     False,
                     "RESEARCH WORKER REQUIRED",
                     "grid4 research policy requires a freshly built non-C55 candidate worker",
+                )
+        else:
+            if config.worker != MANAGED_GRID4_WORKER:
+                return BackendStatus(
+                    "DLSS-G 2X/3X/4X",
+                    False,
+                    "GRID4 WORKER PATH MISMATCH",
+                    "managed grid4 policy only permits the pinned managed candidate path",
+                )
+            if worker_hash != GRID4_MANAGED_WORKER_SHA256:
+                return BackendStatus(
+                    "DLSS-G 2X/3X/4X",
+                    False,
+                    "GRID4 WORKER IDENTITY MISMATCH",
+                    "managed grid4 worker SHA-256 does not match the pinned candidate",
                 )
 
         official_identity = official_runtime_identity(config.official_runtime_dir)
@@ -157,6 +181,13 @@ class DLSSGBackend(Backend):
                 "RESEARCH CANDIDATE",
                 "Explicit grid4 research worker accepted with the validated legacy and official runtimes; production C55 identity remains unchanged",
             )
+        if config.worker_identity_policy == WORKER_IDENTITY_GRID4_MANAGED:
+            return BackendStatus(
+                "DLSS-G 2X/3X/4X",
+                True,
+                "EXPERIMENTAL MANAGED CANDIDATE",
+                "Pinned grid4 worker accepted with the validated legacy and official runtimes; production C55/grid1 remains the default",
+            )
 
         return BackendStatus(
             "DLSS-G 2X/3X/4X",
@@ -180,8 +211,8 @@ def backend_for_nvof_profile(profile: str) -> "DLSSGBackend":
         return DLSSGBackend()
     if profile == "grid4-gpu-candidate":
         return DLSSGBackend(
-            worker=RESEARCH_INSTRUMENTED_WORKER,
-            worker_identity_policy=WORKER_IDENTITY_GRID4_RESEARCH,
+            worker=MANAGED_GRID4_WORKER,
+            worker_identity_policy=WORKER_IDENTITY_GRID4_MANAGED,
         )
     raise ValueError(f"Unknown DLSS-G NVOF profile: {profile}")
 

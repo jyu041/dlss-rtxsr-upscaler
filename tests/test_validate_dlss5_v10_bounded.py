@@ -68,9 +68,17 @@ def test_bounded_v10_wrapper_refreshes_preflight_before_execution():
     source = (root / "tools" / "run_dlss5_v10_bounded.ps1").read_text(encoding="utf-8")
     assert "[switch]$Execute" in source
     assert "if (-not $Execute)" in source
+    param_block = source.split(")\n\n$ErrorActionPreference", 1)[0]
+    assert "$PSScriptRoot" not in param_block
+    assert "if (-not $Archive)" in source
+    assert "if (-not $Output)" in source
+    assert "audit_dlss5_v10.ps1" in source
     assert "prepare_dlss5_v10_candidate.py" in source
     assert "validate_dlss5_v10_bounded.py" in source
+    assert "$archivePath = [System.IO.Path]::GetFullPath($Archive)" in source
+    assert "Resolve-Path -LiteralPath $Archive" not in source
     assert "--ack BOUNDED_256_ONE_FRAME" in source
+    assert source.index("& $audit -Archive $archivePath") < source.index("& $python $prepare")
     assert source.index("& $python $prepare") < source.index("& $python $validate")
     assert "DLSS5_V10_BOUNDED_PASS" in source
 

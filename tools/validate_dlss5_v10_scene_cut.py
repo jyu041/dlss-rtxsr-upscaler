@@ -316,6 +316,7 @@ def run_scene_cut_gate(
         install_temporary_firewall_block(python, rule_name)
         firewall_installed = True
         report["firewall_installed"] = True
+        report["native_execution_attempted"] = True
 
         no_cut_report, no_cut_frames = _run_scene_session(
             "no-cut-reset",

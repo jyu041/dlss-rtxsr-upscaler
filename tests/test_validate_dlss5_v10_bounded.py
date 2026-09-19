@@ -1,9 +1,40 @@
 from dataclasses import replace
+from pathlib import Path
+import subprocess
+import sys
+
 import numpy as np
 import pytest
 
 from src.backends.dlss5_v10_protocol import OutputEvidence
 import tools.validate_dlss5_v10_bounded as bounded
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize(
+    "tool_name",
+    [
+        "prepare_dlss5_v10_candidate.py",
+        "validate_dlss5_v10_bounded.py",
+    ],
+)
+def test_v10_tools_support_direct_script_invocation_from_unrelated_cwd(tmp_path, tool_name):
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / tool_name), "--help"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+        check=False,
+    )
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "ModuleNotFoundError" not in combined
+    assert "No module named 'src'" not in combined
 
 
 class FakeClient:

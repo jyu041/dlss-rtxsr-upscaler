@@ -53,10 +53,11 @@ Use synthetic or owned media. Do not run unrestricted recursive pytest
 discovery when an extracted local runtime tree exists; target `tests`
 explicitly.
 
-## DLSS5 v10 bounded research gates
+## DLSS5 v10 research and experimental application gates
 
-The normal v10 application backend remains disabled. The isolated research
-sequence is intentionally progressive:
+The normal/default v10 backend remains disabled. The validated research
+sequence remains available, and the application exposes a separate explicit
+`DLSS 5 v10 Experimental` mode rather than silently replacing v3:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_bounded.ps1 -Execute
@@ -64,6 +65,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_temporal.ps1 -Exe
 powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_video_ab.ps1 -Execute -Input "C:\path\to\clip.mp4"
 powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_scene_cut.ps1 -Execute -Input "C:\path\to\clip.mp4"
 powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_scene_soak.ps1 -Execute -Input "C:\path\to\clip.mp4"
+powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_app_smoke.ps1 -Execute -Input "C:\path\to\clip.mp4"
 ```
 
 The real-video A/B defaults to 16 frames beginning at source frame 30 and
@@ -89,7 +91,14 @@ after both bounded native sessions have closed, so it is diagnostic artifact
 generation rather than part of the native execution boundary. The wrapper
 requires all three review videos and prints their paths explicitly.
 
-These commands refresh the pinned runtime/static audit and Defender preflight
-before native execution. They are developer hardware gates, not ordinary
-pytest or normal application startup.
+The bounded research wrappers and the application smoke wrapper refresh the
+pinned runtime/static audit and Defender preflight before native execution. The
+application smoke runs the same `render_dlss5_v10()` path used by the UI for a
+short clip and requires the exact `EXPERIMENTAL_APP_SCENE_AWARE_V10`
+acknowledgement. The UI exposes a separate **Refresh DLSS 5 v10 preflight**
+button before experimental rendering. Current application constraints are SDR
+RGBA8, 1.0x processing scale, and up to 1920x1080-equivalent geometry.
+
+These remain explicit developer/experimental paths, not ordinary pytest and
+not an automatic replacement for DLSS 5 v3.
 

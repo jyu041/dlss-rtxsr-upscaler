@@ -258,6 +258,22 @@ def available_mode_choices():
     return choices
 
 
+def dlss_scale_update_for_mode(selected, current_scale=1.0):
+    if selected == "DLSS 5 v10 Experimental":
+        return gr.update(choices=[1.0], value=1.0)
+    try:
+        choices = list(DLSS5Backend().supported_output_scales())
+    except Exception:
+        choices = list(DLSS5_OUTPUT_SCALES)
+    try:
+        current = float(current_scale)
+    except (TypeError, ValueError):
+        current = 1.0
+    if current not in choices:
+        current = 1.0
+    return gr.update(choices=choices, value=current)
+
+
 def default_mode():
     """Choose a practical first-run backend without requiring user configuration."""
     try:
@@ -483,7 +499,7 @@ def build():
                 with gr.Group(visible=dlss_initial, elem_classes="backend-group") as dlss_group:
                     gr.Markdown("### DLSS5 Settings")
                     v10_initial_status = DLSS5V10ExperimentalBackend().status()
-                    gr.Markdown("**v10 Experimental:** isolated scene-aware Feature-18 application mode. Current integration is 1.0x only and capped at 1920x1080-equivalent input.")
+                    gr.Markdown("**v10 Experimental:** isolated scene-aware Feature-18 application mode. Current integration is 1.0x only and capped at 1920x1080-equivalent input. v10 currently uses Style, Intensity, Local Tone, Local Structure, Skin Structure, and Automatic Mask; NR preset/model, working-resolution, and recomposition controls below remain v3-only.")
                     v10_readiness = gr.Markdown(f"v10 state: {v10_initial_status.state} — {v10_initial_status.reason}")
                     v10_refresh = gr.Button("Refresh DLSS 5 v10 preflight")
                     _tip(DLSS5_TOOLTIPS, "builtin_preset", "Built-in preset")
@@ -572,6 +588,7 @@ def build():
         load_render.click(load_last_render, outputs=[inp, summary, info, before, after, result_video, job, load_render])
         mode.change(lambda value: value, mode, state)
         mode.change(visibility, mode, [rtx_group, dlss_group, sr_group, dlssg_group])
+        mode.change(dlss_scale_update_for_mode, [mode, dlss_scale], dlss_scale, show_progress="hidden")
         preset.change(apply_preset, preset, [nrpreset, style, intensity, tone, structure, skin, mask])
         dlssg_inputs = [dlssg_motion, dlssg_depth, dlssg_multiplier]
         for control in dlssg_inputs:

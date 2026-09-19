@@ -622,5 +622,44 @@ powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_scene_soak.ps1 `
     -Input "C:\path\to\clip.mp4"
 ```
 
-The normal v10 backend remains disabled.
+### 128-frame soak hardware result
+
+The soak passed on 2026-09-19 on the RTX 3070 Ti using the same bounded
+Visual Enhancer v10 runtime. Five hard cuts were detected at frames 5, 23, 63,
+76 and 126. Scene-aware reset reproduced the all-reset control bit-for-bit on
+frame 0 and every detected cut, while temporal-state influence remained present
+between cuts.
+
+Steady-state submit/round-trip latency stayed near 11 ms at 256x256 in both
+scene-aware and reset-control sessions after the first-frame initialization.
+The source-derived motion-compensated residual-flicker diagnostic was mixed:
+scene-aware had a higher mean/median residual-flicker value than reset control,
+but lower p95/max values. The unwarped diagnostic also did not establish a
+scene-aware quality advantage. These metrics remain diagnostic rather than a
+promotion criterion.
+
+Static review panels showed no obvious gross corruption or cross-scene
+carry-over, but they also suggested a subtle scene-aware/reset difference in
+fine detail. Because flicker and temporal stability cannot be decided reliably
+from still images, the soak now exports synchronized playable evidence after
+the two native sessions close.
+
+The default 2x review set contains:
+
+- `source-sceneaware-reset-2x.mp4`: source, scene-aware and reset-control;
+- `sceneaware-reset-2x.mp4`: the direct temporal A/B;
+- `sceneaware-reset-diff8x-2x.mp4`: scene-aware, reset-control and an 8x
+  amplified absolute-difference panel.
+
+`-ReviewScale 1`, `2`, or `4` controls display scaling without changing
+the underlying 256x256 native inference frames. FFmpeg encodes the review MP4s
+only after native processing has completed, so review export cannot influence
+the bounded Feature-18 sessions. Failure to encode a review clip is recorded
+separately from the native hardware result, while the PowerShell review wrapper
+can require successful artifact creation.
+
+The normal v10 backend remains disabled. The next decision is perceptual:
+inspect the synchronized clips for shimmer, hair/face detail stability,
+microphone/background edge behavior and cut transitions before considering a
+higher-resolution or normal-backend v10 experiment.
 

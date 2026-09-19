@@ -220,6 +220,15 @@ def _read_frame(stream, frame_bytes: int) -> bytes:
     return b"".join(chunks)
 
 
+def _hresult_failed(code: str) -> bool:
+    """Mirror Windows FAILED(hr): the sign/high bit marks failure."""
+    try:
+        value = int(code, 16) & 0xFFFFFFFF
+    except (TypeError, ValueError):
+        return True
+    return bool(value & 0x80000000)
+
+
 def _latency_summary(values: list[float]) -> dict[str, float | int]:
     if not values:
         return {"count": 0, "median_ms": 0.0, "p90_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0, "max_ms": 0.0}
@@ -367,7 +376,7 @@ def render_dlssg(
         if "DEVICE_REMOVED_REASON=" in line:
             code = line.rsplit("=", 1)[-1].upper()
             worker_device_removal_queries.add(code)
-            if code != "0X00000000":
+            if _hresult_failed(code):
                 worker_device_removals.add(code)
         if diagnostic_callback:
             diagnostic_callback(line)

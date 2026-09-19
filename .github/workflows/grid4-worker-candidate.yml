@@ -1,0 +1,99 @@
+name: grid4-worker-candidate
+
+on:
+  push:
+    branches:
+      - integrate/mfg-grid4-managed-worker
+    paths:
+      - ".github/workflows/grid4-worker-candidate.yml"
+      - "native/dlssg_sm86_offline/**"
+      - "tools/package_grid4_worker.ps1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: Check out project
+        uses: actions/checkout@v4
+
+      - name: Check out pinned NVIDIA DLSS SDK
+        uses: actions/checkout@v4
+        with:
+          repository: NVIDIA/DLSS
+          ref: 374959484e79a640feaba44c93ac8cfb0a03f5b5
+          path: deps/DLSS
+          fetch-depth: 1
+
+      - name: Check out pinned NVAPI headers
+        uses: actions/checkout@v4
+        with:
+          repository: NVIDIA/nvapi
+          ref: 87dca625e83fd89a983e19b904e5f3a580da90d2
+          path: deps/nvapi
+          fetch-depth: 1
+
+      - name: Check out pinned Optical Flow interface headers
+        uses: actions/checkout@v4
+        with:
+          repository: mbucchia/Optical-Flow-SDK
+          ref: 54e68293b4898a530bc07e4d7df71efbc5d30f9b
+          path: deps/Optical-Flow-SDK
+          fetch-depth: 1
+
+      - name: Verify pinned dependency identities
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $license = (Get-FileHash -Algorithm SHA256 .\deps\DLSS\LICENSE.txt).Hash
+          if ($license -ne '3027F23CA5A46DD9CB8183FBD522983A86F64D7DAAC5982912BF9F214671F294') {
+            throw "Unexpected NVIDIA RTX SDK license identity: $license"
+          }
+          $nvapi = (Get-FileHash -Algorithm SHA256 .\deps\nvapi\nvapi.h).Hash
+          if ($nvapi -ne '4EE1BFF7568CEEC72124B8B3E43BF65CCB69DBB878B08C634B128F7EDCD28F3B') {
+            throw "Unexpected NVAPI header identity: $nvapi"
+          }
+          Get-FileHash -Algorithm SHA256 .\deps\Optical-Flow-SDK\NvOFInterface\nvOpticalFlowCommon.h
+          Get-FileHash -Algorithm SHA256 .\deps\Optical-Flow-SDK\NvOFInterface\nvOpticalFlowD3D12.h
+
+      - name: Build grid4-capable worker
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = Join-Path $env:GITHUB_WORKSPACE 'runtime\build\grid4-worker'
+          & .\native\dlssg_sm86_offline\build.ps1 `
+            -NgxSdk (Join-Path $env:GITHUB_WORKSPACE 'deps\DLSS') `
+            -NvApi (Join-Path $env:GITHUB_WORKSPACE 'deps\nvapi') `
+            -NvOfSdk (Join-Path $env:GITHUB_WORKSPACE 'deps\Optical-Flow-SDK\NvOFInterface') `
+            -Output $output
+          if ($LASTEXITCODE -ne 0) { throw "Grid4 worker build failed: $LASTEXITCODE" }
+          $worker = Join-Path $output 'dlssg_sm86_offline.exe'
+          & $worker --selftest
+          if ($LASTEXITCODE -ne 0) { throw "Grid4 worker selftest failed: $LASTEXITCODE" }
+          Get-FileHash -Algorithm SHA256 $worker
+
+      - name: Package candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\tools\package_grid4_worker.ps1 `
+            -Worker .\runtime\build\grid4-worker\dlssg_sm86_offline.exe `
+            -NgxLicense .\deps\DLSS\LICENSE.txt `
+            -NvApiHeader .\deps\nvapi\nvapi.h `
+            -NvOfCommon .\deps\Optical-Flow-SDK\NvOFInterface\nvOpticalFlowCommon.h `
+            -NvOfD3D12 .\deps\Optical-Flow-SDK\NvOFInterface\nvOpticalFlowD3D12.h `
+            -OutputDir .\runtime\build\grid4-package
+          Get-Content .\runtime\build\grid4-package\grid4-worker-package.json
+
+      - name: Upload grid4 worker candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: dlssg-grid4-worker-candidate
+          path: |
+            runtime/build/grid4-package/dlssg-grid4-worker-candidate.zip
+            runtime/build/grid4-package/grid4-worker-package.json
+          if-no-files-found: error
+          retention-days: 14

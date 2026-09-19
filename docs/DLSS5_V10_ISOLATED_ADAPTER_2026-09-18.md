@@ -490,6 +490,71 @@ execute correctly and that persistent temporal state measurably influences
 non-initial real-video outputs without stale replay. The metric deltas and
 review images are evidence for the subsequent quality decision.
 
-This 16-frame real-video A/B gate is implemented but has not yet been counted
-as hardware validation.
+### Sixteen-frame real-video A/B hardware result
+
+The real-video A/B gate passed on 2026-09-19 on the RTX 3070 Ti using
+`trimmed.mp4`, source frames 30-45. The 640x480/~30-fps source was
+center-square-cropped to 480x480 and area-resized to 256x256 RGBA8.
+
+Both 16-frame native sessions passed all containment and execution checks:
+
+- fresh Defender preflight passed with no threats;
+- bridge ABI was 6 on the RTX 3070 Ti, GPU ordinal 0;
+- all FRAME requests returned NGX create/evaluate success and CUDA result 0;
+- all outputs were unique within each session;
+- no descendant process appeared;
+- both hosts returned `CLOSED`;
+- firewall cleanup succeeded.
+
+The baseline frame 0 was byte-identical between the two fresh reset sessions.
+Every non-initial frame 1-15 differed between persistent and reset control, so
+the v10 Feature-18 path is demonstrably retaining and using temporal state on
+real video rather than merely accepting sequential calls.
+
+This test does **not** establish that the persistent result is visually better.
+On this short sample, the unwarped pixel-domain temporal metrics were higher
+for the persistent path:
+
+- source-delta/residual MAE mean: persistent `1.869203`, reset control
+  `1.128326` (persistent minus reset `+0.740877`);
+- source-delta RMSE mean: persistent `2.892242`, reset control `1.677198`
+  (persistent minus reset `+1.215044`).
+
+Those metrics do not compensate for motion and therefore are not a standalone
+quality verdict. They are, however, a reason not to promote the persistent v10
+path yet.
+
+## Thirty-two-frame scene-cut/reset milestone
+
+The next isolated gate is now implemented to test whether the explicit v10
+reset flag actually clears temporal carry-over at a hard scene boundary.
+
+The command is:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_scene_cut.ps1 `
+    -Execute `
+    -Input "C:\path\to\clip.mp4"
+```
+
+The default window is 32 source frames beginning at frame 0. The existing
+deterministic project scene-cut detector identifies hard cuts after the same
+256x256 preprocessing used by the real-video A/B. A no-cut window fails rather
+than being counted as scene-cut evidence.
+
+The same frames are processed in three independently created sessions under
+acknowledgement `BOUNDED_256_SCENE_CUT_32`:
+
+1. `no-cut-reset`: reset on frame 0 only;
+2. `scene-aware`: reset on frame 0 and every detected cut frame;
+3. `reset-control`: reset on every frame.
+
+At each detected cut, the scene-aware reset output must be byte-identical to the
+reset-control output for the same source frame. This is a strict technical test
+that the reset flag reproduces fresh-reset behavior and clears prior temporal
+state. The harness also records whether no-reset carry-over changes the cut
+frame, temporal metrics around each cut, and source/no-reset/scene-aware/reset
+review panels.
+
+The normal v10 backend remains disabled.
 

@@ -19,6 +19,7 @@ from .dlss5_v10_adapter import V10ExecutionDisabled
 EXPERIMENT_ACK = "BOUNDED_256_ONE_FRAME"
 TEMPORAL_EXPERIMENT_ACK = "BOUNDED_256_THREE_FRAME"
 VIDEO_AB_EXPERIMENT_ACK = "BOUNDED_256_VIDEO_AB_16"
+SCENE_CUT_EXPERIMENT_ACK = "BOUNDED_256_SCENE_CUT_32"
 
 from .dlss5_v10_protocol import (
     CLOSE,
@@ -259,6 +260,63 @@ class V10ProtocolClient:
             or value.get("video_ab_mode") != mode
         ):
             self._poison("invalid bounded real-video A/B native HELLO")
+            raise V10ProtocolError(self._poison_reason)
+        return value
+
+    def start_native_scene_cut_experimental(
+        self,
+        runtime_dir: str | Path,
+        preflight_report: str | Path,
+        *,
+        acknowledgement: str,
+        mode: str,
+    ) -> dict[str, object]:
+        if acknowledgement != SCENE_CUT_EXPERIMENT_ACK:
+            raise V10ExecutionDisabled(
+                "scene-cut v10 start requires the exact acknowledgement token"
+            )
+        routes = {
+            "no-cut-reset": "--experimental-native-scene-no-reset-serve",
+            "scene-aware": "--experimental-native-scene-aware-serve",
+            "reset-control": "--experimental-native-scene-reset-serve",
+        }
+        route = routes.get(mode)
+        if route is None:
+            raise ValueError(
+                "v10 scene-cut mode must be no-cut-reset, scene-aware, or reset-control"
+            )
+        self._native_mode = True
+        env = dict(os.environ)
+        env["NVE_DLSS5_V10_NATIVE"] = SCENE_CUT_EXPERIMENT_ACK
+        self._spawn(
+            [
+                self.python,
+                "-u",
+                "-m",
+                "src.backends.dlss5_v10_host",
+                route,
+                "--runtime-dir",
+                str(Path(runtime_dir).expanduser().resolve()),
+                "--preflight-report",
+                str(Path(preflight_report).expanduser().resolve()),
+            ],
+            env=env,
+        )
+        command, request_id, payload = self._wait(self.start_timeout)
+        if command != HELLO or request_id != 0:
+            self._poison(
+                f"expected HELLO request 0, received command={command} request={request_id}"
+            )
+            raise V10ProtocolError(self._poison_reason)
+        value = decode_json(payload)
+        if (
+            not isinstance(value, dict)
+            or value.get("native_loaded") is not False
+            or value.get("experimental_native_mode") is not True
+            or value.get("normal_backend_enabled") is not False
+            or value.get("scene_cut_mode") != mode
+        ):
+            self._poison("invalid bounded scene-cut native HELLO")
             raise V10ProtocolError(self._poison_reason)
         return value
 

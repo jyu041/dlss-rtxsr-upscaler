@@ -22,6 +22,10 @@ def test_grid4_candidate_wrapper_is_explicit_and_fails_closed():
     assert "dlssg_video.py" in source
     assert "--multiplier 2" in source
     assert "--nvof-profile grid4-gpu-candidate" in source
+    cli_source = (ROOT / "tools" / "dlssg_video.py").read_text(encoding="utf-8")
+    assert "NVOF_PROFILE_GRID4_GPU_CANDIDATE" in cli_source
+    assert "WORKER_IDENTITY_GRID4_RESEARCH" in cli_source
+    assert "worker_identity_policy=worker_identity_policy" in cli_source
     assert "C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916" in source
     assert "NVOF_OUTPUT_GRID_SELECTED=4 " in source
     assert "interpolation_disabled_frame_ids" in source

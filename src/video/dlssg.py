@@ -330,6 +330,7 @@ def render_dlssg(
     worker_lines: deque[str] = deque(maxlen=2048)
     worker_log_stream = log_path.open("w", encoding="utf-8")
     worker_nvof_initializations = worker_create_features = worker_evaluates = 0
+    worker_device_removal_queries: set[str] = set()
     worker_device_removals: set[str] = set()
     timings: dict[str, list[float]] = defaultdict(list)
     hashes: list[str] = []
@@ -364,7 +365,10 @@ def render_dlssg(
         if line.startswith("WORKER_EVALUATE "):
             worker_evaluates += 1
         if "DEVICE_REMOVED_REASON=" in line:
-            worker_device_removals.add(line.rsplit("=", 1)[-1])
+            code = line.rsplit("=", 1)[-1].upper()
+            worker_device_removal_queries.add(code)
+            if code != "0X00000000":
+                worker_device_removals.add(code)
         if diagnostic_callback:
             diagnostic_callback(line)
 
@@ -635,6 +639,7 @@ def render_dlssg(
             "dlssg_create_feature_count": worker_create_features,
             "evaluate_count": worker_evaluates,
             "worker_restarts": 0,
+            "device_removal_query_results": sorted(worker_device_removal_queries),
             "device_removal_results": sorted(worker_device_removals),
             "worker_exit_code": client.last_exit_code,
         })

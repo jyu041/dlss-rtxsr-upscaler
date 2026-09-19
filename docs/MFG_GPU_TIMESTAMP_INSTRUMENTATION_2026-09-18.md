@@ -528,3 +528,9 @@ the real video path with `grid4-gpu-candidate`, and then fails closed unless:
 
 Passing that command is the next candidate-integration hardware gate. It still
 does not alter the normal UI/default worker automatically.
+
+## First application-level grid4 real-video result
+
+The first 2X `grid4-gpu-candidate` real-video render completed successfully on the RTX 3070 Ti. It processed 442 input frames at 640x480/~29.999 fps into 884 output frames at ~59.999 fps, including 432 interpolated frames and nine scene-cut holds, with no interpolation-disabled frame IDs. The worker exited normally and the render manifest reported `PASS`.
+
+The wrapper then rejected the run because the manifest listed `0x00000000` under `device_removal_results`. That value is the healthy `S_OK` result returned by the native `GetDeviceRemovedReason()` query, not a removal failure. The parser now records all queried codes separately and reserves `device_removal_results` for failing HRESULT values only. One rerun is still required to let the wrapper reach and verify its final explicit grid-4 log marker.

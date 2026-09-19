@@ -62,7 +62,19 @@ def test_dlssg_settings_roundtrip_and_validation(tmp_path, monkeypatch):
     monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
     values = {"motion_provider": "NVIDIA Optical Flow", "depth_mode": "Constant 0.5"}
     user_presets.save_last_used("dlssg", values)
-    assert user_presets.load_last_used()["dlssg"] == {**values, "multiplier": 2}
+    assert user_presets.load_last_used()["dlssg"] == {
+        **values,
+        "multiplier": 2,
+        "nvof_profile": "validated",
+    }
+    grid4 = {**values, "multiplier": 4, "nvof_profile": "grid4-gpu-candidate"}
+    user_presets.save_last_used("dlssg", grid4)
+    assert user_presets.load_last_used()["dlssg"] == grid4
+    with pytest.raises(ValueError, match="NVOF profile"):
+        user_presets.save_last_used(
+            "dlssg",
+            {**values, "nvof_profile": "unknown"},
+        )
     with pytest.raises(ValueError):
         user_presets.save_last_used("dlssg", {**values, "motion_provider": "CPU"})
     with pytest.raises(ValueError):

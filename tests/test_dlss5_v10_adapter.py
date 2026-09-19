@@ -399,6 +399,54 @@ def test_v10_temporal_host_route_requires_exact_environment_ack(monkeypatch, tmp
     ) == 77
 
 
+def test_v10_video_ab_client_requires_exact_ack_and_mode(tmp_path):
+    from src.backends.dlss5_v10_client import V10ProtocolClient
+
+    client = V10ProtocolClient()
+    with pytest.raises(adapter.V10ExecutionDisabled, match="exact acknowledgement"):
+        client.start_native_video_ab_experimental(
+            tmp_path / "runtime",
+            tmp_path / "preflight.json",
+            acknowledgement="wrong",
+            mode="persistent",
+        )
+    assert client.process is None
+
+    client = V10ProtocolClient()
+    with pytest.raises(ValueError, match="persistent or reset-control"):
+        client.start_native_video_ab_experimental(
+            tmp_path / "runtime",
+            tmp_path / "preflight.json",
+            acknowledgement="BOUNDED_256_VIDEO_AB_16",
+            mode="other",
+        )
+    assert client.process is None
+
+
+@pytest.mark.parametrize(
+    "route",
+    [
+        "--experimental-native-video-persistent-serve",
+        "--experimental-native-video-reset-serve",
+    ],
+)
+def test_v10_video_ab_host_routes_require_exact_environment_ack(
+    monkeypatch, tmp_path, route
+):
+    from src.backends import dlss5_v10_host as host
+
+    monkeypatch.delenv("NVE_DLSS5_V10_NATIVE", raising=False)
+    assert host.main(
+        [
+            route,
+            "--runtime-dir",
+            str(tmp_path / "runtime"),
+            "--preflight-report",
+            str(tmp_path / "preflight.json"),
+        ]
+    ) == 77
+
+
 def test_v10_normal_serve_path_remains_blocked():
     from src.backends import dlss5_v10_host as host
 

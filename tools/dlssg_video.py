@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.backends.dlssg import DLSSGBackend  # noqa: E402
+from src.backends.dlssg_worker import NVOF_PROFILES  # noqa: E402
 from src.video.dlssg import render_dlssg  # noqa: E402
 
 
@@ -23,6 +24,12 @@ def main() -> int:
     parser.add_argument("--official-runtime-dir", type=Path, required=True)
     parser.add_argument("--codec", default="h264_nvenc", choices=("h264_nvenc", "libx264"))
     parser.add_argument("--multiplier", type=int, choices=(2, 3, 4), default=2)
+    parser.add_argument(
+        "--nvof-profile",
+        choices=NVOF_PROFILES,
+        default="validated",
+        help="validated keeps the current C55 behavior; grid4-gpu-candidate is research-only",
+    )
     parser.add_argument("--no-audio", action="store_true")
     parser.add_argument("--terminal-frame-policy", default="duplicate", choices=("duplicate", "short"))
     parser.add_argument("--artifact-dir", type=Path)
@@ -47,6 +54,7 @@ def main() -> int:
         multiplier=args.multiplier,
         diagnostics=args.diagnostics,
         encode_output=not args.no_encode_control,
+        nvof_profile=args.nvof_profile,
     )
     print(json.dumps(result, indent=2))
     return 0

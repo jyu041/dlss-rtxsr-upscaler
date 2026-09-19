@@ -85,6 +85,8 @@ def status_html():
         '<div class="app-shell-header">'
         '<div class="app-header"><h1>NVIDIA Video Enhancer</h1>'
         '<p>Local RTX video enhancement · upload, configure, preview, render</p></div>'
+        '<details class="status-menu">'
+        '<summary><span class="status-dot"></span>Backend status</summary>'
         '<div class="backend-status">'
         f'<span class="status-badge">RTX VSR <b>● {rtx}</b></span>'
         f'<span class="status-badge">DLSS SR <b>● {sr}</b></span>'
@@ -92,7 +94,7 @@ def status_html():
         f'<span class="status-badge">DLSS 5 v10 <b>● {dlss_v10}</b></span>'
         f'<span class="status-badge">DLSS-G <b>● {fg}</b></span>'
         f'<span class="status-badge">FFmpeg <b>● {ffmpeg}</b></span>'
-        '</div></div>'
+        '</div></details></div>'
     )
 
 
@@ -601,52 +603,57 @@ def build():
                 progress_panel = gr.HTML(progress_html(CONTROLLER.snapshot()), elem_classes="workspace-progress")
             with gr.Tab("Configuration"):
                 gr.Markdown("## Configuration")
-                gr.Markdown("Backend validation, managed runtimes, and reusable presets live here so the Enhance workspace stays focused on processing video.")
-                with gr.Row(elem_classes="configuration-grid"):
-                    with gr.Column(scale=42, min_width=340):
-                        with gr.Group(elem_classes="backend-readiness"):
-                            gr.Markdown("### DLSS SR readiness")
-                            sr_readiness = gr.Markdown(f"Current state: {sr_initial_status.state} — {sr_initial_status.reason}")
-                            sr_validate = gr.Button("Validate DLSS SR", interactive=sr_validation_enabled)
-                        v10_initial_status = DLSS5V10ExperimentalBackend().status()
-                        with gr.Group(elem_classes="backend-readiness-v10"):
-                            gr.Markdown("### DLSS 5 v10 experimental readiness")
-                            v10_readiness = gr.Markdown(f"Current state: {v10_initial_status.state} — {v10_initial_status.reason}")
-                            v10_refresh = gr.Button("Refresh DLSS 5 v10 preflight")
-                        gr.Markdown("Normal managed runtime paths are configured by `setup.bat`. Missing backends are never substituted with another enhancer.")
-                    with gr.Column(scale=58, min_width=440):
-                        with gr.Group(elem_classes="configuration-card"):
-                            gr.Markdown("### Runtime Manager")
-                            runtime_cards = gr.Markdown(runtime_cards_markdown())
-                            runtime_refresh = gr.Button("Refresh runtime inventory")
-                            runtime_ids = gr.Dropdown(choices=sorted(RuntimeManager(RUNTIME_MANIFEST, RUNTIME_ROOT).specs), label="Managed component")
-                            with gr.Row():
-                                runtime_action_choice = gr.Dropdown(["INSTALL", "UPDATE", "VERIFY", "REPAIR", "REMOVE", "IMPORT"], value="VERIFY", label="Explicit action")
-                                runtime_archive = gr.Textbox(label="Local archive path", placeholder="Only needed for Import or archive-based repair")
-                            runtime_action_button = gr.Button("Run selected runtime action")
-                            runtime_action_result = gr.Markdown("No runtime action has been requested.")
-                        with gr.Accordion("Saved presets", open=False):
-                            rtx_saved = gr.Dropdown(preset_choices("rtx_vsr"), label="RTX VSR saved preset")
-                            rtx_name = gr.Textbox(label="Preset name", max_length=80)
-                            with gr.Row():
-                                rtx_load = gr.Button("Load"); rtx_save = gr.Button("Save"); rtx_delete = gr.Button("Delete"); rtx_reset = gr.Button("Reset")
-                            rtx_message = gr.Markdown()
-                            dlss_saved = gr.Dropdown(preset_choices("dlss5"), label="DLSS5 saved preset")
-                            dlss_name = gr.Textbox(label="Preset name", max_length=80)
-                            with gr.Row():
-                                dlss_load = gr.Button("Load"); dlss_save = gr.Button("Save"); dlss_delete = gr.Button("Delete"); dlss_reset = gr.Button("Reset")
-                            dlss_message = gr.Markdown()
-                            sr_saved = gr.Dropdown(preset_choices("dlss_sr"), label="DLSS SR saved preset")
-                            sr_name = gr.Textbox(label="Preset name", max_length=80)
-                            with gr.Row():
-                                sr_load = gr.Button("Load"); sr_save = gr.Button("Save"); sr_delete = gr.Button("Delete"); sr_reset = gr.Button("Reset")
-                            sr_message = gr.Markdown()
+                gr.Markdown("Validation, runtime maintenance, and reusable presets. Normal video work stays in Enhance.")
+
+                gr.Markdown("### Backend validation")
+                with gr.Row(elem_classes="validation-grid"):
+                    with gr.Group(elem_classes="backend-readiness"):
+                        gr.Markdown("#### DLSS SR")
+                        sr_readiness = gr.Markdown(f"Current state: {sr_initial_status.state} — {sr_initial_status.reason}")
+                        sr_validate = gr.Button("Validate DLSS SR", interactive=sr_validation_enabled)
+                    v10_initial_status = DLSS5V10ExperimentalBackend().status()
+                    with gr.Group(elem_classes="backend-readiness-v10"):
+                        gr.Markdown("#### DLSS 5 v10 Experimental")
+                        v10_readiness = gr.Markdown(f"Current state: {v10_initial_status.state} — {v10_initial_status.reason}")
+                        v10_refresh = gr.Button("Refresh v10 preflight")
+                gr.Markdown("Normal runtime paths are provisioned by `setup.bat`. Missing backends are never silently substituted.", elem_classes="configuration-note")
+
+                with gr.Group(elem_classes="configuration-card"):
+                    gr.Markdown("### Runtime Manager")
+                    gr.Markdown("Inspect or repair a managed component. The full inventory is collapsed by default because normal use should not require runtime administration.")
+                    runtime_ids = gr.Dropdown(choices=sorted(RuntimeManager(RUNTIME_MANIFEST, RUNTIME_ROOT).specs), label="Managed component")
+                    with gr.Row():
+                        runtime_action_choice = gr.Dropdown(["INSTALL", "UPDATE", "VERIFY", "REPAIR", "REMOVE", "IMPORT"], value="VERIFY", label="Action")
+                        runtime_archive = gr.Textbox(label="Local archive path", placeholder="Only needed for Import or archive-based repair")
+                    runtime_action_button = gr.Button("Run runtime action")
+                    runtime_action_result = gr.Markdown("No runtime action has been requested.", elem_classes="runtime-result")
+                    with gr.Accordion("Managed component inventory", open=False):
+                        runtime_cards = gr.Markdown(runtime_cards_markdown())
+                        runtime_refresh = gr.Button("Refresh inventory")
+
+                with gr.Accordion("Saved presets", open=False):
+                    rtx_saved = gr.Dropdown(preset_choices("rtx_vsr"), label="RTX VSR saved preset")
+                    rtx_name = gr.Textbox(label="Preset name", max_length=80)
+                    with gr.Row():
+                        rtx_load = gr.Button("Load"); rtx_save = gr.Button("Save"); rtx_delete = gr.Button("Delete"); rtx_reset = gr.Button("Reset")
+                    rtx_message = gr.Markdown()
+                    dlss_saved = gr.Dropdown(preset_choices("dlss5"), label="DLSS5 saved preset")
+                    dlss_name = gr.Textbox(label="Preset name", max_length=80)
+                    with gr.Row():
+                        dlss_load = gr.Button("Load"); dlss_save = gr.Button("Save"); dlss_delete = gr.Button("Delete"); dlss_reset = gr.Button("Reset")
+                    dlss_message = gr.Markdown()
+                    sr_saved = gr.Dropdown(preset_choices("dlss_sr"), label="DLSS SR saved preset")
+                    sr_name = gr.Textbox(label="Preset name", max_length=80)
+                    with gr.Row():
+                        sr_load = gr.Button("Load"); sr_save = gr.Button("Save"); sr_delete = gr.Button("Delete"); sr_reset = gr.Button("Reset")
+                    sr_message = gr.Markdown()
 
             with gr.Tab("Diagnostics"):
-                gr.Markdown("## Diagnostics")
-                gr.Markdown("Hardware telemetry and implementation notes are kept off the primary workflow. These values update while the application is open.")
-                metrics = gr.HTML(metrics_html(), elem_classes="diagnostics-metrics")
-                gr.HTML('<details class="advanced-diagnostics" open><summary>Backend notes</summary><div>DLSS SR uses a separate native D3D12 NGX host with optical-flow motion guidance. Video mode is SDR, has no renderer depth or jitter, and requires the approved local NVIDIA runtime.</div></details>')
+                with gr.Column(elem_classes="diagnostics-shell"):
+                    gr.Markdown("## Diagnostics")
+                    gr.Markdown("Live local hardware telemetry. These values update while the application is open.")
+                    metrics = gr.HTML(metrics_html(), elem_classes="diagnostics-metrics")
+                    gr.HTML('<details class="advanced-diagnostics"><summary>Backend implementation notes</summary><div>DLSS SR uses a separate native D3D12 NGX host with optical-flow motion guidance. Video mode is SDR, has no renderer depth or jitter, and requires the approved local NVIDIA runtime.</div></details>')
         def visibility(selected):
             rtx_visible, dlss_visible, sr_visible, dlssg_visible = mode_visibility(selected)
             return gr.update(visible=rtx_visible), gr.update(visible=dlss_visible), gr.update(visible=sr_visible), gr.update(visible=dlssg_visible)

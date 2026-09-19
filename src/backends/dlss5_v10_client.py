@@ -20,6 +20,7 @@ EXPERIMENT_ACK = "BOUNDED_256_ONE_FRAME"
 TEMPORAL_EXPERIMENT_ACK = "BOUNDED_256_THREE_FRAME"
 VIDEO_AB_EXPERIMENT_ACK = "BOUNDED_256_VIDEO_AB_16"
 SCENE_CUT_EXPERIMENT_ACK = "BOUNDED_256_SCENE_CUT_32"
+SCENE_SOAK_EXPERIMENT_ACK = "BOUNDED_256_SCENE_AWARE_128"
 
 from .dlss5_v10_protocol import (
     CLOSE,
@@ -317,6 +318,69 @@ class V10ProtocolClient:
             or value.get("scene_cut_mode") != mode
         ):
             self._poison("invalid bounded scene-cut native HELLO")
+            raise V10ProtocolError(self._poison_reason)
+        return value
+
+    def start_native_scene_soak_experimental(
+        self,
+        runtime_dir: str | Path,
+        preflight_report: str | Path,
+        *,
+        acknowledgement: str,
+        mode: str,
+    ) -> dict[str, object]:
+        if acknowledgement != SCENE_SOAK_EXPERIMENT_ACK:
+            raise V10ExecutionDisabled(
+                "scene-aware soak v10 start requires the exact acknowledgement token"
+            )
+        routes = {
+            "scene-aware": (
+                "--experimental-native-scene-soak-serve",
+                "scene-aware-soak",
+            ),
+            "reset-control": (
+                "--experimental-native-scene-soak-reset-serve",
+                "reset-control-soak",
+            ),
+        }
+        selected = routes.get(mode)
+        if selected is None:
+            raise ValueError(
+                "v10 scene-aware soak mode must be scene-aware or reset-control"
+            )
+        route, hello_mode = selected
+        self._native_mode = True
+        env = dict(os.environ)
+        env["NVE_DLSS5_V10_NATIVE"] = SCENE_SOAK_EXPERIMENT_ACK
+        self._spawn(
+            [
+                self.python,
+                "-u",
+                "-m",
+                "src.backends.dlss5_v10_host",
+                route,
+                "--runtime-dir",
+                str(Path(runtime_dir).expanduser().resolve()),
+                "--preflight-report",
+                str(Path(preflight_report).expanduser().resolve()),
+            ],
+            env=env,
+        )
+        command, request_id, payload = self._wait(self.start_timeout)
+        if command != HELLO or request_id != 0:
+            self._poison(
+                f"expected HELLO request 0, received command={command} request={request_id}"
+            )
+            raise V10ProtocolError(self._poison_reason)
+        value = decode_json(payload)
+        if (
+            not isinstance(value, dict)
+            or value.get("native_loaded") is not False
+            or value.get("experimental_native_mode") is not True
+            or value.get("normal_backend_enabled") is not False
+            or value.get("scene_cut_mode") != hello_mode
+        ):
+            self._poison("invalid bounded scene-aware soak native HELLO")
             raise V10ProtocolError(self._poison_reason)
         return value
 

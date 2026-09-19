@@ -63,6 +63,18 @@ class FakeClient:
         return "TERMINATED_OWNED_HOST"
 
 
+def test_bounded_v10_wrapper_refreshes_preflight_before_execution():
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    source = (root / "tools" / "run_dlss5_v10_bounded.ps1").read_text(encoding="utf-8")
+    assert "[switch]$Execute" in source
+    assert "if (-not $Execute)" in source
+    assert "prepare_dlss5_v10_candidate.py" in source
+    assert "validate_dlss5_v10_bounded.py" in source
+    assert "--ack BOUNDED_256_ONE_FRAME" in source
+    assert source.index("& $python $prepare") < source.index("& $python $validate")
+    assert "DLSS5_V10_BOUNDED_PASS" in source
+
+
 def test_bounded_v10_cli_is_blocked_without_explicit_ack(monkeypatch, tmp_path):
     called = {"value": False}
 

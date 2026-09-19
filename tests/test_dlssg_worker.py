@@ -121,6 +121,59 @@ def test_motion_vector_validation():
         worker.validate_motion_vectors(invalid, 2, 2)
 
 
+def test_validated_nvof_profile_preserves_existing_worker_environment(monkeypatch, tmp_path):
+    monkeypatch.delenv("DLSSG_NVOF_DIRECTION", raising=False)
+    monkeypatch.delenv("DLSSG_NVOF_GPU_FLOW", raising=False)
+    monkeypatch.delenv("DLSSG_NVOF_OUTPUT_GRID", raising=False)
+    client = worker.DlssgWorker(
+        tmp_path / "worker.exe",
+        tmp_path / "version.dll",
+        tmp_path / "runtime",
+    )
+    environment = client._build_environment()
+    assert environment["DLSSG_NVOF_DIRECTION"] == "forward"
+    assert "DLSSG_NVOF_GPU_FLOW" not in environment
+    assert "DLSSG_NVOF_OUTPUT_GRID" not in environment
+
+
+def test_grid4_gpu_candidate_profile_sets_exact_validated_research_controls(monkeypatch, tmp_path):
+    monkeypatch.setenv("DLSSG_NVOF_DIRECTION", "both")
+    monkeypatch.setenv("DLSSG_NVOF_GPU_FLOW", "0")
+    monkeypatch.setenv("DLSSG_NVOF_OUTPUT_GRID", "1")
+    client = worker.DlssgWorker(
+        tmp_path / "worker.exe",
+        tmp_path / "version.dll",
+        tmp_path / "runtime",
+        nvof_profile=worker.NVOF_PROFILE_GRID4_GPU_CANDIDATE,
+    )
+    environment = client._build_environment()
+    assert environment["DLSSG_NVOF_DIRECTION"] == "forward"
+    assert environment["DLSSG_NVOF_GPU_FLOW"] == "1"
+    assert environment["DLSSG_NVOF_OUTPUT_GRID"] == "4"
+    assert "DLSSG_WORKER_DIAGNOSTIC" not in environment
+
+
+def test_grid4_gpu_candidate_rejects_diagnostic_mode(tmp_path):
+    with pytest.raises(ValueError, match="diagnostics"):
+        worker.DlssgWorker(
+            tmp_path / "worker.exe",
+            tmp_path / "version.dll",
+            tmp_path / "runtime",
+            diagnostic_mode=True,
+            nvof_profile=worker.NVOF_PROFILE_GRID4_GPU_CANDIDATE,
+        )
+
+
+def test_dlssg_worker_rejects_unknown_nvof_profile(tmp_path):
+    with pytest.raises(ValueError, match="nvof_profile"):
+        worker.DlssgWorker(
+            tmp_path / "worker.exe",
+            tmp_path / "version.dll",
+            tmp_path / "runtime",
+            nvof_profile="unknown",
+        )
+
+
 def test_process_rejects_incorrect_color_size_before_protocol_io(tmp_path):
     client = worker.DlssgWorker(
         tmp_path / "missing.exe",

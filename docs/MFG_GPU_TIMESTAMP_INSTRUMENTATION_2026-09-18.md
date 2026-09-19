@@ -440,6 +440,72 @@ contains 1/16 as many vectors before dense expansion:
 This same-run result removes the earlier cross-run GPU-state confounder and
 establishes 4x4 as the current MFG NVOF performance candidate.
 
-It does **not** establish acceptable image quality. The next gate is withheld
-real-frame quality A/B using the exact same source anchors for grid 1 and grid
-4. No production/default setting changes at this stage.
+It did **not**, by itself, establish acceptable image quality. That missing gate
+was subsequently run with withheld real-frame A/B evidence as described below.
+
+## Real-video grid-1 versus grid-4 quality evidence
+
+The first real-video quality campaign completed on the RTX 3070 Ti using the
+same grid-1/grid-4 implementation and a 640x480, approximately 29.999-fps
+source. The 2X harness sampled five non-overlapping windows beginning at source
+frames 0, 30, 90, 150, and 210. Each window contained eight withheld midpoint
+comparisons, for 40 generated-frame pairs total.
+
+Every window completed both grid captures and returned `QUALITY_AB_PASS`.
+Across all 40 paired samples, the weighted aggregate differences
+(grid 4 minus grid 1) were:
+
+| Metric | Grid 1 | Grid 4 | Difference |
+| --- | ---: | ---: | ---: |
+| MAE | 6.333788 | 6.333345 | -0.000443 (-0.0070%) |
+| RMSE | 10.480888 | 10.480496 | -0.000392 (-0.0037%) |
+| PSNR | 32.546326 dB | 32.546652 dB | +0.000326 dB |
+| SSIM RGB | 0.950260 | 0.950263 | +0.0000037 |
+| edge MAE | 19.850778 | 19.851953 | +0.001174 (+0.0059%) |
+
+Per-frame win counts were likewise mixed rather than systematically regressing:
+grid 4 won 22/40 MAE comparisons, 22/39 non-tied RMSE comparisons, 22/39
+non-tied PSNR comparisons, 23/40 SSIM comparisons, and 20/38 non-tied edge-MAE
+comparisons. One segment favored grid 1 on most metrics while another favored
+grid 4; the absolute deltas remained very small.
+
+This closes the **first** withheld-frame quality gate for the 4x4 candidate:
+the tested material shows no meaningful systematic 2X quality loss while the
+controlled practical-resolution timing A/B showed a 72-80% reduction in the
+NVOF cross-engine bracket.
+
+The evidence is deliberately not generalized beyond its scope. The source was
+640x480 at about 30 fps, so 2X withheld-frame sampling yields about 15-fps
+anchors. It is a coarse-temporal stress test, not a substitute for a diverse
+60-fps, 720p/1080p corpus with text/UI, faces, thin detail, occlusion and
+disocclusion.
+
+## Application-level grid4 candidate profile
+
+The normal pinned C55 worker/profile remains unchanged. To carry the validated
+research settings into the real renderer without relying on ambient environment
+variables, the Python worker client now exposes an explicit research profile:
+
+`grid4-gpu-candidate`
+
+That profile fixes the exact tested controls:
+
+- `DLSSG_NVOF_DIRECTION=forward`;
+- `DLSSG_NVOF_GPU_FLOW=1`;
+- `DLSSG_NVOF_OUTPUT_GRID=4`.
+
+The default profile is still `validated`, which preserves the existing C55
+behavior and does not inject GPU-flow or output-grid settings. The candidate is
+also rejected when verbose diagnostic mode is enabled, because the diagnostic
+motion path is intentionally different from the production GPU-resident path.
+
+The developer CLI exposes the candidate with:
+
+```powershell
+python tools\dlssg_video.py ... --nvof-profile grid4-gpu-candidate
+```
+
+A render manifest records the selected NVOF profile. This is a promotion
+**candidate**, not a production-default change: a newly built candidate worker
+still needs the existing native selftest/hardware gates before the distributed
+pinned C55 binary or normal UI default can change.

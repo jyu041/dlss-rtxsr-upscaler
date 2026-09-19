@@ -199,10 +199,10 @@ Read the full audit in [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md).
 
 - The current pipeline targets SDR RGBA video.
 - DLSS SR uses estimated optical flow rather than engine-provided motion vectors and may fail around cuts, occlusion, hair, and transparency.
-- DLSS-G behavior remains hardware/runtime dependent; the normal Ampere path is pinned to the exact C55-validated direct-host runtime, while the newer 0.3.1 proxy generation is experimental rather than an automatic upgrade.
+- DLSS-G behavior remains hardware/runtime dependent; the normal Ampere path is pinned to the exact C55-validated direct-host runtime. A research-only `grid4-gpu-candidate` profile now carries the tested forward/GPU-resident/4x4 NVOF settings, but it is not the normal default or a replacement for the pinned C55 binary.
 - DLSS 5 is experimental, hardware- and runtime-dependent, and may alter semantic content.
 - The currently validated RTX 3070-family/Ampere v3 path is restricted to 1.0× output; higher v3 output scales remain blocked because the tested pairing reproducibly fell back with NGX `InvalidParameter (0xBAD00005)`.
-- Visual Enhancer v10 is the newest Neuroframe static-only research candidate and is not substituted for the validated v3 Feature-18 execution path; the earlier v9 candidate is retained as historical static-audit evidence.
+- Visual Enhancer v10 is the newest Neuroframe research candidate. Its normal backend remains disabled; only an isolated, explicitly acknowledged 256×256/one-frame native hardware gate is reachable for research, and it is not substituted for the validated v3 Feature-18 execution path.
 - Performance and output quality vary substantially by source media, codec, resolution, driver, and backend runtime.
 - NVIDIA runtimes and community runtime files remain subject to their own licenses and are not covered by this repository's MIT license.
 
@@ -215,6 +215,11 @@ Primary development and hardware validation has been performed on:
 - DLSS-G direct-host validation on that RTX 3070 Ti passed the bounded 256×256
   **2X, 3X and 4X** matrix with both deterministic external motion vectors and
   NVIDIA Optical Flow, using the pinned `5f62ff44...` SM86 runtime profile.
+- A controlled research A/B measured the 4x4 NVOF output grid at roughly
+  72–80% lower NVOF cross-engine bracket time than 1x1 at 720p/1080p. A first
+  40-frame withheld real-video 2X campaign found no meaningful systematic
+  quality regression. This supports the grid4 candidate profile but does not
+  yet change the normal pinned C55 default.
 - DLSS 5 v3 Feature-18 provisioning and hardware self-test also passed on the
   RTX 3070 Ti with the managed hash/Defender/firewall/approval gates in place;
   the validated Ampere execution path remains the experimental 1.0× mode.
@@ -259,7 +264,7 @@ This project uses the following software and technologies; acknowledgement does 
 - OpenCV for image and frame processing
 - PyTorch for tensor and CUDA operations
 
-Beta packaging may redistribute only the specifically validated DLSS SR application host and official REL runtime under the applicable NVIDIA terms. The source repository does not redistribute the managed external DLSS-G direct-host/provider files, the optional 0.3.1 candidate, or the DLSS 5 v3 release archive; `setup.bat` and Runtime Manager retrieve pinned files directly from their public upstream sources after explicit user action. The v10 Neuroframe runtime remains separately gated as static-only research; v9 is retained as historical static-audit evidence.
+Beta packaging may redistribute only the specifically validated DLSS SR application host and official REL runtime under the applicable NVIDIA terms. The source repository does not redistribute the managed external DLSS-G direct-host/provider files, the optional 0.3.1 candidate, or the DLSS 5 v3 release archive; `setup.bat` and Runtime Manager retrieve pinned files directly from their public upstream sources after explicit user action. The v10 Neuroframe runtime remains separately gated research: normal execution is disabled and only the explicit bounded hardware path may load it; v9 is retained as historical static-audit evidence.
 
 ## License
 

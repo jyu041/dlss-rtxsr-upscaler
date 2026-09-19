@@ -499,104 +499,104 @@ def build():
         refresh_timer = gr.Timer(0.5)
         with gr.Tabs(elem_id="app-tabs"):
             with gr.Tab("Enhance"):
-            with gr.Row(elem_classes="main-workspace"):
-                with gr.Column(scale=25, min_width=280, elem_classes=["workspace-card", "input-panel"]):
-                    gr.Markdown("## Input")
-                    inp = gr.Video(label="Upload video", include_audio=True)
-                    load_render = gr.Button("Load Last Render", interactive=bool(previous_render), elem_classes="load-render")
-                    summary = gr.HTML('<span class="muted">No video selected.</span>')
-                    with gr.Accordion("Media details", open=False):
-                        info = gr.Textbox(value="No video selected.", show_label=False, lines=5, interactive=False)
-                    state = gr.State(initial_mode)
-                with gr.Column(scale=35, min_width=360, elem_classes=["workspace-card", "settings-panel"]):
-                    gr.Markdown("## Enhancement")
-                    mode = gr.Radio(available_mode_choices(), value=initial_mode, show_label=False, elem_id="enhancement-selector", elem_classes="enhancement-selector")
-                    with gr.Column(visible=rtx_initial, elem_classes=["backend-panel", "backend-rtx"]) as rtx_group:
-                        gr.Markdown("### RTX VSR Settings")
-                        _tip(RTX_TOOLTIPS, "mode", "Mode")
-                        vsr_mode = gr.Dropdown(["Super Resolution", "High Bitrate", "Deblur", "Denoise"], value=rlast.get("mode", "Super Resolution"), show_label=False)
-                        _tip(RTX_TOOLTIPS, "scale", "Scale factor")
-                        scale = gr.Dropdown([1.0, 1.5, 2.0, 2.5, 3.0, 4.0], value=rlast.get("scale", 2.0), show_label=False)
-                        _tip(RTX_TOOLTIPS, "quality", "Quality")
-                        quality = gr.Dropdown(["LOW", "MEDIUM", "HIGH", "ULTRA"], value=rlast.get("quality", "ULTRA"), show_label=False)
-                    with gr.Column(visible=dlss_initial, elem_classes=["backend-panel", "backend-dlss"]) as dlss_group:
-                        gr.Markdown("### DLSS5 Settings")
-                        gr.Markdown("**v10 Experimental:** isolated scene-aware Feature-18 application mode. Current integration is 1.0x only and capped at 1920x1080-equivalent input. v10 currently uses Style, Intensity, Local Tone, Local Structure, Skin Structure, and Automatic Mask; NR preset/model, working-resolution, and recomposition controls below remain v3-only.")
-                        _tip(DLSS5_TOOLTIPS, "builtin_preset", "Built-in preset")
-                        preset = gr.Dropdown(list(load_presets()) + ["Default"], value="Photoreal Balanced", show_label=False)
-                        _tip(DLSS5_TOOLTIPS, "scale", "DLSS scale")
-                        dlss_scale = gr.Dropdown(dlss_scales, value=dlss_default_scale, show_label=False)
-                        _tip(DLSS5_TOOLTIPS, "working_scale", "NR Working Resolution")
-                        nr_working_scale = gr.Dropdown([("100% (Native)", 1.0), ("75%", 0.75), ("67% (2/3)", 2.0 / 3.0), ("50%", 0.5)], value=1.0, show_label=False)
-                        _tip(DLSS5_TOOLTIPS, "recompose", "Recomposition")
-                        recompose_backend = gr.Dropdown([("Auto (CUDA preferred)", "auto"), ("CUDA", "cuda"), ("CPU", "cpu")], value="auto", show_label=False)
-                        _tip(DLSS5_TOOLTIPS, "nr_preset", "NR preset")
-                        nrpreset = gr.Dropdown(["Default", "Preset #1", "Preset #2", "Preset #3"], value=dlast.get("nr_preset", "Default"), show_label=False)
-                        _tip(DLSS5_TOOLTIPS, "nr_style", "NR style")
-                        style = gr.Dropdown(["Default", "Natural", "Cinematic"], value=dlast.get("nr_style", "Natural"), show_label=False)
-                        _tip(DLSS5_TOOLTIPS, "model_preset", "DLSS model preset")
-                        model = gr.Dropdown(["Default", "J", "K", "L", "M"], value=dlast.get("model_preset", "Default"), show_label=False)
-                        _tip(DLSS5_TOOLTIPS, "intensity", "NR intensity")
-                        intensity = gr.Slider(0, 2, dlast.get("intensity", .60), .05, show_label=False)
-                        _tip(DLSS5_TOOLTIPS, "tone", "Local tone strength")
-                        tone = gr.Slider(0, 2, dlast.get("local_tone", .40), .05, show_label=False)
-                        _tip(DLSS5_TOOLTIPS, "structure", "Local structure strength")
-                        structure = gr.Slider(0, 2, dlast.get("local_structure", .40), .05, show_label=False)
-                        _tip(DLSS5_TOOLTIPS, "skin", "Skin structure strength")
-                        skin = gr.Slider(-1, 2, dlast.get("skin_structure", .15), .05, show_label=False)
-                        _tip(DLSS5_TOOLTIPS, "mask", "Automatic mask")
-                        mask = gr.Dropdown(["Off", "On"], value="On" if dlast.get("automatic_mask", False) else "Off", show_label=False)
-                    with gr.Column(visible=sr_initial, elem_classes=["backend-panel", "backend-sr"]) as sr_group:
-                        gr.Markdown("### DLSS SR Settings")
-                        _tip(DLSS_SR_TOOLTIPS, "mode", "Mode")
-                        sr_mode = gr.Dropdown(["DLAA", "Quality", "Balanced", "Performance", "Ultra Performance"], value=srlast.get("mode", "Quality"), show_label=False)
-                        _tip(DLSS_SR_TOOLTIPS, "model_preset", "Model preset")
-                        sr_model = gr.Dropdown(["Default", "J", "K", "L", "M"], value=srlast.get("model_preset", "Default"), show_label=False)
-                    with gr.Column(visible=dlssg_initial, elem_classes=["backend-panel", "backend-dlssg"]) as dlssg_group:
-                        gr.Markdown("### DLSS Frame Generation")
-                        gr.Markdown("`setup.bat` installs the pinned C55 worker, validated SM86 direct-host runtime, and official NVIDIA DLSS-G provider into managed project folders. Normal use does not require downloading DLLs or entering runtime paths.")
-                        dlssg_multiplier = gr.Dropdown([("2X Frame Generation", 2), ("3X Multi Frame Generation", 3), ("4X Multi Frame Generation", 4)], value=dlssg_multiplier_default, label="Frame multiplier")
-                        dlssg_nvof_profile = gr.Dropdown(
-                            [
-                                ("Validated grid1 / pinned C55", NVOF_PROFILE_VALIDATED),
-                                ("Experimental grid4 / GPU-resident NVOF", NVOF_PROFILE_GRID4_GPU_CANDIDATE),
-                            ],
-                            value=dlssg_nvof_default,
-                            label="NVOF profile",
-                        )
-                        gr.Markdown("Grid4 is the hardware-tested performance candidate. setup.bat installs its exact pinned managed worker automatically; it remains opt-in and does not replace the pinned C55/grid1 default.")
-                        with gr.Row():
-                            dlssg_check = gr.Button("Check DLSS-G readiness")
-                        dlssg_readiness = gr.Markdown("Managed runtime readiness has not been refreshed.")
-                        dlssg_motion = gr.Dropdown(["NVIDIA Optical Flow"], value=dlssglast.get("motion_provider", "NVIDIA Optical Flow"), label="Motion provider")
-                        dlssg_depth = gr.Dropdown(["Constant 0.5"], value=dlssglast.get("depth_mode", "Constant 0.5"), label="Depth mode")
-                        dlssg_saved = gr.Markdown()
-                        gr.Markdown("Constant depth is a first-generation quality limitation; it is not renderer-quality depth.")
-                        gr.Markdown("2X Frame Generation, 3X Multi Frame Generation, and 4X Multi Frame Generation are hardware-validated on the tested RTX 3070 Ti configuration.")
-                    with gr.Accordion("Output settings", open=False):
-                        codec = gr.Dropdown(["H.264", "HEVC"], value="H.264", label="Codec")
-                        container = gr.Dropdown(["MP4", "MKV", "MOV"], value="MP4", label="Container")
-                with gr.Column(scale=40, min_width=420, elem_classes=["workspace-card", "preview-panel"]):
-                    gr.Markdown("## Preview / Output")
-                    with gr.Tabs(elem_classes="preview-tabs"):
-                        with gr.Tab("Frame"):
-                            with gr.Row(elem_classes="preview-grid"):
-                                before = gr.Image(label="Before / source", type="filepath")
-                                after = gr.Image(label="After / processed", type="filepath")
-                        with gr.Tab("Video"):
-                            with gr.Row(elem_classes="preview-grid"):
-                                before_clip = gr.Video(label="Before / source clip")
-                                result_video = gr.Video(label="After / generated clip")
-                    gr.Markdown("### Preview / Render")
-                    with gr.Row(elem_classes="preview-options"):
-                        timestamp = gr.Number(0, label="Timestamp (sec)")
-                        preview_duration = gr.Slider(1, 10, 3, step=1, label="Duration (sec)")
-                    with gr.Row(elem_classes="action-bar"):
-                        frame = gr.Button("Preview Frame")
-                        clip = gr.Button("Preview Clip")
-                    render = gr.Button("Render Video", variant="primary", elem_classes="render-button")
-                    stop = gr.Button("Cancel", interactive=False, elem_classes="cancel-button")
-                    job = gr.Markdown("Ready. One GPU job at a time.")
+                with gr.Row(elem_classes="main-workspace"):
+                    with gr.Column(scale=25, min_width=280, elem_classes=["workspace-card", "input-panel"]):
+                        gr.Markdown("## Input")
+                        inp = gr.Video(label="Upload video", include_audio=True)
+                        load_render = gr.Button("Load Last Render", interactive=bool(previous_render), elem_classes="load-render")
+                        summary = gr.HTML('<span class="muted">No video selected.</span>')
+                        with gr.Accordion("Media details", open=False):
+                            info = gr.Textbox(value="No video selected.", show_label=False, lines=5, interactive=False)
+                        state = gr.State(initial_mode)
+                    with gr.Column(scale=35, min_width=360, elem_classes=["workspace-card", "settings-panel"]):
+                        gr.Markdown("## Enhancement")
+                        mode = gr.Radio(available_mode_choices(), value=initial_mode, show_label=False, elem_id="enhancement-selector", elem_classes="enhancement-selector")
+                        with gr.Column(visible=rtx_initial, elem_classes=["backend-panel", "backend-rtx"]) as rtx_group:
+                            gr.Markdown("### RTX VSR Settings")
+                            _tip(RTX_TOOLTIPS, "mode", "Mode")
+                            vsr_mode = gr.Dropdown(["Super Resolution", "High Bitrate", "Deblur", "Denoise"], value=rlast.get("mode", "Super Resolution"), show_label=False)
+                            _tip(RTX_TOOLTIPS, "scale", "Scale factor")
+                            scale = gr.Dropdown([1.0, 1.5, 2.0, 2.5, 3.0, 4.0], value=rlast.get("scale", 2.0), show_label=False)
+                            _tip(RTX_TOOLTIPS, "quality", "Quality")
+                            quality = gr.Dropdown(["LOW", "MEDIUM", "HIGH", "ULTRA"], value=rlast.get("quality", "ULTRA"), show_label=False)
+                        with gr.Column(visible=dlss_initial, elem_classes=["backend-panel", "backend-dlss"]) as dlss_group:
+                            gr.Markdown("### DLSS5 Settings")
+                            gr.Markdown("**v10 Experimental:** isolated scene-aware Feature-18 application mode. Current integration is 1.0x only and capped at 1920x1080-equivalent input. v10 currently uses Style, Intensity, Local Tone, Local Structure, Skin Structure, and Automatic Mask; NR preset/model, working-resolution, and recomposition controls below remain v3-only.")
+                            _tip(DLSS5_TOOLTIPS, "builtin_preset", "Built-in preset")
+                            preset = gr.Dropdown(list(load_presets()) + ["Default"], value="Photoreal Balanced", show_label=False)
+                            _tip(DLSS5_TOOLTIPS, "scale", "DLSS scale")
+                            dlss_scale = gr.Dropdown(dlss_scales, value=dlss_default_scale, show_label=False)
+                            _tip(DLSS5_TOOLTIPS, "working_scale", "NR Working Resolution")
+                            nr_working_scale = gr.Dropdown([("100% (Native)", 1.0), ("75%", 0.75), ("67% (2/3)", 2.0 / 3.0), ("50%", 0.5)], value=1.0, show_label=False)
+                            _tip(DLSS5_TOOLTIPS, "recompose", "Recomposition")
+                            recompose_backend = gr.Dropdown([("Auto (CUDA preferred)", "auto"), ("CUDA", "cuda"), ("CPU", "cpu")], value="auto", show_label=False)
+                            _tip(DLSS5_TOOLTIPS, "nr_preset", "NR preset")
+                            nrpreset = gr.Dropdown(["Default", "Preset #1", "Preset #2", "Preset #3"], value=dlast.get("nr_preset", "Default"), show_label=False)
+                            _tip(DLSS5_TOOLTIPS, "nr_style", "NR style")
+                            style = gr.Dropdown(["Default", "Natural", "Cinematic"], value=dlast.get("nr_style", "Natural"), show_label=False)
+                            _tip(DLSS5_TOOLTIPS, "model_preset", "DLSS model preset")
+                            model = gr.Dropdown(["Default", "J", "K", "L", "M"], value=dlast.get("model_preset", "Default"), show_label=False)
+                            _tip(DLSS5_TOOLTIPS, "intensity", "NR intensity")
+                            intensity = gr.Slider(0, 2, dlast.get("intensity", .60), .05, show_label=False)
+                            _tip(DLSS5_TOOLTIPS, "tone", "Local tone strength")
+                            tone = gr.Slider(0, 2, dlast.get("local_tone", .40), .05, show_label=False)
+                            _tip(DLSS5_TOOLTIPS, "structure", "Local structure strength")
+                            structure = gr.Slider(0, 2, dlast.get("local_structure", .40), .05, show_label=False)
+                            _tip(DLSS5_TOOLTIPS, "skin", "Skin structure strength")
+                            skin = gr.Slider(-1, 2, dlast.get("skin_structure", .15), .05, show_label=False)
+                            _tip(DLSS5_TOOLTIPS, "mask", "Automatic mask")
+                            mask = gr.Dropdown(["Off", "On"], value="On" if dlast.get("automatic_mask", False) else "Off", show_label=False)
+                        with gr.Column(visible=sr_initial, elem_classes=["backend-panel", "backend-sr"]) as sr_group:
+                            gr.Markdown("### DLSS SR Settings")
+                            _tip(DLSS_SR_TOOLTIPS, "mode", "Mode")
+                            sr_mode = gr.Dropdown(["DLAA", "Quality", "Balanced", "Performance", "Ultra Performance"], value=srlast.get("mode", "Quality"), show_label=False)
+                            _tip(DLSS_SR_TOOLTIPS, "model_preset", "Model preset")
+                            sr_model = gr.Dropdown(["Default", "J", "K", "L", "M"], value=srlast.get("model_preset", "Default"), show_label=False)
+                        with gr.Column(visible=dlssg_initial, elem_classes=["backend-panel", "backend-dlssg"]) as dlssg_group:
+                            gr.Markdown("### DLSS Frame Generation")
+                            gr.Markdown("`setup.bat` installs the pinned C55 worker, validated SM86 direct-host runtime, and official NVIDIA DLSS-G provider into managed project folders. Normal use does not require downloading DLLs or entering runtime paths.")
+                            dlssg_multiplier = gr.Dropdown([("2X Frame Generation", 2), ("3X Multi Frame Generation", 3), ("4X Multi Frame Generation", 4)], value=dlssg_multiplier_default, label="Frame multiplier")
+                            dlssg_nvof_profile = gr.Dropdown(
+                                [
+                                    ("Validated grid1 / pinned C55", NVOF_PROFILE_VALIDATED),
+                                    ("Experimental grid4 / GPU-resident NVOF", NVOF_PROFILE_GRID4_GPU_CANDIDATE),
+                                ],
+                                value=dlssg_nvof_default,
+                                label="NVOF profile",
+                            )
+                            gr.Markdown("Grid4 is the hardware-tested performance candidate. setup.bat installs its exact pinned managed worker automatically; it remains opt-in and does not replace the pinned C55/grid1 default.")
+                            with gr.Row():
+                                dlssg_check = gr.Button("Check DLSS-G readiness")
+                            dlssg_readiness = gr.Markdown("Managed runtime readiness has not been refreshed.")
+                            dlssg_motion = gr.Dropdown(["NVIDIA Optical Flow"], value=dlssglast.get("motion_provider", "NVIDIA Optical Flow"), label="Motion provider")
+                            dlssg_depth = gr.Dropdown(["Constant 0.5"], value=dlssglast.get("depth_mode", "Constant 0.5"), label="Depth mode")
+                            dlssg_saved = gr.Markdown()
+                            gr.Markdown("Constant depth is a first-generation quality limitation; it is not renderer-quality depth.")
+                            gr.Markdown("2X Frame Generation, 3X Multi Frame Generation, and 4X Multi Frame Generation are hardware-validated on the tested RTX 3070 Ti configuration.")
+                        with gr.Accordion("Output settings", open=False):
+                            codec = gr.Dropdown(["H.264", "HEVC"], value="H.264", label="Codec")
+                            container = gr.Dropdown(["MP4", "MKV", "MOV"], value="MP4", label="Container")
+                    with gr.Column(scale=40, min_width=420, elem_classes=["workspace-card", "preview-panel"]):
+                        gr.Markdown("## Preview / Output")
+                        with gr.Tabs(elem_classes="preview-tabs"):
+                            with gr.Tab("Frame"):
+                                with gr.Row(elem_classes="preview-grid"):
+                                    before = gr.Image(label="Before / source", type="filepath")
+                                    after = gr.Image(label="After / processed", type="filepath")
+                            with gr.Tab("Video"):
+                                with gr.Row(elem_classes="preview-grid"):
+                                    before_clip = gr.Video(label="Before / source clip")
+                                    result_video = gr.Video(label="After / generated clip")
+                        gr.Markdown("### Preview / Render")
+                        with gr.Row(elem_classes="preview-options"):
+                            timestamp = gr.Number(0, label="Timestamp (sec)")
+                            preview_duration = gr.Slider(1, 10, 3, step=1, label="Duration (sec)")
+                        with gr.Row(elem_classes="action-bar"):
+                            frame = gr.Button("Preview Frame")
+                            clip = gr.Button("Preview Clip")
+                        render = gr.Button("Render Video", variant="primary", elem_classes="render-button")
+                        stop = gr.Button("Cancel", interactive=False, elem_classes="cancel-button")
+                        job = gr.Markdown("Ready. One GPU job at a time.")
 
                 progress_panel = gr.HTML(progress_html(CONTROLLER.snapshot()), elem_classes="workspace-progress")
             with gr.Tab("Configuration"):
@@ -681,7 +681,6 @@ def build():
         sr_load.click(load_dlss_sr, sr_saved, [sr_mode, sr_model, sr_message])
         sr_delete.click(delete_dlss_sr, sr_saved, [sr_saved, sr_message])
         sr_reset.click(lambda: ("Quality", "Default", "DLSS SR settings reset."), outputs=[sr_mode, sr_model, sr_message])
-        gr.Markdown("### Runtime notes\nNormal managed runtime paths are configured by `setup.bat`; a missing backend is never substituted with sharpening or another upscaler. Runtime Manager remains available for inspection, repair, updates, and experimental components.")
     return ui
 
 

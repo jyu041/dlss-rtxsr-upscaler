@@ -145,7 +145,8 @@ The detailed setup is documented in [`docs/INSTALL.md`](docs/INSTALL.md). Develo
 | RTX VSR | Compatible GPU/driver; the pinned NVIDIA VFX Python package is installed by setup |
 | DLSS SR | Compatible GPU/driver; host/runtime are installed automatically and setup attempts the local self-test |
 | DLSS-G | Compatible GPU/driver; C55, the validated SM86 direct-host runtime, and official NVIDIA provider are installed automatically and setup attempts bounded 2X/3X/4X validation |
-| DLSS 5 | Explicit opt-in to the managed v3 provisioner; setup verifies the pinned upstream runtime, requires a clean Defender scan, installs/verifies the outbound worker block, writes local approval, and runs the Feature-18 self-test |
+| DLSS 5 v3 | Explicit opt-in to the managed v3 provisioner; setup verifies the pinned upstream runtime, requires a clean Defender scan, installs/verifies the outbound worker block, writes local approval, and runs the Feature-18 self-test |
+| DLSS 5 v10 Experimental | Explicit UI preflight refresh or smoke wrapper; pinned v10 archive, exact static identity, fresh Defender scan, isolated child process, temporary exact-interpreter outbound firewall block; current app path is 1.0x and up to 1920x1080-equivalent input |
 
 Backend availability depends on the installed GPU, driver, and exact runtime combination. RTX 30/40/50-series hardware may expose different capabilities; DLSS 5 support must not be inferred from community experiments alone. See [`docs/DLSS5_APPROVAL.md`](docs/DLSS5_APPROVAL.md) for the approval contract.
 
@@ -169,7 +170,7 @@ runtime/
 │   │   └── dlssg_sm86.ini
 │   └── official/
 │       └── nvngx_dlssg.dll
-└── dlss5-v3/                 # only when the user explicitly opts in
+├── dlss5-v3/                 # only when the user explicitly opts in
     ├── nvngx.dll
     ├── renodx-dlss5.addon64
     ├── nvngx_dlssnr.dll
@@ -177,6 +178,9 @@ runtime/
     ├── nvngx_dlss.dll
     ├── approval.json         # local, gitignored
     └── selftest.json         # local, gitignored after a successful test
+└── dlss5/
+    └── neuroframe-v10-candidate/   # explicit experimental app/research staging
+        └── bin/runtime/dlssnr/
 ```
 
 Advanced environment-variable overrides remain supported for development and validation, but they are not part of the normal user workflow.
@@ -189,6 +193,7 @@ This project is designed for local, explicit, auditable processing:
 - `setup.bat` explicitly retrieves pinned managed components from their recorded public sources and verifies archive/file identities before activation.
 - The project does **not** redistribute the externally licensed DLSS-G direct-host/provider files, the optional 0.3.1 candidate, or the DLSS 5 v3 runtime archive in the Git repository; setup/Runtime Manager downloads them directly from their recorded public upstream sources after the relevant user action.
 - DLSS 5 v3 provisioning is opt-in and additionally requires exact five-file hashes, Authenticode inspection, a clean Microsoft Defender scan, a verified exact outbound firewall block for the worker, a local approval manifest, and successful Feature-18 self-test evidence.
+- DLSS 5 v10 application use is separately opt-in. The UI's explicit preflight refresh downloads/verifies only the pinned v10 archive, performs the static identity gate and fresh Defender scan, and stages the candidate. Each render then uses an isolated Python child with an exact-interpreter temporary outbound firewall block, process-tree checks, scene-aware resets, NGX/CUDA result validation, and mandatory cleanup.
 - Ordinary application startup does not silently fetch or replace runtime files.
 - Missing, invalid, incompatible, modified, or unapproved runtimes fail closed with diagnostics.
 - The application does not silently resize, sharpen, switch backends, or fetch replacement runtime files.
@@ -202,7 +207,7 @@ Read the full audit in [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md).
 - DLSS-G behavior remains hardware/runtime dependent; the normal Ampere path is pinned to the exact C55-validated direct-host runtime. A research-only `grid4-gpu-candidate` profile now carries the tested forward/GPU-resident/4x4 NVOF settings, but it is not the normal default or a replacement for the pinned C55 binary.
 - DLSS 5 is experimental, hardware- and runtime-dependent, and may alter semantic content.
 - The currently validated RTX 3070-family/Ampere v3 path is restricted to 1.0× output; higher v3 output scales remain blocked because the tested pairing reproducibly fell back with NGX `InvalidParameter (0xBAD00005)`.
-- Visual Enhancer v10 is the newest Neuroframe research candidate. Its normal backend remains disabled; the one-frame, three-frame temporal, 16-frame real-video A/B, 32-frame scene-cut/reset, and 128-frame scene-aware soak gates have passed on the RTX 3070 Ti. Reset parity held at every tested soak cut and temporal-state influence remained active between cuts. Motion-compensated diagnostics did not establish visual-quality superiority, so the soak now exports synchronized playable A/B review clips before any normal-backend promotion is considered.
+- Visual Enhancer v10 is the newest Neuroframe research candidate. The application now exposes it only as **DLSS 5 v10 Experimental**: an explicit 1.0x scene-aware video mode capped at 1920x1080-equivalent input and gated by the same pinned runtime, fresh Defender preflight, isolated child process, process-tree checks, NGX/CUDA evidence, temporary firewall block, scene resets, and clean CLOSE requirements used during research. It is never chosen by default and does not replace v3. The one-frame, temporal, real-video A/B, scene-cut, and 128-frame soak gates passed on the RTX 3070 Ti, but perceptual superiority remains unproven.
 - Performance and output quality vary substantially by source media, codec, resolution, driver, and backend runtime.
 - NVIDIA runtimes and community runtime files remain subject to their own licenses and are not covered by this repository's MIT license.
 

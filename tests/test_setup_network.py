@@ -52,7 +52,7 @@ def test_setup_fails_fast_on_discard_proxy_before_conda_update():
     assert "127.0.0.1" in setup
     assert "local discard proxy" in setup
     assert setup.index("HTTP_PROXY") < setup.index("where conda")
-    assert setup.index("HTTP_PROXY") < setup.index("conda env update")
+    assert setup.index("HTTP_PROXY") < setup.index('"%NVE_CONDA_EXE%" env update')
 
 
 @pytest.mark.skipif(os.name != "nt", reason="setup.bat validation is Windows-only")

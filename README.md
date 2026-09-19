@@ -202,7 +202,7 @@ Read the full audit in [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md).
 - DLSS-G behavior remains hardware/runtime dependent; the normal Ampere path is pinned to the exact C55-validated direct-host runtime. A research-only `grid4-gpu-candidate` profile now carries the tested forward/GPU-resident/4x4 NVOF settings, but it is not the normal default or a replacement for the pinned C55 binary.
 - DLSS 5 is experimental, hardware- and runtime-dependent, and may alter semantic content.
 - The currently validated RTX 3070-family/Ampere v3 path is restricted to 1.0× output; higher v3 output scales remain blocked because the tested pairing reproducibly fell back with NGX `InvalidParameter (0xBAD00005)`.
-- Visual Enhancer v10 is the newest Neuroframe research candidate. Its normal backend remains disabled; only an isolated, explicitly acknowledged 256×256/one-frame native hardware gate is reachable for research, and it is not substituted for the validated v3 Feature-18 execution path.
+- Visual Enhancer v10 is the newest Neuroframe research candidate. Its normal backend remains disabled; an isolated, explicitly acknowledged 256×256/one-frame native Feature-18 gate has now passed on the RTX 3070 Ti, but v10 is still not substituted for the validated v3 execution path and multi-frame temporal stability remains unvalidated.
 - Performance and output quality vary substantially by source media, codec, resolution, driver, and backend runtime.
 - NVIDIA runtimes and community runtime files remain subject to their own licenses and are not covered by this repository's MIT license.
 
@@ -223,6 +223,12 @@ Primary development and hardware validation has been performed on:
 - DLSS 5 v3 Feature-18 provisioning and hardware self-test also passed on the
   RTX 3070 Ti with the managed hash/Defender/firewall/approval gates in place;
   the validated Ampere execution path remains the experimental 1.0× mode.
+- The first isolated DLSS 5 Visual Enhancer v10 native gate also passed on the
+  RTX 3070 Ti at 256×256 / 1.0× / one frame: bridge ABI 6, NGX create/evaluate
+  success, CUDA success, measurable Neural Rendering output, zero spawned child
+  processes, clean host CLOSE, and successful temporary-firewall cleanup.
+  This is bounded compatibility evidence only; the normal v10 backend remains
+  disabled and multi-frame temporal validation is still pending.
 - Other development testing also includes RTX 3070 where separately documented.
 
 This is a development and validation configuration, not a minimum requirement or a claim of official NVIDIA support for every backend. Backend availability depends on the installed GPU, driver, and exact runtime combination; in particular, this does not establish official DLSS 5 support on RTX 30-series hardware. GPU smoke tests count as validation only when the relevant local runtime is actually present.

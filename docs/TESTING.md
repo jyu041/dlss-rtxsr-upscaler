@@ -63,13 +63,17 @@ powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_bounded.ps1 -Exec
 powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_temporal.ps1 -Execute
 powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_video_ab.ps1 -Execute -Input "C:\path\to\clip.mp4"
 powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_scene_cut.ps1 -Execute -Input "C:\path\to\clip.mp4"
+powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_scene_soak.ps1 -Execute -Input "C:\path\to\clip.mp4"
 ```
 
 The real-video A/B defaults to 16 frames beginning at source frame 30 and
 compares a persistent temporal session against an all-reset control. The
 scene-cut gate defaults to 32 frames beginning at frame 0 and fails if that
 window contains no detected hard cut. It compares no-cut-reset, scene-aware
-reset and all-reset control sessions.
+reset and all-reset control sessions. The 128-frame scene-aware soak then
+compares scene-aware reset against all-reset control and adds source-derived
+motion-compensated temporal diagnostics while keeping those diagnostics outside
+the PASS/FAIL decision.
 
 These commands refresh the pinned runtime/static audit and Defender preflight
 before native execution. They are developer hardware gates, not ordinary

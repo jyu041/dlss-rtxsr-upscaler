@@ -75,7 +75,7 @@ try {
         Remove-Item -LiteralPath $managedDir -Recurse -Force
     }
     New-Item -ItemType Directory -Force -Path $managedDir | Out-Null
-    Copy-Item -LiteralPath (Join-Path $payload '*') -Destination $managedDir -Recurse -Force
+    Copy-Item -Path (Join-Path $payload '*') -Destination $managedDir -Recurse -Force
 
     Write-Host "DLSSG_GRID4_MANAGED_SELFTEST_START worker=$managedWorker"
     & $managedWorker --selftest

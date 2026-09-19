@@ -16,6 +16,11 @@ class FakeClient:
             "native_loaded": False,
             "experimental_native_mode": True,
             "normal_backend_enabled": False,
+            "bounded_contract": {
+                "input": [256, 256],
+                "processing_scale": 1.0,
+                "max_frames": 1,
+            },
         }
 
     def create(self, request):
@@ -114,6 +119,66 @@ def test_bounded_v10_fake_pass_installs_and_removes_firewall(monkeypatch, tmp_pa
     ]
     assert calls[0][0] == "install"
     assert calls[-1][0] == "remove"
+
+
+def test_bounded_v10_rejects_wrong_hello_contract(monkeypatch, tmp_path):
+    class WrongHelloClient(FakeClient):
+        def start_native_experimental(self, runtime, preflight, *, acknowledgement):
+            value = super().start_native_experimental(
+                runtime, preflight, acknowledgement=acknowledgement
+            )
+            value["bounded_contract"]["max_frames"] = 2
+            return value
+
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    preflight = tmp_path / "preflight.json"
+    preflight.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(bounded, "validate_preflight_report", lambda *args: {})
+    monkeypatch.setattr(bounded, "V10ProtocolClient", WrongHelloClient)
+    monkeypatch.setattr(
+        bounded,
+        "assert_no_host_descendants",
+        lambda pid, stage: {"stage": stage, "host_pid": pid, "descendant_count": 0, "descendants": []},
+    )
+    monkeypatch.setattr(bounded, "install_temporary_firewall_block", lambda *args: None)
+    monkeypatch.setattr(bounded, "remove_temporary_firewall_block", lambda *args: None)
+
+    report = bounded.run_bounded(runtime, preflight, gpu_ordinal=0)
+    assert report["status"] == "FAIL"
+    assert "contract mismatch" in report["error"]
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("ngx_create_result", -1),
+    ("ngx_evaluate_result", -1),
+])
+def test_bounded_v10_rejects_non_success_feature_results(monkeypatch, tmp_path, field, value):
+    class BadFeatureClient(FakeClient):
+        def process_frame(self, frame):
+            output = super().process_frame(frame)
+            setattr(output, field, value)
+            return output
+
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    preflight = tmp_path / "preflight.json"
+    preflight.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(bounded, "validate_preflight_report", lambda *args: {})
+    monkeypatch.setattr(bounded, "V10ProtocolClient", BadFeatureClient)
+    monkeypatch.setattr(
+        bounded,
+        "assert_no_host_descendants",
+        lambda pid, stage: {"stage": stage, "host_pid": pid, "descendant_count": 0, "descendants": []},
+    )
+    monkeypatch.setattr(bounded, "install_temporary_firewall_block", lambda *args: None)
+    monkeypatch.setattr(bounded, "remove_temporary_firewall_block", lambda *args: None)
+
+    report = bounded.run_bounded(runtime, preflight, gpu_ordinal=0)
+    assert report["status"] == "FAIL"
+    assert "did not return success" in report["error"]
 
 
 def test_bounded_v10_failure_before_create_keeps_native_executed_false(monkeypatch, tmp_path):

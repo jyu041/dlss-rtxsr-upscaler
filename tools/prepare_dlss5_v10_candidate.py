@@ -14,14 +14,16 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 from datetime import datetime, timezone
 
-from src.backends.dlss5_v10_static import inspect_v10_runtime
-from src.runtime_manager.core import RuntimeManager, extract_safe_zip, verify_artifact
-
-
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.backends.dlss5_v10_static import inspect_v10_runtime  # noqa: E402
+from src.runtime_manager.core import RuntimeManager, extract_safe_zip, verify_artifact  # noqa: E402
 MANIFEST = ROOT / "src" / "runtime_manager" / "manifest.json"
 RUNTIME_ID = "dlss5-neuroframe-v10-static-candidate"
 DEFAULT_ARCHIVE = ROOT / "runtime" / "downloads" / "Visual.Enhancer.v10.0.zip"

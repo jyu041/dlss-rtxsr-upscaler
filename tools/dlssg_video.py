@@ -10,8 +10,15 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.backends.dlssg import DLSSGBackend  # noqa: E402
-from src.backends.dlssg_worker import NVOF_PROFILES  # noqa: E402
+from src.backends.dlssg import (  # noqa: E402
+    DLSSGBackend,
+    WORKER_IDENTITY_GRID4_RESEARCH,
+    WORKER_IDENTITY_VALIDATED,
+)
+from src.backends.dlssg_worker import (  # noqa: E402
+    NVOF_PROFILE_GRID4_GPU_CANDIDATE,
+    NVOF_PROFILES,
+)
 from src.video.dlssg import render_dlssg  # noqa: E402
 
 
@@ -39,7 +46,17 @@ def main() -> int:
     parser.add_argument("--diagnostics", action="store_true", help="Enable slow per-generated-frame validation and visual artifacts")
     parser.add_argument("--no-encode-control", action="store_true", help="Measurement-only sink: consume/hash RGBA frames without FFmpeg encoding")
     args = parser.parse_args()
-    backend = DLSSGBackend(args.worker, args.community_runtime, args.official_runtime_dir)
+    worker_identity_policy = (
+        WORKER_IDENTITY_GRID4_RESEARCH
+        if args.nvof_profile == NVOF_PROFILE_GRID4_GPU_CANDIDATE
+        else WORKER_IDENTITY_VALIDATED
+    )
+    backend = DLSSGBackend(
+        args.worker,
+        args.community_runtime,
+        args.official_runtime_dir,
+        worker_identity_policy=worker_identity_policy,
+    )
     result = render_dlssg(
         args.input,
         args.output,

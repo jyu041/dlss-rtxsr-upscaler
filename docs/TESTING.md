@@ -52,3 +52,21 @@ recomposition remains the authoritative latency measurement.
 Use synthetic or owned media. Do not run unrestricted recursive pytest
 discovery when an extracted local runtime tree exists; target `tests`
 explicitly.
+
+## DLSS5 v10 bounded research gates
+
+The normal v10 application backend remains disabled. The isolated research
+sequence is intentionally progressive:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_bounded.ps1 -Execute
+powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_temporal.ps1 -Execute
+powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_video_ab.ps1 -Execute -Input "C:\path\to\clip.mp4"
+```
+
+The real-video A/B defaults to 16 frames beginning at source frame 30 and
+compares a persistent temporal session against an all-reset control. These
+commands refresh the pinned runtime/static audit and Defender preflight before
+native execution. They are developer hardware gates, not ordinary pytest or
+normal application startup.
+

@@ -32,6 +32,8 @@ DEFAULT_RUNTIME = (
 )
 DEFAULT_PREFLIGHT = ROOT / "runtime" / "audit" / "dlss5-v10-preflight.json"
 DEFAULT_OUTPUT = ROOT / "runtime" / "audit" / "dlss5-v10-bounded-hardware.json"
+NGX_RESULT_SUCCESS = 1
+BOUNDED_RGBA_BYTES = 256 * 256 * 4
 
 
 def _quote_ps(value: str) -> str:
@@ -154,6 +156,41 @@ def assert_no_host_descendants(pid: int | None, stage: str) -> dict[str, object]
     return evidence
 
 
+def validate_bounded_hello(hello: dict[str, object]) -> None:
+    contract = hello.get("bounded_contract")
+    expected = {
+        "input": [256, 256],
+        "processing_scale": 1.0,
+        "max_frames": 1,
+    }
+    if contract != expected:
+        raise RuntimeError(
+            f"bounded v10 host contract mismatch: expected {expected}, got {contract!r}"
+        )
+
+
+def validate_feature_result(output) -> None:
+    if (output.width, output.height) != (256, 256):
+        raise RuntimeError(
+            f"bounded v10 output geometry must remain 256x256, got "
+            f"{output.width}x{output.height}"
+        )
+    if output.ngx_create_result != NGX_RESULT_SUCCESS:
+        raise RuntimeError(
+            f"Feature-18 NGX create did not return success: "
+            f"0x{output.ngx_create_result & 0xFFFFFFFF:08X}"
+        )
+    if output.ngx_evaluate_result != NGX_RESULT_SUCCESS:
+        raise RuntimeError(
+            f"Feature-18 NGX evaluate did not return success: "
+            f"0x{output.ngx_evaluate_result & 0xFFFFFFFF:08X}"
+        )
+    if len(output.rgba) != BOUNDED_RGBA_BYTES:
+        raise RuntimeError(
+            f"bounded v10 output byte count {len(output.rgba)} != {BOUNDED_RGBA_BYTES}"
+        )
+
+
 def synthetic_frame() -> np.ndarray:
     width = height = 256
     y, x = np.mgrid[0:height, 0:width]
@@ -213,6 +250,7 @@ def run_bounded(
             acknowledgement=EXPERIMENT_ACK,
         )
         report["hello"] = hello
+        validate_bounded_hello(hello)
         report["process_tree_checks"].append(
             assert_no_host_descendants(client.pid, "after_hello")
         )
@@ -240,6 +278,10 @@ def run_bounded(
         )
         report["create"] = create
         report["native_executed"] = bool(create.get("native_loaded") is True)
+        if create.get("output_size") != [256, 256]:
+            raise RuntimeError(
+                f"bounded v10 CREATE output_size mismatch: {create.get('output_size')!r}"
+            )
         report["process_tree_checks"].append(
             assert_no_host_descendants(client.pid, "after_create")
         )
@@ -271,6 +313,7 @@ def run_bounded(
         report["process_tree_checks"].append(
             assert_no_host_descendants(client.pid, "after_frame")
         )
+        validate_feature_result(output)
         report["feature_evidence"] = {
             "ngx_create_result": output.ngx_create_result,
             "ngx_evaluate_result": output.ngx_evaluate_result,

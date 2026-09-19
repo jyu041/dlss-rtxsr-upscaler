@@ -138,8 +138,53 @@ def test_actual_local_webui_launch():
 def test_enhancement_selector_is_the_single_routing_source():
     assert mode_visibility("RTX VSR only") == (True, False, False, False)
     assert mode_visibility("DLSS 5 only") == (False, True, False, False)
+    assert mode_visibility("DLSS 5 v10 Experimental") == (False, True, False, False)
     assert mode_visibility("DLSS SR only") == (False, False, True, False)
     assert mode_visibility("DLSS Frame Generation 2X") == (False, False, False, True)
+
+
+def test_v10_mode_is_exposed_but_never_selected_as_default(monkeypatch):
+    choices = webui.available_mode_choices()
+    assert ("DLSS 5 v10 Experimental", "DLSS 5 v10 Experimental") in choices
+
+    class NotReady:
+        available = False
+        state = "UNAVAILABLE"
+
+    class Ready:
+        available = True
+
+    monkeypatch.setattr(webui, "RTXVSRBackend", lambda: type("Backend", (), {"status": lambda self: NotReady()})())
+    monkeypatch.setattr(webui, "DLSSSRBackend", lambda: type("Backend", (), {"status": lambda self: NotReady()})())
+    monkeypatch.setattr(webui, "DLSSGBackend", lambda: type("Backend", (), {"status": lambda self: NotReady()})())
+    monkeypatch.setattr(webui, "DLSS5Backend", lambda: type("Backend", (), {"status": lambda self: NotReady()})())
+    monkeypatch.setattr(webui, "DLSS5V10ExperimentalBackend", lambda: type("Backend", (), {"status": lambda self: Ready()})())
+    assert webui.default_mode() == "RTX VSR only"
+
+
+def test_v10_mode_forces_1x_scale_and_restores_v3_choices(monkeypatch):
+    locked = webui.dlss_scale_update_for_mode("DLSS 5 v10 Experimental", 2.0)
+    assert locked["choices"] == [1.0]
+    assert locked["value"] == 1.0
+
+    class Backend:
+        def supported_output_scales(self):
+            return [1.0, 1.5, 2.0]
+
+    monkeypatch.setattr(webui, "DLSS5Backend", Backend)
+    restored = webui.dlss_scale_update_for_mode("DLSS 5 only", 2.0)
+    assert restored["choices"] == [1.0, 1.5, 2.0]
+    assert restored["value"] == 2.0
+
+
+def test_v10_ui_has_explicit_preflight_and_application_renderer():
+    source = open("src/ui/app.py", encoding="utf-8").read()
+    assert '("DLSS 5 v10 Experimental", "DLSS 5 v10 Experimental")' in source
+    assert 'gr.Button("Refresh DLSS 5 v10 preflight")' in source
+    assert "DLSS5V10ExperimentalBackend()" in source
+    assert "render_dlss5_v10(" in source
+    assert "refresh_dlss5_v10_preflight" in source
+    assert "mode.change(dlss_scale_update_for_mode" in source
 
 
 def test_default_mode_prefers_ready_rtx_vsr(monkeypatch):

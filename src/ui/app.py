@@ -33,6 +33,7 @@ from src.video.dlss5_v10 import render_dlss5_v10
 from src.video.dlss_sr import process_dlss_sr_frame, render_dlss_sr
 from src.video.dlssg import ffmpeg_executable, render_dlssg
 from src.runtime_manager import RuntimeManager
+from src.runtime_manager.core import verify_artifact
 
 os.environ.setdefault("GRADIO_ANALYTICS_ENABLED","False")
 CONTROLLER = JobController()
@@ -139,10 +140,14 @@ def refresh_dlss5_v10_preflight():
     try:
         manager = RuntimeManager(RUNTIME_MANIFEST, RUNTIME_ROOT)
         spec = manager.specs[runtime_id]
-        if (
-            not archive.is_file()
-            or archive.stat().st_size != int(spec.size_bytes or -1)
-        ):
+        archive_valid = False
+        if archive.is_file():
+            try:
+                verify_artifact(archive, spec)
+                archive_valid = True
+            except (OSError, ValueError):
+                archive_valid = False
+        if not archive_valid:
             archive.parent.mkdir(parents=True, exist_ok=True)
             manager.download(runtime_id, archive)
         from tools.prepare_dlss5_v10_candidate import stage_candidate

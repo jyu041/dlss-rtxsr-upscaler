@@ -10,7 +10,8 @@ def test_release_launcher_prefers_portable_and_supports_source_conda():
     assert "check_portable_runtime.py" in source
     assert '--root "%~dp0."' in source
     assert ":source_mode" in source
-    assert "conda run --no-capture-output" in source
+    assert 'call "%NVE_CONDA_EXE%" run --no-capture-output' in source
+    assert "NVE_CONDA_EXE" in source
     assert "config\\source_env.bat" in source
     assert "where ffmpeg" in source
 

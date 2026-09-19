@@ -41,6 +41,7 @@ from .dlss5_v10_static import V10_EXPECTED_FILES
 
 EXPERIMENT_ACK = "BOUNDED_256_ONE_FRAME"
 TEMPORAL_EXPERIMENT_ACK = "BOUNDED_256_THREE_FRAME"
+VIDEO_AB_EXPERIMENT_ACK = "BOUNDED_256_VIDEO_AB_16"
 
 
 SIMULATED_NATIVE_RESULT = -2147483648
@@ -157,6 +158,8 @@ def experimental_native_server(
     expected_ack: str = EXPERIMENT_ACK,
     max_frames: int = 1,
     temporal_sequence: bool = False,
+    reset_every_frame: bool = False,
+    video_ab_mode: str | None = None,
 ) -> int:
     if __import__("os").environ.get("NVE_DLSS5_V10_NATIVE") != expected_ack:
         print(
@@ -164,8 +167,12 @@ def experimental_native_server(
             file=sys.stderr,
         )
         return 77
-    if max_frames not in (1, 3):
-        raise ValueError("experimental native v10 max_frames must be 1 or 3")
+    if max_frames not in (1, 3, 16):
+        raise ValueError("experimental native v10 max_frames must be 1, 3, or 16")
+    if temporal_sequence and reset_every_frame:
+        raise ValueError("experimental native v10 reset policies are mutually exclusive")
+    if video_ab_mode not in (None, "persistent", "reset-control"):
+        raise ValueError("invalid v10 video A/B mode")
 
     from .dlss5_v10_native import V10NativeSession, load_bridge
     from .dlss5_v10_security import validate_preflight_report
@@ -179,23 +186,20 @@ def experimental_native_server(
     frame_count = 0
     stdout = sys.stdout.buffer
     stdin = sys.stdin.buffer
-    stdout.write(
-        encode_json(
-            HELLO,
-            0,
-            {
-                "protocol_version": PROTOCOL_VERSION,
-                "native_loaded": False,
-                "experimental_native_mode": True,
-                "normal_backend_enabled": False,
-                "bounded_contract": {
-                    "input": [256, 256],
-                    "processing_scale": 1.0,
-                    "max_frames": max_frames,
-                },
-            },
-        )
-    )
+    hello = {
+        "protocol_version": PROTOCOL_VERSION,
+        "native_loaded": False,
+        "experimental_native_mode": True,
+        "normal_backend_enabled": False,
+        "bounded_contract": {
+            "input": [256, 256],
+            "processing_scale": 1.0,
+            "max_frames": max_frames,
+        },
+    }
+    if video_ab_mode is not None:
+        hello["video_ab_mode"] = video_ab_mode
+    stdout.write(encode_json(HELLO, 0, hello))
     stdout.flush()
 
     try:
@@ -253,6 +257,10 @@ def experimental_native_server(
                         raise V10ProtocolError(
                             "temporal v10 sequence requires reset=False after the first FRAME"
                         )
+                if reset_every_frame and not frame.reset:
+                    raise V10ProtocolError(
+                        "reset-control v10 sequence requires reset=True on every FRAME"
+                    )
                 output = native_session.process_frame(frame)
                 frame_count += 1
                 stdout.write(encode_message(OUTPUT, request_id, output.encode()))
@@ -330,6 +338,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--protocol-selftest-server", action="store_true")
     parser.add_argument("--experimental-native-serve", action="store_true")
     parser.add_argument("--experimental-native-temporal-serve", action="store_true")
+    parser.add_argument("--experimental-native-video-persistent-serve", action="store_true")
+    parser.add_argument("--experimental-native-video-reset-serve", action="store_true")
     parser.add_argument("--runtime-dir", type=Path)
     parser.add_argument("--preflight-report", type=Path)
     args = parser.parse_args(argv)
@@ -357,6 +367,34 @@ def main(argv: list[str] | None = None) -> int:
             expected_ack=TEMPORAL_EXPERIMENT_ACK,
             max_frames=3,
             temporal_sequence=True,
+        )
+
+    if args.experimental_native_video_persistent_serve:
+        if args.runtime_dir is None or args.preflight_report is None:
+            parser.error(
+                "--experimental-native-video-persistent-serve requires --runtime-dir and --preflight-report"
+            )
+        return experimental_native_server(
+            args.runtime_dir,
+            args.preflight_report,
+            expected_ack=VIDEO_AB_EXPERIMENT_ACK,
+            max_frames=16,
+            temporal_sequence=True,
+            video_ab_mode="persistent",
+        )
+
+    if args.experimental_native_video_reset_serve:
+        if args.runtime_dir is None or args.preflight_report is None:
+            parser.error(
+                "--experimental-native-video-reset-serve requires --runtime-dir and --preflight-report"
+            )
+        return experimental_native_server(
+            args.runtime_dir,
+            args.preflight_report,
+            expected_ack=VIDEO_AB_EXPERIMENT_ACK,
+            max_frames=16,
+            reset_every_frame=True,
+            video_ab_mode="reset-control",
         )
 
     if args.serve:

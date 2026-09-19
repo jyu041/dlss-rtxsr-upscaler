@@ -52,6 +52,11 @@ public `v0.1.0-beta.2` release:
 
 - C55 DLSS-G worker, SHA-256
   `C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916`
+- experimental managed grid4 DLSS-G worker, from the separate
+  `dlssg-grid4-worker-v1` project release, SHA-256
+  `E097BC87558D6E12ECE1963E67CD7330570BCFBF6C6ED336B10F1EF6DF2A5881`;
+  its exact 209,002-byte release ZIP is pinned to SHA-256
+  `5A6644CC78EFEFB3705C80E7859D53C0E75081AAAE33C676D0DC451BE74B80C9`
 - DLSS SR host, SHA-256
   `E23F3CD5BEB5E70001E9950C890027D46F84CEB4439A09CEA67E343AB34A34BB`
 - validated official DLSS SR REL runtime, SHA-256
@@ -68,6 +73,9 @@ Setup provisions the normal DLSS-G runtime set through the manifest-driven
 Runtime Manager:
 
 - the project C55 worker under `runtime/dlssg/worker/`;
+- the separately pinned project grid4/GPU-resident NVOF worker under
+  `runtime/dlssg/grid4-worker/`; the archive also installs its build
+  provenance, NVIDIA RTX SDK license, and third-party notices;
 - the validated SM86 direct-host `version.dll` and `dlssg_sm86.ini` from pinned
   upstream commit `5f62ff44a9c08f9841fa605e7b7160f79ccd2c40` under
   `runtime/dlssg/legacy/`;
@@ -81,6 +89,16 @@ and size 15,667,520 bytes. The exact INI has SHA-256
 `FD7F0722194E6E8D8C085327D9826EFFB411925A69A5E7549D70EFF26A9F18B5`
 and size 581 bytes. This runtime combination has retained RTX 3070 Ti evidence
 for 2X Frame Generation plus 3X/4X Multi Frame Generation.
+
+The optional `grid4-gpu-candidate` application profile uses the exact managed
+worker SHA-256
+`E097BC87558D6E12ECE1963E67CD7330570BCFBF6C6ED336B10F1EF6DF2A5881`.
+That exact packaged worker passed the managed 640x480 / 2X real-video gate on
+the RTX 3070 Ti: 442 input frames produced exactly 884 output frames, duration
+and audio were preserved, interpolation-disable and device-removal failure
+lists were empty, and the worker/decoder/encoder exited cleanly. This is a
+hardware-tested experimental profile, not the default; C55/grid1 remains the
+normal path. See `docs/MFG_GRID4_MANAGED_WORKER_HARDWARE_2026-09-19.md`.
 
 The external community/provider files are not redistributed by this source
 repository. `setup.bat` is an explicit user-initiated network action that
@@ -102,6 +120,7 @@ The generated `config/source_env.bat` records the canonical normal locations:
 
 ```text
 runtime/dlssg/worker/dlssg_sm86_offline.exe
+runtime/dlssg/grid4-worker/dlssg_sm86_offline.exe
 runtime/dlssg/legacy/version.dll
 runtime/dlssg/legacy/dlssg_sm86.ini
 runtime/dlssg/official/
@@ -224,8 +243,10 @@ prefer the source-checkout workflow above.
 
 Developers may rebuild the native project workers from source. Native builds
 require separately staged NVIDIA SDK headers/libraries and the appropriate
-Visual Studio C++ toolchain. These SDK inputs are not needed by a normal user
-after the validated public project binaries have been bootstrapped.
+Visual Studio C++ toolchain. These SDK inputs are not needed by a normal user after the validated public
+project binaries have been bootstrapped. In particular, selecting the managed
+grid4 profile does not require the user to install the DLSS, NVAPI, or Optical
+Flow SDKs or rebuild the instrumented worker locally.
 
 For the DLSS SR host, place the compatible NVIDIA SDK under
 `third_party/local/nvidia-dlss-sdk-full`, then run:

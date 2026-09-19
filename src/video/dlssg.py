@@ -14,7 +14,7 @@ import time
 from typing import Callable
 
 from src.backends.dlssg import DLSSGBackend
-from src.backends.dlssg_worker import DlssgWorker, MOTION_MODE_NVIDIA_OPTICAL_FLOW
+from src.backends.dlssg_worker import (\n    DlssgWorker,\n    MOTION_MODE_NVIDIA_OPTICAL_FLOW,\n    NVOF_PROFILE_VALIDATED,\n)
 from src.core.paths import safe_input
 from src.core.progress import report_progress
 
@@ -284,6 +284,7 @@ def render_dlssg(
     multiplier: int = 2,
     diagnostics: bool | None = None,
     encode_output: bool = True,
+    nvof_profile: str = NVOF_PROFILE_VALIDATED,
 ) -> dict[str, object]:
     """Generate ordered intermediate frames and preserve duration at multiplier CFR.
 
@@ -426,6 +427,7 @@ def render_dlssg(
             strict_runtime_hash=True,
             diagnostic_callback=on_diagnostic_line,
             diagnostic_mode=bool(diagnostics),
+            nvof_profile=nvof_profile,
         )
         lifecycle["worker_construction_seconds"] = time.perf_counter() - worker_start
         context_start = time.perf_counter()
@@ -662,6 +664,7 @@ def render_dlssg(
             "input_fps": fps,
             "output_fps": output_fps,
             "multiplier": multiplier,
+            "nvof_profile": nvof_profile,
             "input_frames": input_count,
             "generated_frames": generated_count,
             "unique_interpolated_frames": generated_count,

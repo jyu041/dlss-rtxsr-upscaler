@@ -202,7 +202,7 @@ Read the full audit in [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md).
 - DLSS-G behavior remains hardware/runtime dependent; the normal Ampere path is pinned to the exact C55-validated direct-host runtime. A research-only `grid4-gpu-candidate` profile now carries the tested forward/GPU-resident/4x4 NVOF settings, but it is not the normal default or a replacement for the pinned C55 binary.
 - DLSS 5 is experimental, hardware- and runtime-dependent, and may alter semantic content.
 - The currently validated RTX 3070-family/Ampere v3 path is restricted to 1.0× output; higher v3 output scales remain blocked because the tested pairing reproducibly fell back with NGX `InvalidParameter (0xBAD00005)`.
-- Visual Enhancer v10 is the newest Neuroframe research candidate. Its normal backend remains disabled; both the isolated 256×256 one-frame gate and a separate three-frame temporal gate have passed on the RTX 3070 Ti. A separate 16-frame real-video persistent-vs-reset A/B gate is now implemented but not yet hardware-validated. This remains bounded research evidence, not normal-backend promotion.
+- Visual Enhancer v10 is the newest Neuroframe research candidate. Its normal backend remains disabled; the isolated one-frame, three-frame temporal, and 16-frame real-video persistent-vs-reset gates have passed on the RTX 3070 Ti. The real-video run proved that temporal state affects frames 1–15, but its unwarped temporal-error metrics were higher than the reset control, so this is not evidence of superior visual quality. A separate 32-frame scene-cut/reset gate is now the next bounded milestone.
 - Performance and output quality vary substantially by source media, codec, resolution, driver, and backend runtime.
 - NVIDIA runtimes and community runtime files remain subject to their own licenses and are not covered by this repository's MIT license.
 
@@ -231,8 +231,14 @@ Primary development and hardware validation has been performed on:
   reset pattern `[true,false,false]`: all three frames returned NGX/CUDA
   success, the non-reset frames preserved `scene_reset=0`, all three outputs
   were distinct, no child process appeared, CLOSE was clean, and firewall
-  cleanup succeeded. The normal v10 backend remains disabled; short real-video
-  and longer-session validation are still pending.
+  cleanup succeeded.
+- The 16-frame real-video v10 A/B gate then passed on the same RTX 3070 Ti.
+  Frame 0 matched between fresh reset sessions while every frame 1–15 differed
+  between persistent and reset control, proving active temporal state on actual
+  video. The persistent path had higher unwarped temporal residual/delta error
+  on that sample, so quality superiority is not claimed. Scene-cut reset
+  behavior is the next bounded hardware gate; the normal v10 backend remains
+  disabled.
 - Other development testing also includes RTX 3070 where separately documented.
 
 This is a development and validation configuration, not a minimum requirement or a claim of official NVIDIA support for every backend. Backend availability depends on the installed GPU, driver, and exact runtime combination; in particular, this does not establish official DLSS 5 support on RTX 30-series hardware. GPU smoke tests count as validation only when the relevant local runtime is actually present.

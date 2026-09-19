@@ -1,0 +1,111 @@
+name: publish-grid4-worker
+
+on:
+  push:
+    branches:
+      - integrate/mfg-grid4-managed-worker
+    paths:
+      - ".github/workflows/publish-grid4-worker.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      SOURCE_RUN_ID: "35447075622"
+      RELEASE_TAG: "dlssg-grid4-worker-v1"
+      ASSET_NAME: "dlssg-grid4-worker-candidate.zip"
+      ASSET_SHA256: "5A6644CC78EFEFB3705C80E7859D53C0E75081AAAE33C676D0DC451BE74B80C9"
+      ASSET_SIZE: "209002"
+      WORKER_SHA256: "E097BC87558D6E12ECE1963E67CD7330570BCFBF6C6ED336B10F1EF6DF2A5881"
+      WORKER_SIZE: "613376"
+      SOURCE_COMMIT: "76702915f5c55423786d6fdd92e69ef1f55bbfa5"
+    steps:
+      - name: Check out release metadata
+        uses: actions/checkout@v4
+
+      - name: Download exact validated Actions artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/grid4-artifact"
+          gh run download "$SOURCE_RUN_ID"             --repo "$GITHUB_REPOSITORY"             --name dlssg-grid4-worker-candidate             --dir "$RUNNER_TEMP/grid4-artifact"
+          ls -la "$RUNNER_TEMP/grid4-artifact"
+
+      - name: Verify exact archive and payload identities
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import zipfile
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "grid4-artifact"
+          asset = root / os.environ["ASSET_NAME"]
+          if not asset.is_file():
+              raise SystemExit(f"missing exact candidate archive: {asset}")
+
+          data = asset.read_bytes()
+          archive_hash = hashlib.sha256(data).hexdigest().upper()
+          if archive_hash != os.environ["ASSET_SHA256"]:
+              raise SystemExit(f"archive SHA-256 mismatch: {archive_hash}")
+          if len(data) != int(os.environ["ASSET_SIZE"]):
+              raise SystemExit(f"archive size mismatch: {len(data)}")
+
+          expected = {
+              "dlssg-grid4-worker/BUILD-PROVENANCE.json",
+              "dlssg-grid4-worker/dlssg_sm86_offline.exe",
+              "dlssg-grid4-worker/LICENSE-NVIDIA-RTX-SDK.txt",
+              "dlssg-grid4-worker/THIRD_PARTY_NOTICES.md",
+          }
+          with zipfile.ZipFile(asset) as zf:
+              names = {name for name in zf.namelist() if not name.endswith("/")}
+              if names != expected:
+                  raise SystemExit(f"unexpected archive member set: {sorted(names)}")
+              worker = zf.read("dlssg-grid4-worker/dlssg_sm86_offline.exe")
+              worker_hash = hashlib.sha256(worker).hexdigest().upper()
+              if worker_hash != os.environ["WORKER_SHA256"]:
+                  raise SystemExit(f"worker SHA-256 mismatch: {worker_hash}")
+              if len(worker) != int(os.environ["WORKER_SIZE"]):
+                  raise SystemExit(f"worker size mismatch: {len(worker)}")
+              provenance = json.loads(
+                  zf.read("dlssg-grid4-worker/BUILD-PROVENANCE.json").decode("utf-8-sig")
+              )
+              if provenance.get("source_commit") != os.environ["SOURCE_COMMIT"]:
+                  raise SystemExit(
+                      f"source commit mismatch: {provenance.get('source_commit')}"
+                  )
+              if provenance.get("worker", {}).get("sha256") != os.environ["WORKER_SHA256"]:
+                  raise SystemExit("provenance worker identity mismatch")
+
+          print(
+              "GRID4_RELEASE_IDENTITY_PASS "
+              f"archive_sha256={archive_hash} worker_sha256={worker_hash}"
+          )
+
+      - name: Publish immutable candidate release asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          asset="$RUNNER_TEMP/grid4-artifact/$ASSET_NAME"
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG"               --repo "$GITHUB_REPOSITORY"               --target "$SOURCE_COMMIT"               --title "DLSS-G grid4 worker v1"               --prerelease               --notes "Project-owned DLSS-G grid4/GPU-resident NVOF worker candidate. Exact worker SHA-256: $WORKER_SHA256. Exact archive SHA-256: $ASSET_SHA256. Hardware gate passed on the project's RTX 3070 Ti validation machine; C55/grid1 remains the default path."
+          fi
+          gh release upload "$RELEASE_TAG" "$asset#$ASSET_NAME"             --repo "$GITHUB_REPOSITORY"             --clobber
+
+      - name: Verify published asset metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG"             --repo "$GITHUB_REPOSITORY"             --json tagName,isPrerelease,assets,url

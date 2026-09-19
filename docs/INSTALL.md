@@ -20,14 +20,21 @@ winget install --id Gyan.FFmpeg --source winget
 
 Restart the shell after changing `PATH`.
 
-Clone the public repository and run:
+Clone the public repository and run from PowerShell:
 
-```bat
+```powershell
 git clone --recurse-submodules https://github.com/jyu041/dlss-rtxsr-upscaler.git
 cd dlss-rtxsr-upscaler
-setup.bat
-start.bat
+.\setup.bat
+.\start.bat
 ```
+
+In Command Prompt, use `setup.bat` and `start.bat` without the leading
+`.\`. Setup first looks for `conda` in the current shell and then checks
+the common per-user, LocalAppData, and ProgramData Miniconda/Anaconda install
+locations. The resolved Conda executable is written to
+`config/source_env.bat`, so normal later startup does not require reopening
+the same Conda-enabled terminal.
 
 `setup.bat` is the provisioning boundary for a normal user. It creates/updates
 the dedicated `dlss-rtxsr-upscaler` Conda environment, installs Python 3.11,

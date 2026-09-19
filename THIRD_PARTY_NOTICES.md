@@ -39,6 +39,15 @@ recorded the same hashes from inspected mirror commit
 MIT-style notices (Copyright (c) 2018-2023 and 2020-2023). Preserve those
 notices. `nvofapi64.dll` is driver-provided and is not bundled.
 
+The project-owned managed grid4 worker is published as application object code
+under project release `dlssg-grid4-worker-v1`. The exact worker SHA-256 is
+`E097BC87558D6E12ECE1963E67CD7330570BCFBF6C6ED336B10F1EF6DF2A5881`;
+the exact release ZIP SHA-256 is
+`5A6644CC78EFEFB3705C80E7859D53C0E75081AAAE33C676D0DC451BE74B80C9`.
+The ZIP carries the NVIDIA RTX SDK license, this third-party notice file, and
+build provenance. It does not bundle `nvapi64.dll`, `nvofapi64.dll`, the
+community direct-host runtime, or the NVIDIA DLSS-G provider.
+
 ## Community and official runtimes
 
 The beta.2 package includes the official DLSS SR REL `nvngx_dlss.dll` used by

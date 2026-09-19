@@ -104,7 +104,10 @@ def test_dlssg_legacy_runtime_fields_are_discarded(tmp_path, monkeypatch):
         "nvof_profile": "validated",
     }
     persisted = json.loads(settings.read_text(encoding="utf-8"))["last_used"]["dlssg"]
-    assert persisted == controls
+    assert persisted == {
+        **controls,
+        "nvof_profile": "validated",
+    }
 
     settings.write_text(json.dumps({"schema_version": 1, "last_used": {"dlssg": legacy}}), encoding="utf-8")
     assert user_presets.load_last_used()["dlssg"] == controls

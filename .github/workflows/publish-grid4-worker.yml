@@ -98,9 +98,20 @@ jobs:
           set -euo pipefail
           asset="$RUNNER_TEMP/grid4-artifact/$ASSET_NAME"
           if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG"               --repo "$GITHUB_REPOSITORY"               --target "$SOURCE_COMMIT"               --title "DLSS-G grid4 worker v1"               --prerelease               --notes "Project-owned DLSS-G grid4/GPU-resident NVOF worker candidate. Exact worker SHA-256: $WORKER_SHA256. Exact archive SHA-256: $ASSET_SHA256. Hardware gate passed on the project's RTX 3070 Ti validation machine; C55/grid1 remains the default path."
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_COMMIT" --title "DLSS-G grid4 worker v1" --prerelease --notes "Project-owned DLSS-G grid4/GPU-resident NVOF worker candidate. Exact worker SHA-256: $WORKER_SHA256. Exact archive SHA-256: $ASSET_SHA256. Hardware gate passed on the project's RTX 3070 Ti validation machine; C55/grid1 remains the default path."
           fi
-          gh release upload "$RELEASE_TAG" "$asset#$ASSET_NAME"             --repo "$GITHUB_REPOSITORY"             --clobber
+
+          release_json="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets)"
+          remote_digest="$(printf '%s' "$release_json" | jq -r --arg name "$ASSET_NAME" '.assets[] | select(.name == $name) | .digest // empty')"
+          remote_size="$(printf '%s' "$release_json" | jq -r --arg name "$ASSET_NAME" '.assets[] | select(.name == $name) | .size // empty')"
+          if [ -n "$remote_digest" ]; then
+            expected_digest="sha256:$(printf '%s' "$ASSET_SHA256" | tr '[:upper:]' '[:lower:]')"
+            test "$remote_digest" = "$expected_digest"
+            test "$remote_size" = "$ASSET_SIZE"
+            echo "GRID4_RELEASE_ASSET_ALREADY_VERIFIED digest=$remote_digest size=$remote_size"
+          else
+            gh release upload "$RELEASE_TAG" "$asset#$ASSET_NAME" --repo "$GITHUB_REPOSITORY"
+          fi
 
       - name: Verify published asset metadata
         shell: bash

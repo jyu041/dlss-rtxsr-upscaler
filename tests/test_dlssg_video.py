@@ -6,7 +6,7 @@ import pytest
 
 from src.backends import dlssg as dlssg_backend
 from src.backends.dlssg import DLSSGBackend
-from src.video.dlssg import _bitstream_color_options, _read_frame, output_frame_count, scene_cut_metrics
+from src.video.dlssg import _bitstream_color_options, _hresult_failed, _read_frame, output_frame_count, scene_cut_metrics
 
 
 class ShortReadStream:
@@ -33,6 +33,20 @@ def test_output_frame_count_duration_policy():
 def test_output_frame_count_rejects_unsupported_multiplier(multiplier):
     with pytest.raises(ValueError, match="multiplier"):
         output_frame_count(4, multiplier=multiplier)
+
+
+@pytest.mark.parametrize(
+    ("code", "failed"),
+    [
+        ("0x00000000", False),
+        ("0x00000001", False),
+        ("0x887A0005", True),
+        ("0x887A0006", True),
+        ("garbage", True),
+    ],
+)
+def test_hresult_failure_classification_matches_windows_semantics(code, failed):
+    assert _hresult_failed(code) is failed
 
 
 def test_raw_frame_reader_handles_short_pipe_reads():

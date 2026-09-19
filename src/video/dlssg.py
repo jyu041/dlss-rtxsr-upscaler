@@ -220,6 +220,15 @@ def _read_frame(stream, frame_bytes: int) -> bytes:
     return b"".join(chunks)
 
 
+def _hresult_failed(code: str) -> bool:
+    """Mirror Windows FAILED(hr): the sign/high bit marks failure."""
+    try:
+        value = int(code, 16) & 0xFFFFFFFF
+    except (TypeError, ValueError):
+        return True
+    return bool(value & 0x80000000)
+
+
 def _latency_summary(values: list[float]) -> dict[str, float | int]:
     if not values:
         return {"count": 0, "median_ms": 0.0, "p90_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0, "max_ms": 0.0}
@@ -330,6 +339,7 @@ def render_dlssg(
     worker_lines: deque[str] = deque(maxlen=2048)
     worker_log_stream = log_path.open("w", encoding="utf-8")
     worker_nvof_initializations = worker_create_features = worker_evaluates = 0
+    worker_device_removal_queries: set[str] = set()
     worker_device_removals: set[str] = set()
     timings: dict[str, list[float]] = defaultdict(list)
     hashes: list[str] = []
@@ -364,7 +374,10 @@ def render_dlssg(
         if line.startswith("WORKER_EVALUATE "):
             worker_evaluates += 1
         if "DEVICE_REMOVED_REASON=" in line:
-            worker_device_removals.add(line.rsplit("=", 1)[-1])
+            code = line.rsplit("=", 1)[-1].upper()
+            worker_device_removal_queries.add(code)
+            if _hresult_failed(code):
+                worker_device_removals.add(code)
         if diagnostic_callback:
             diagnostic_callback(line)
 
@@ -635,6 +648,7 @@ def render_dlssg(
             "dlssg_create_feature_count": worker_create_features,
             "evaluate_count": worker_evaluates,
             "worker_restarts": 0,
+            "device_removal_query_results": sorted(worker_device_removal_queries),
             "device_removal_results": sorted(worker_device_removals),
             "worker_exit_code": client.last_exit_code,
         })

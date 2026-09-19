@@ -30,6 +30,9 @@ def test_grid4_candidate_wrapper_is_explicit_and_fails_closed():
     assert "NVOF_OUTPUT_GRID_SELECTED=4 " in source
     assert "interpolation_disabled_frame_ids" in source
     assert "device_removal_results" in source
+    renderer_source = (ROOT / "src" / "video" / "dlssg.py").read_text(encoding="utf-8")
+    assert "device_removal_query_results" in renderer_source
+    assert "_hresult_failed(code)" in renderer_source
     assert "DLSSG_GRID4_CANDIDATE_PASS" in source
 
     assert source.index("& $build @buildArgs") < source.index("& $python $video")

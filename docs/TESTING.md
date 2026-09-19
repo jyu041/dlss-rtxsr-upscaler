@@ -70,10 +70,24 @@ The real-video A/B defaults to 16 frames beginning at source frame 30 and
 compares a persistent temporal session against an all-reset control. The
 scene-cut gate defaults to 32 frames beginning at frame 0 and fails if that
 window contains no detected hard cut. It compares no-cut-reset, scene-aware
-reset and all-reset control sessions. The 128-frame scene-aware soak then
-compares scene-aware reset against all-reset control and adds source-derived
+reset and all-reset control sessions. The 128-frame scene-aware soak compares
+scene-aware reset against all-reset control and adds source-derived
 motion-compensated temporal diagnostics while keeping those diagnostics outside
-the PASS/FAIL decision.
+the native PASS/FAIL decision.
+
+The soak also exports three synchronized MP4 review artifacts from the exact
+in-memory frames used for the metrics:
+
+- `source-sceneaware-reset-<scale>x.mp4`;
+- `sceneaware-reset-<scale>x.mp4`;
+- `sceneaware-reset-diff8x-<scale>x.mp4`.
+
+The default review scale is 2x; `-ReviewScale 1`, `2`, or `4` can be
+supplied to the PowerShell wrapper. The difference video amplifies the
+scene-aware/reset absolute RGB difference by 8x. Review encoding occurs only
+after both bounded native sessions have closed, so it is diagnostic artifact
+generation rather than part of the native execution boundary. The wrapper
+requires all three review videos and prints their paths explicitly.
 
 These commands refresh the pinned runtime/static audit and Defender preflight
 before native execution. They are developer hardware gates, not ordinary

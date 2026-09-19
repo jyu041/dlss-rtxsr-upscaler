@@ -173,3 +173,15 @@ class DLSSGBackend(Backend):
 
     def close(self) -> None:
         return None
+
+def backend_for_nvof_profile(profile: str) -> "DLSSGBackend":
+    """Construct the fail-closed backend for one application NVOF profile."""
+    if profile == "validated":
+        return DLSSGBackend()
+    if profile == "grid4-gpu-candidate":
+        return DLSSGBackend(
+            worker=RESEARCH_INSTRUMENTED_WORKER,
+            worker_identity_policy=WORKER_IDENTITY_GRID4_RESEARCH,
+        )
+    raise ValueError(f"Unknown DLSS-G NVOF profile: {profile}")
+

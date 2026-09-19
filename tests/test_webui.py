@@ -301,6 +301,37 @@ def test_ui_has_no_redundant_processing_or_sr_workflow():
     assert "2X Frame Generation, 3X Multi Frame Generation, and 4X Multi Frame Generation are hardware-validated" in source
 
 
+
+def test_webui_is_task_first_and_separates_configuration_and_diagnostics():
+    source = open("src/ui/app.py", encoding="utf-8").read()
+    enhance = source.index('with gr.Tab("Enhance")')
+    configuration = source.index('with gr.Tab("Configuration")')
+    diagnostics = source.index('with gr.Tab("Diagnostics")')
+    runtime_manager = source.index('gr.Markdown("### Runtime Manager")')
+    progress = source.index('progress_panel = gr.HTML(progress_html(CONTROLLER.snapshot())')
+
+    assert enhance < configuration < diagnostics
+    assert runtime_manager > configuration
+    assert enhance < progress < configuration
+
+    status_source = source[source.index("def status_html():"):source.index("def runtime_cards_markdown()")]
+    assert "Managed components" not in status_source
+    assert "runtime_card" not in status_source
+
+    # Gradio 6 left empty framed shells for hidden Group containers. Backend
+    # settings now use visibility-controlled Columns instead.
+    assert 'with gr.Group(visible=rtx_initial, elem_classes="backend-group")' not in source
+    assert 'with gr.Column(visible=rtx_initial, elem_classes=["backend-panel", "backend-rtx"])' in source
+    assert 'with gr.Column(visible=dlssg_initial, elem_classes=["backend-panel", "backend-dlssg"])' in source
+
+    # Readiness/admin controls are deliberately kept out of the Enhance tab.
+    sr_readiness = source.index('gr.Markdown("### DLSS SR readiness")')
+    v10_readiness = source.index('gr.Markdown("### DLSS 5 v10 experimental readiness")')
+    assert configuration < sr_readiness < diagnostics
+    assert configuration < v10_readiness < diagnostics
+
+
+
 def test_portable_launcher_verifies_manifest_before_embedded_python():
     source = open("start.bat", encoding="utf-8").read()
     check = source.index("check_portable_runtime.py")

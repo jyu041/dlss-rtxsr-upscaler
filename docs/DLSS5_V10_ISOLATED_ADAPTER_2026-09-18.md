@@ -556,5 +556,71 @@ state. The harness also records whether no-reset carry-over changes the cut
 frame, temporal metrics around each cut, and source/no-reset/scene-aware/reset
 review panels.
 
+### Thirty-two-frame scene-cut/reset hardware result
+
+The scene-cut/reset gate passed on 2026-09-19 on the RTX 3070 Ti using
+`trimmed.mp4`, source frames 0-31. The detector identified hard cuts at
+frames 5 and 23.
+
+All three native sessions passed execution and containment checks. Each produced
+32 unique outputs, no frame was byte-identical to its input, no descendant
+process appeared, each host returned `CLOSED`, and firewall cleanup succeeded.
+
+The reset semantics were exact:
+
+- the fresh frame-0 output matched reset control bit-for-bit in both comparison
+  sessions;
+- at cut frame 5, scene-aware reset matched reset control bit-for-bit while the
+  no-cut-reset path differed with MAE `3.148956`, RMSE `5.177971`, maximum
+  error `54`, and changed-pixel ratio `0.989349`;
+- at cut frame 23, scene-aware reset again matched reset control bit-for-bit
+  while the no-cut-reset path differed with MAE `3.936096`, RMSE
+  `6.947761`, maximum error `55`, and changed-pixel ratio `0.969391`.
+
+This establishes that the explicit v10 reset clears temporal carry-over at both
+tested real scene boundaries rather than only changing a reported reset flag.
+
+The global unwarped temporal diagnostic also moved in the expected direction
+relative to never resetting at cuts:
+
+- source-delta/residual MAE mean: no-cut-reset `2.584162`, scene-aware
+  `2.433787`, reset control `2.380039`;
+- source-delta RMSE mean: no-cut-reset `4.059786`, scene-aware `3.810563`,
+  reset control `3.337175`.
+
+These measurements remain motion-confounded and are not a visual-quality
+ranking.
+
+## 128-frame scene-aware soak milestone
+
+The next isolated gate is a 128-frame real-video A/B soak. It compares:
+
+1. a scene-aware temporal session reset on frame 0 and every detected hard cut;
+2. an all-reset control over the exact same source frames.
+
+The acknowledgement is `BOUNDED_256_SCENE_AWARE_128`. The normal application
+backend remains disabled.
+
+The gate preserves the existing runtime identity, Defender, firewall, RTX
+3070-family, ABI-6, NGX/CUDA, process-tree, stale-output, CLOSE and cleanup
+requirements. It also requires exact reset-control parity on frame 0 and every
+detected cut, and requires temporal-state influence on at least one non-reset
+frame.
+
+In addition to the existing unwarped metrics, the soak records a
+motion-compensated enhancement-residual flicker diagnostic. Backward optical
+flow is estimated only from source luma, cut transitions are excluded, the
+previous enhancement residual is warped into the current frame, and both source
+alignment error and residual flicker are retained. This is diagnostic evidence
+only; it does not automatically decide which mode has better visual quality.
+
+The reproducible entry point is:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_scene_soak.ps1 `
+    -Execute `
+    -Input "C:\path\to\clip.mp4"
+```
+
 The normal v10 backend remains disabled.
 

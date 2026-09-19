@@ -1,7 +1,10 @@
 # DLSS5 v10 Isolated Adapter Contract — 2026-09-18
 
-This milestone defines the process boundary for a future Visual Enhancer v10
-Feature-18 adapter. It does **not** load or execute the v10 runtime.
+This document started by defining the process boundary for a Visual Enhancer v10
+Feature-18 adapter. The normal application backend remains disabled. A later
+milestone added a separately acknowledged, one-frame native execution path used
+only by the bounded RTX 3070/3070 Ti research gate; no successful v10 hardware
+execution is claimed until that gate is actually run and its evidence passes.
 
 ## Why a separate host
 
@@ -41,11 +44,15 @@ The resulting `V10HostPlan` records:
 
 The public `launch_host()` entry point raises `V10ExecutionDisabled`.
 
-## Host process scaffold
+## Host process boundary
 
-`src/backends/dlss5_v10_host.py` is intentionally non-executing.
+`src/backends/dlss5_v10_host.py` keeps normal `--serve` execution blocked.
+It also contains an explicitly separate `--experimental-native-serve` mode
+reachable only through the bounded client acknowledgement and fresh security
+preflight. That mode is not wired into setup, startup, the UI, or the normal
+DLSS 5 backend.
 
-Current supported operation:
+The non-native contract selftest remains available:
 
 ```powershell
 python -m src.backends.dlss5_v10_host --contract-selftest
@@ -61,8 +68,9 @@ It validates the static Python ABI/protocol definitions and reports:
 - required exports;
 - expected file hashes.
 
-`--serve` currently exits with a blocked status and contains no
-`ctypes.CDLL`, `WinDLL`, or `LoadLibrary` implementation.
+`--serve` still exits with a blocked status. Native loading is reachable only
+from `--experimental-native-serve`, which imports the isolated loader after the
+bounded acknowledgement/security gates have passed.
 
 ## Protocol
 
@@ -203,8 +211,11 @@ The parent supervisor uses real subprocess pipes and implements:
 - owned-process termination after poison;
 - 1 s bounded close grace.
 
-The normal `start()` method remains blocked with `V10ExecutionDisabled`;
-only `start_protocol_selftest()` can spawn a process at this milestone.
+The normal `start()` method remains blocked with `V10ExecutionDisabled`.
+`start_protocol_selftest()` remains non-native, while
+`start_native_experimental()` requires the exact
+`BOUNDED_256_ONE_FRAME` acknowledgement and is reserved for the bounded
+hardware validator.
 
 ## Offline native-loader review
 
@@ -225,11 +236,12 @@ connected to the host:
 - optional `dlss5nr_release_session` is bound if present;
 - no NGX shutdown/unload routine is part of the isolated-host lifecycle plan.
 
-The module is covered with fake-library tests. The production host currently
-does not import `dlss5_v10_native` and does not reference `load_bridge`.
+The module is covered with fake-library tests. The normal production host path
+does not load it; the bounded experimental host imports `load_bridge` only
+after the explicit acknowledgement and fresh preflight have been validated.
 
-This gives us reviewed loader source without creating a reachable native
-execution path yet.
+This preserves a reviewed loader source while keeping native execution outside
+the normal application path.
 
 ## Intended execution architecture
 
@@ -290,3 +302,38 @@ Additional pass criteria for the first bounded native run:
 - host CLOSE must complete cleanly rather than falling back to forced termination;
 - temporary firewall-rule removal is part of pass/fail: cleanup failure forces
   the overall report to FAIL and surfaces a manual-cleanup error.
+
+## Current first-hardware-run gate
+
+The bounded validator now fails closed unless all of the following are true:
+
+- HELLO advertises exactly 256x256 input, 1.0x processing scale and one maximum frame;
+- CREATE reports native loading, output size 256x256, bridge ABI 6, the requested
+  GPU ordinal, and an RTX 3070/3070 Ti device name;
+- the one FRAME returns exactly 256x256 RGBA8 bytes;
+- both Feature-18 `ngx_create_result` and `ngx_evaluate_result` equal the
+  bridge's NGX success value `1`;
+- the rendered output shows a measurable Neural Rendering effect;
+- no descendant process appears after HELLO, CREATE or FRAME;
+- CLOSE completes normally without NGX global shutdown/module unload;
+- the exact-interpreter outbound firewall rule is removed successfully.
+
+This prevents a changed image, fallback path, or non-success NGX result from
+being mistaken for a successful v10 compatibility result.
+
+The reproducible local entry point is:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_bounded.ps1 -Execute
+```
+
+That wrapper deliberately refreshes the candidate staging/static identity and
+Microsoft Defender preflight **before** invoking the one-frame validator with
+the exact `BOUNDED_256_ONE_FRAME` acknowledgement. It remains a developer
+research command and is not called by `setup.bat` or `start.bat`.
+
+The next evidence milestone is the first successful bounded native run on the
+RTX 3070 Ti. Until that occurs, v10 remains unvalidated for hardware execution
+and the validated v3 Feature-18 path remains the normal experimental DLSS 5
+implementation.
+

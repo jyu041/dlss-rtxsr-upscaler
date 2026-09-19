@@ -39,6 +39,13 @@ MOTION_MODE_EXTERNAL_R16G16_FLOAT = 1
 MOTION_MODE_NVIDIA_OPTICAL_FLOW = 2
 PROCESS_FLAG_RESET = 1
 
+NVOF_PROFILE_VALIDATED = "validated"
+NVOF_PROFILE_GRID4_GPU_CANDIDATE = "grid4-gpu-candidate"
+NVOF_PROFILES = (
+    NVOF_PROFILE_VALIDATED,
+    NVOF_PROFILE_GRID4_GPU_CANDIDATE,
+)
+
 REQUEST_HEADER = struct.Struct("<IHHII")
 RESPONSE_HEADER = struct.Struct("<IHHIiI")
 HELLO_RESPONSE = struct.Struct("<IIII")
@@ -205,6 +212,7 @@ class DlssgWorker:
         strict_runtime_hash: bool = False,
         diagnostic_callback: Callable[[str], None] | None = None,
         diagnostic_mode: bool = False,
+        nvof_profile: str = NVOF_PROFILE_VALIDATED,
     ):
         self.executable = Path(executable)
         self.community_runtime = Path(community_runtime)
@@ -213,6 +221,15 @@ class DlssgWorker:
         self.strict_runtime_hash = strict_runtime_hash
         self.diagnostic_callback = diagnostic_callback
         self.diagnostic_mode = diagnostic_mode
+        if nvof_profile not in NVOF_PROFILES:
+            raise ValueError(
+                f"nvof_profile must be one of {', '.join(NVOF_PROFILES)}"
+            )
+        if diagnostic_mode and nvof_profile == NVOF_PROFILE_GRID4_GPU_CANDIDATE:
+            raise ValueError(
+                "grid4-gpu-candidate requires production diagnostics to remain disabled"
+            )
+        self.nvof_profile = nvof_profile
         self._process: subprocess.Popen[bytes] | None = None
         self.last_exit_code: int | None = None
         self._request_id = 0
@@ -250,6 +267,29 @@ class DlssgWorker:
                 raise ValueError(message)
             warnings.warn(message, RuntimeWarning, stacklevel=2)
 
+    def _build_environment(self) -> dict[str, str]:
+        environment = os.environ.copy()
+        if self.diagnostic_mode:
+            environment["DLSSG_WORKER_DIAGNOSTIC"] = "1"
+        else:
+            environment.pop("DLSSG_WORKER_DIAGNOSTIC", None)
+
+        if self.nvof_profile == NVOF_PROFILE_GRID4_GPU_CANDIDATE:
+            # This profile is intentionally explicit and research-only until a
+            # newly built worker passes the candidate hardware/promotion gates.
+            environment["DLSSG_NVOF_DIRECTION"] = "forward"
+            environment["DLSSG_NVOF_GPU_FLOW"] = "1"
+            environment["DLSSG_NVOF_OUTPUT_GRID"] = "4"
+        else:
+            # Preserve the validated C55 behavior. Forward-only flow was
+            # previously validated, while GPU-resident/grid4 controls remain
+            # untouched unless an advanced caller explicitly supplied them.
+            environment.setdefault(
+                "DLSSG_NVOF_DIRECTION",
+                "both" if self.diagnostic_mode else "forward",
+            )
+        return environment
+
     def start(self) -> None:
         if self._process is not None:
             raise DlssgWorkerError("worker already started")
@@ -262,15 +302,7 @@ class DlssgWorker:
             "--official-runtime-dir",
             str(self.official_runtime_dir),
         ]
-        environment = os.environ.copy()
-        if self.diagnostic_mode:
-            environment["DLSSG_WORKER_DIAGNOSTIC"] = "1"
-        else:
-            environment.pop("DLSSG_WORKER_DIAGNOSTIC", None)
-        # Forward-only NVOF produces the same current-to-previous field as
-        # BOTH on the validated Ampere path, while avoiding the unused reverse
-        # output.  Keep BOTH available for explicit diagnostic/fallback runs.
-        environment.setdefault("DLSSG_NVOF_DIRECTION", "both" if self.diagnostic_mode else "forward")
+        environment = self._build_environment()
         self._process = subprocess.Popen(
             command,
             stdin=subprocess.PIPE,

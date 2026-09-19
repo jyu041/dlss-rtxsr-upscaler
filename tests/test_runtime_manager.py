@@ -306,6 +306,12 @@ def test_manifest_loads_dlss5_v10_static_candidate():
     assert candidate.constraints["feature_id_observed"] == 18
     assert candidate.constraints["processing_scale_is_lanczos_pre_resize"] is True
     assert candidate.constraints["native_output_scaling_unverified"] is True
+    assert candidate.constraints["experimental_app_enabled"] is True
+    assert candidate.constraints["experimental_app_processing_scales"] == [1.0]
+    assert candidate.constraints["experimental_app_max_long_edge"] == 1920
+    assert candidate.constraints["experimental_app_max_short_edge"] == 1080
+    assert candidate.constraints["experimental_app_tested_gpu"] == "NVIDIA GeForce RTX 3070 Ti"
+    assert candidate.constraints["experimental_app_evidence"] == "docs/DLSS5_V10_APP_HARDWARE_2026-09-19.md"
     audit = candidate.constraints["static_audit"]
     assert audit["workflow_run_id"] == 35311872691
     assert audit["executed"] is False

@@ -68,6 +68,13 @@ powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_scene_soak.ps1 -E
 powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_app_smoke.ps1 -Execute -Input "C:\path\to\clip.mp4"
 ```
 
+Application-level hardware evidence is recorded in
+[`DLSS5_V10_APP_HARDWARE_2026-09-19.md`](DLSS5_V10_APP_HARDWARE_2026-09-19.md).
+On the RTX 3070 Ti, the exact UI renderer path passed both a 90-frame 640x480
+smoke and a 30-frame 1920x1080 ceiling smoke at 1.0x. Both runs required the
+fresh static/Defender preflight, isolated host, per-frame validation, clean
+`CLOSED`, and firewall containment/cleanup before the wrapper emitted PASS.
+
 The real-video A/B defaults to 16 frames beginning at source frame 30 and
 compares a persistent temporal session against an all-reset control. The
 scene-cut gate defaults to 32 frames beginning at frame 0 and fails if that

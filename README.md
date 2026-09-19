@@ -256,7 +256,17 @@ Primary development and hardware validation has been performed on:
   mean was higher than reset control while its p95/max were lower, so the
   result is retained as diagnostic evidence rather than a visual-quality
   verdict. The soak now exports synchronized playable comparison clips for
-  perceptual review; the normal v10 backend remains disabled.
+  perceptual review; those research gates preceded the explicit application
+  integration below.
+- The explicit `DLSS 5 v10 Experimental` application path then passed a 90-frame
+  640x480 smoke render on the same RTX 3070 Ti. It preserved audio, detected
+  four scene cuts, issued the initial reset plus four cut resets, returned a
+  clean host `CLOSED`, and completed firewall containment/cleanup.
+- The same application renderer subsequently passed the advertised geometry
+  ceiling at 1920x1080 / 1.0x for 30 frames. Bridge ABI 6 initialized on the
+  RTX 3070 Ti, the host closed cleanly, and the wrapper reported both
+  `DLSS5_V10_APP_VIDEO_PASS` and `DLSS5_V10_APP_SMOKE_PASS`. See
+  [`docs/DLSS5_V10_APP_HARDWARE_2026-09-19.md`](docs/DLSS5_V10_APP_HARDWARE_2026-09-19.md).
 - Other development testing also includes RTX 3070 where separately documented.
 
 This is a development and validation configuration, not a minimum requirement or a claim of official NVIDIA support for every backend. Backend availability depends on the installed GPU, driver, and exact runtime combination; in particular, this does not establish official DLSS 5 support on RTX 30-series hardware. GPU smoke tests count as validation only when the relevant local runtime is actually present.

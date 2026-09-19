@@ -186,10 +186,16 @@ The currently exercised RTX 3070-family/Ampere v3 path accepts 1.0x DLSS 5
 output. Higher output scales remain blocked for that validated pairing because
 they reproducibly fell back with NGX `InvalidParameter (0xBAD00005)`.
 
-The pinned Neuroframe v10 research candidate remains separate and static-only;
-setup does not substitute v10 for the validated v3 execution path. The earlier
-v9 candidate is retained as historical static-audit evidence. See
-`docs/DLSS5_APPROVAL.md` for the complete approval and hardware-scope contract.
+The pinned Neuroframe v10 runtime remains separate from the validated v3 path
+and is not provisioned or activated by `setup.bat`. Runtime Manager continues to
+track it as a selective/static candidate artifact, while the application exposes
+a separately acknowledged **DLSS 5 v10 Experimental** mode. That mode performs
+its own pinned archive verification, fresh Defender preflight, isolated-host
+containment, and per-render execution checks. The tested application boundary is
+currently SDR RGBA8, 1.0x, up to 1920x1080-equivalent input. The earlier v9
+candidate is retained as historical static-audit evidence. See
+`docs/DLSS5_APPROVAL.md` and `docs/DLSS5_V10_APP_HARDWARE_2026-09-19.md` for the
+approval and hardware-scope record.
 
 ## Startup behavior
 

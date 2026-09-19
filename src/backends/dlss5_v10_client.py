@@ -21,6 +21,7 @@ TEMPORAL_EXPERIMENT_ACK = "BOUNDED_256_THREE_FRAME"
 VIDEO_AB_EXPERIMENT_ACK = "BOUNDED_256_VIDEO_AB_16"
 SCENE_CUT_EXPERIMENT_ACK = "BOUNDED_256_SCENE_CUT_32"
 SCENE_SOAK_EXPERIMENT_ACK = "BOUNDED_256_SCENE_AWARE_128"
+APP_EXPERIMENT_ACK = "EXPERIMENTAL_APP_SCENE_AWARE_V10"
 
 from .dlss5_v10_protocol import (
     CLOSE,
@@ -381,6 +382,55 @@ class V10ProtocolClient:
             or value.get("scene_cut_mode") != hello_mode
         ):
             self._poison("invalid bounded scene-aware soak native HELLO")
+            raise V10ProtocolError(self._poison_reason)
+        return value
+
+    def start_native_application_experimental(
+        self,
+        runtime_dir: str | Path,
+        preflight_report: str | Path,
+        *,
+        acknowledgement: str,
+    ) -> dict[str, object]:
+        if acknowledgement != APP_EXPERIMENT_ACK:
+            raise V10ExecutionDisabled(
+                "experimental application v10 start requires the exact acknowledgement token"
+            )
+        self._native_mode = True
+        env = dict(os.environ)
+        env["NVE_DLSS5_V10_NATIVE"] = APP_EXPERIMENT_ACK
+        self._spawn(
+            [
+                self.python,
+                "-u",
+                "-m",
+                "src.backends.dlss5_v10_host",
+                "--experimental-native-app-serve",
+                "--runtime-dir",
+                str(Path(runtime_dir).expanduser().resolve()),
+                "--preflight-report",
+                str(Path(preflight_report).expanduser().resolve()),
+            ],
+            env=env,
+        )
+        command, request_id, payload = self._wait(self.start_timeout)
+        if command != HELLO or request_id != 0:
+            self._poison(
+                f"expected HELLO request 0, received command={command} request={request_id}"
+            )
+            raise V10ProtocolError(self._poison_reason)
+        value = decode_json(payload)
+        contract = value.get("application_contract") if isinstance(value, dict) else None
+        if (
+            not isinstance(value, dict)
+            or value.get("native_loaded") is not False
+            or value.get("experimental_native_mode") is not True
+            or value.get("experimental_application_mode") is not True
+            or value.get("normal_backend_enabled") is not False
+            or not isinstance(contract, dict)
+            or contract.get("processing_scales") != [1.0]
+        ):
+            self._poison("invalid experimental application v10 HELLO")
             raise V10ProtocolError(self._poison_reason)
         return value
 

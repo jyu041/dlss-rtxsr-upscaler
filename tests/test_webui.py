@@ -152,7 +152,15 @@ def test_default_mode_prefers_ready_rtx_vsr(monkeypatch):
 def test_ui_build_uses_saved_dlssg_controls_without_runtime_paths(tmp_path, monkeypatch):
     settings = tmp_path / "settings.local.json"
     monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
-    user_presets.save_last_used("dlssg", {"motion_provider": "NVIDIA Optical Flow", "depth_mode": "Constant 0.5", "multiplier": 4})
+    user_presets.save_last_used(
+        "dlssg",
+        {
+            "motion_provider": "NVIDIA Optical Flow",
+            "depth_mode": "Constant 0.5",
+            "multiplier": 4,
+            "nvof_profile": "grid4-gpu-candidate",
+        },
+    )
     monkeypatch.setattr(webui, "default_mode", lambda: "RTX VSR only")
     ui = build()
     fields = {component.get("props", {}).get("label"): component.get("props", {}).get("value") for component in ui.config["components"]}
@@ -160,7 +168,48 @@ def test_ui_build_uses_saved_dlssg_controls_without_runtime_paths(tmp_path, monk
     assert "Official NGX runtime directory" not in fields
     assert "Runtime profile" not in fields
     assert fields["Frame multiplier"] == 4
+    assert fields["NVOF profile"] == "grid4-gpu-candidate"
     assert webui.DEFAULT_DLSSG_PROFILE == "legacy"
+
+
+
+
+
+def test_dlssg_grid4_profile_is_explicit_and_routes_to_research_backend(monkeypatch):
+    captured = {}
+
+    class Status:
+        state = "RESEARCH CANDIDATE"
+        available = True
+        reason = "grid4 ready"
+
+    class Backend:
+        def status(self):
+            return Status()
+
+    monkeypatch.setattr(
+        webui,
+        "backend_for_nvof_profile",
+        lambda profile: captured.setdefault("profile", profile) or Backend(),
+    )
+    # setdefault returns the string; use a real helper to keep the assertion explicit.
+    def factory(profile):
+        captured["profile"] = profile
+        return Backend()
+    monkeypatch.setattr(webui, "backend_for_nvof_profile", factory)
+
+    message = webui.check_dlssg_readiness("grid4-gpu-candidate")
+    assert captured["profile"] == "grid4-gpu-candidate"
+    assert "RESEARCH CANDIDATE" in message
+    assert "Available: True" in message
+
+
+def test_dlssg_ui_source_passes_selected_nvof_profile_to_renderer():
+    source = open("src/ui/app.py", encoding="utf-8").read()
+    assert 'label="NVOF profile"' in source
+    assert '"grid4-gpu-candidate"' in source
+    assert "backend_for_nvof_profile(dlssg_nvof_profile)" in source
+    assert "nvof_profile=dlssg_nvof_profile" in source
 
 
 def test_preview_directory_keeps_recent_playable_clips(tmp_path, monkeypatch):

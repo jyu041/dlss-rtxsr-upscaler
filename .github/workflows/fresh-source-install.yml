@@ -3,8 +3,31 @@ name: fresh-source-install
 on:
   push:
     branches:
-      - ci/fresh-source-install
+      - main
     paths:
+      - "setup.bat"
+      - "start.bat"
+      - "environment.yml"
+      - "requirements.txt"
+      - ".gitmodules"
+      - "src/runtime_manager/**"
+      - "src/core/diagnostics.py"
+      - "tools/manage_runtime.py"
+      - "tools/check_dlss_sr_readiness.py"
+      - "tools/validate_dlssg_candidate.py"
+      - ".github/workflows/fresh-source-install.yml"
+  pull_request:
+    paths:
+      - "setup.bat"
+      - "start.bat"
+      - "environment.yml"
+      - "requirements.txt"
+      - ".gitmodules"
+      - "src/runtime_manager/**"
+      - "src/core/diagnostics.py"
+      - "tools/manage_runtime.py"
+      - "tools/check_dlss_sr_readiness.py"
+      - "tools/validate_dlssg_candidate.py"
       - ".github/workflows/fresh-source-install.yml"
   workflow_dispatch:
 
@@ -115,7 +138,7 @@ jobs:
             if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "setup.bat did not produce required file: $relative" }
           }
           $sourceEnv = Get-Content -LiteralPath (Join-Path $root 'config\source_env.bat') -Raw
-          foreach ($needle in @('NVE_CONDA_ENV=', 'DLSSG_WORKER_EXE=', 'DLSSG_COMMUNITY_RUNTIME=', 'DLSSG_OFFICIAL_RUNTIME_DIR=')) {
+          foreach ($needle in @('NVE_CONDA_EXE=', 'NVE_CONDA_ENV=', 'DLSSG_WORKER_EXE=', 'DLSSG_COMMUNITY_RUNTIME=', 'DLSSG_OFFICIAL_RUNTIME_DIR=')) {
             if (-not $sourceEnv.Contains($needle)) { throw "source_env.bat missing $needle" }
           }
 
@@ -125,6 +148,14 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $stdout = Join-Path $env:RUNNER_TEMP 'nve-start.stdout.log'
           $stderr = Join-Path $env:RUNNER_TEMP 'nve-start.stderr.log'
+
+          # Prove start.bat can reuse the Conda executable persisted by setup,
+          # rather than succeeding only because this CI shell still has Conda on PATH.
+          $env:Path = (($env:Path -split ';') | Where-Object { $_ -and $_ -notmatch '(?i)(miniconda|anaconda|condabin)' }) -join ';'
+          if (Get-Command conda -ErrorAction SilentlyContinue) {
+            throw 'Conda is still discoverable on PATH; remembered-Conda startup is not being tested'
+          }
+
           $process = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/d','/c','start.bat') -WorkingDirectory $env:NVE_FRESH_CLONE -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
           try {
             $deadline = (Get-Date).AddSeconds(90)

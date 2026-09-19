@@ -12,9 +12,11 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import time
-from typing import Any
+from typing import Any, Iterable
 
 import cv2
 import numpy as np
@@ -58,6 +60,9 @@ DEFAULT_PREFLIGHT = ROOT / "runtime" / "audit" / "dlss5-v10-preflight.json"
 DEFAULT_OUTPUT = ROOT / "runtime" / "audit" / "dlss5-v10-scene-soak-hardware.json"
 SOAK_FRAME_COUNT = 128
 DEFAULT_START_FRAME = 0
+REVIEW_HEADER_HEIGHT = 24
+REVIEW_DIFF_GAIN = 8
+REVIEW_CRF = 8
 
 
 def validate_soak_hello(hello: dict[str, object], mode: str) -> None:
@@ -387,6 +392,234 @@ def _save_review_images(
     return saved
 
 
+def _compose_review_frame(
+    images: list[np.ndarray],
+    labels: list[str],
+    *,
+    scale: int,
+) -> np.ndarray:
+    if len(images) != len(labels) or not images:
+        raise ValueError("review images and labels must be non-empty and aligned")
+    if scale not in (1, 2, 4):
+        raise ValueError("review scale must be 1, 2, or 4")
+
+    rgb_images = [np.asarray(image[..., :3], dtype=np.uint8) for image in images]
+    height, width = rgb_images[0].shape[:2]
+    if any(image.shape != (height, width, 3) for image in rgb_images):
+        raise ValueError("all review images must have the same RGB shape")
+
+    canvas = np.zeros(
+        (height + REVIEW_HEADER_HEIGHT, width * len(rgb_images), 3),
+        dtype=np.uint8,
+    )
+    for panel_index, (image, label) in enumerate(zip(rgb_images, labels)):
+        left = panel_index * width
+        canvas[REVIEW_HEADER_HEIGHT:, left:left + width] = image
+        cv2.putText(
+            canvas,
+            label,
+            (left + 6, 17),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.43,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
+
+    if scale != 1:
+        canvas = cv2.resize(
+            canvas,
+            (canvas.shape[1] * scale, canvas.shape[0] * scale),
+            interpolation=cv2.INTER_NEAREST,
+        )
+    return canvas
+
+
+def _encode_review_video(
+    output_path: Path,
+    frames: Iterable[np.ndarray],
+    *,
+    fps: float,
+) -> dict[str, Any]:
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        raise RuntimeError("ffmpeg was not found on PATH for playable review export")
+    if fps <= 0:
+        raise ValueError(f"review fps must be positive, got {fps}")
+
+    iterator = iter(frames)
+    try:
+        first = np.ascontiguousarray(next(iterator), dtype=np.uint8)
+    except StopIteration as exc:
+        raise ValueError("review video requires at least one frame") from exc
+    if first.ndim != 3 or first.shape[2] != 3:
+        raise ValueError("review video frames must be RGB8")
+
+    height, width = first.shape[:2]
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "rgb24",
+        "-s:v",
+        f"{width}x{height}",
+        "-r",
+        f"{fps:.12g}",
+        "-i",
+        "-",
+        "-an",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "medium",
+        "-crf",
+        str(REVIEW_CRF),
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        str(output_path),
+    ]
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    if process.stdin is None or process.stderr is None:
+        process.kill()
+        raise RuntimeError("failed to open ffmpeg review-video pipes")
+
+    frame_count = 0
+    write_error: BaseException | None = None
+    try:
+        for frame in __import__("itertools").chain((first,), iterator):
+            rgb = np.ascontiguousarray(frame, dtype=np.uint8)
+            if rgb.shape != (height, width, 3):
+                raise ValueError(
+                    f"review frame shape {rgb.shape} does not match "
+                    f"{(height, width, 3)}"
+                )
+            process.stdin.write(rgb.tobytes())
+            frame_count += 1
+    except BaseException as exc:
+        write_error = exc
+    finally:
+        try:
+            process.stdin.close()
+        except Exception:
+            pass
+
+    stderr = process.stderr.read().decode("utf-8", errors="replace").strip()
+    return_code = process.wait()
+    if write_error is not None:
+        raise RuntimeError(
+            f"review-video ffmpeg input failed: {write_error}; ffmpeg={stderr}"
+        ) from write_error
+    if return_code != 0:
+        raise RuntimeError(
+            f"review-video ffmpeg exited {return_code}: {stderr or 'no stderr'}"
+        )
+
+    return {
+        "path": str(output_path.resolve()),
+        "frame_count": frame_count,
+        "fps": float(fps),
+        "width": int(width),
+        "height": int(height),
+        "encoder": "libx264",
+        "crf": REVIEW_CRF,
+        "pixel_format": "yuv420p",
+    }
+
+
+def _save_review_videos(
+    review_dir: Path,
+    sources: list[np.ndarray],
+    scene_aware: list[np.ndarray],
+    reset_control: list[np.ndarray],
+    *,
+    fps: float,
+    scale: int,
+) -> list[dict[str, Any]]:
+    if not (len(sources) == len(scene_aware) == len(reset_control)):
+        raise ValueError("review video frame lists must have equal lengths")
+    if not sources:
+        raise ValueError("review video frame lists must not be empty")
+    if scale not in (1, 2, 4):
+        raise ValueError("review scale must be 1, 2, or 4")
+
+    review_dir.mkdir(parents=True, exist_ok=True)
+
+    def triptych(index: int) -> np.ndarray:
+        return _compose_review_frame(
+            [sources[index], scene_aware[index], reset_control[index]],
+            ["SOURCE", "SCENE-AWARE", "RESET CONTROL"],
+            scale=scale,
+        )
+
+    def pair(index: int) -> np.ndarray:
+        return _compose_review_frame(
+            [scene_aware[index], reset_control[index]],
+            ["SCENE-AWARE", "RESET CONTROL"],
+            scale=scale,
+        )
+
+    def diff(index: int) -> np.ndarray:
+        scene_rgb = scene_aware[index][..., :3].astype(np.int16)
+        reset_rgb = reset_control[index][..., :3].astype(np.int16)
+        amplified = np.clip(
+            np.abs(scene_rgb - reset_rgb) * REVIEW_DIFF_GAIN,
+            0,
+            255,
+        ).astype(np.uint8)
+        return _compose_review_frame(
+            [scene_aware[index], reset_control[index], amplified],
+            ["SCENE-AWARE", "RESET CONTROL", f"ABS DIFF x{REVIEW_DIFF_GAIN}"],
+            scale=scale,
+        )
+
+    layouts = [
+        (
+            "source-sceneaware-reset",
+            triptych,
+            "source | scene-aware | reset-control",
+        ),
+        (
+            "sceneaware-reset",
+            pair,
+            "scene-aware | reset-control",
+        ),
+        (
+            "sceneaware-reset-diff8x",
+            diff,
+            "scene-aware | reset-control | amplified absolute difference",
+        ),
+    ]
+
+    videos: list[dict[str, Any]] = []
+    for filename, builder, layout in layouts:
+        path = review_dir / f"{filename}-{scale}x.mp4"
+        evidence = _encode_review_video(
+            path,
+            (builder(index) for index in range(len(sources))),
+            fps=fps,
+        )
+        evidence["layout"] = layout
+        evidence["display_scale"] = scale
+        evidence["difference_gain"] = (
+            REVIEW_DIFF_GAIN if filename.endswith("diff8x") else None
+        )
+        videos.append(evidence)
+    return videos
+
+
 def run_scene_soak(
     input_path: Path,
     runtime: Path,
@@ -395,6 +628,7 @@ def run_scene_soak(
     gpu_ordinal: int,
     start_frame: int,
     review_dir: Path,
+    review_scale: int = 2,
 ) -> dict[str, Any]:
     preflight_evidence = validate_preflight_report(runtime, preflight)
     frames, source = decode_video_frames(
@@ -535,6 +769,21 @@ def run_scene_soak(
             cut_ids,
             comparisons,
         )
+        report["review_scale"] = review_scale
+        try:
+            report["review_videos"] = _save_review_videos(
+                review_dir,
+                frames,
+                scene_frames,
+                reset_frames,
+                fps=float(source["fps"]),
+                scale=review_scale,
+            )
+            report["review_video_status"] = "PASS"
+        except Exception as exc:
+            report["review_videos"] = []
+            report["review_video_status"] = "FAIL"
+            report["review_video_error"] = str(exc)
         report["status"] = "PASS"
         return report
     except BaseException as exc:
@@ -567,6 +816,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--review-dir", type=Path)
     parser.add_argument("--gpu-ordinal", type=int, default=0)
     parser.add_argument("--start-frame", type=int, default=DEFAULT_START_FRAME)
+    parser.add_argument("--review-scale", type=int, choices=(1, 2, 4), default=2)
+    parser.add_argument("--require-review-videos", action="store_true")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--ack", default="")
     return parser
@@ -595,11 +846,16 @@ def main(argv: list[str] | None = None) -> int:
         gpu_ordinal=args.gpu_ordinal,
         start_frame=args.start_frame,
         review_dir=review_dir,
+        review_scale=args.review_scale,
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2))
-    return 0 if report.get("status") == "PASS" else 1
+    if report.get("status") != "PASS":
+        return 1
+    if args.require_review_videos and report.get("review_video_status") != "PASS":
+        return 3
+    return 0
 
 
 if __name__ == "__main__":

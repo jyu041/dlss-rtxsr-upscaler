@@ -1,8 +1,10 @@
 from pathlib import Path
+from types import SimpleNamespace
 import io
 
 import pytest
 
+from src.backends import dlssg as dlssg_backend
 from src.backends.dlssg import DLSSGBackend
 from src.video.dlssg import _bitstream_color_options, _read_frame, output_frame_count, scene_cut_metrics
 
@@ -76,6 +78,122 @@ def test_hevc_bitstream_color_metadata_preserves_full_range():
         "-bsf:v",
         "hevc_metadata=video_full_range_flag=1:colour_primaries=9:transfer_characteristics=14:matrix_coefficients=9",
     ]
+
+
+def _configured_dlssg_identity(monkeypatch, tmp_path: Path, *, worker_hash: str):
+    worker = tmp_path / "native" / "bin-instrumented" / "dlssg_sm86_offline.exe"
+    worker.parent.mkdir(parents=True)
+    worker.write_bytes(b"worker")
+    runtime = tmp_path / "legacy" / "version.dll"
+    runtime.parent.mkdir(parents=True)
+    runtime.write_bytes(b"runtime")
+    official = tmp_path / "official"
+    official.mkdir()
+
+    monkeypatch.setattr(
+        dlssg_backend,
+        "RESEARCH_INSTRUMENTED_WORKER",
+        worker.resolve(),
+    )
+    monkeypatch.setattr(
+        dlssg_backend,
+        "get_profile",
+        lambda name: SimpleNamespace(runtime_sha256="RUNTIME_HASH", ini_sha256=None),
+    )
+
+    def fake_sha256(path):
+        resolved = Path(path).resolve()
+        if resolved == worker.resolve():
+            return worker_hash
+        if resolved == runtime.resolve():
+            return "RUNTIME_HASH"
+        raise AssertionError(f"unexpected identity path: {resolved}")
+
+    monkeypatch.setattr(dlssg_backend, "sha256_file", fake_sha256)
+    monkeypatch.setattr(
+        dlssg_backend,
+        "official_runtime_identity",
+        lambda path: {"provider": str(Path(path).resolve())},
+    )
+    monkeypatch.setattr(dlssg_backend, "policy_satisfied", lambda identity: True)
+    return worker, runtime, official
+
+
+def test_default_dlssg_worker_policy_still_rejects_non_c55(monkeypatch, tmp_path: Path):
+    worker, runtime, official = _configured_dlssg_identity(
+        monkeypatch, tmp_path, worker_hash="RESEARCH_WORKER_HASH"
+    )
+    backend = DLSSGBackend(worker, runtime, official)
+    status = backend.status()
+    assert not status.available
+    assert status.state == "IDENTITY MISMATCH"
+    assert "verified C55 identity" in status.reason
+
+
+def test_grid4_research_worker_policy_accepts_only_explicit_instrumented_candidate(
+    monkeypatch, tmp_path: Path
+):
+    worker, runtime, official = _configured_dlssg_identity(
+        monkeypatch, tmp_path, worker_hash="RESEARCH_WORKER_HASH"
+    )
+    backend = DLSSGBackend(
+        worker,
+        runtime,
+        official,
+        worker_identity_policy=dlssg_backend.WORKER_IDENTITY_GRID4_RESEARCH,
+    )
+    status = backend.status()
+    assert status.available
+    assert status.state == "RESEARCH CANDIDATE"
+    assert backend.configuration.worker_identity_policy == (
+        dlssg_backend.WORKER_IDENTITY_GRID4_RESEARCH
+    )
+
+
+def test_grid4_research_worker_policy_rejects_wrong_worker_path(monkeypatch, tmp_path: Path):
+    worker, runtime, official = _configured_dlssg_identity(
+        monkeypatch, tmp_path, worker_hash="RESEARCH_WORKER_HASH"
+    )
+    wrong_worker = tmp_path / "other" / "dlssg_sm86_offline.exe"
+    wrong_worker.parent.mkdir()
+    wrong_worker.write_bytes(b"other")
+
+    original_sha = dlssg_backend.sha256_file
+    monkeypatch.setattr(
+        dlssg_backend,
+        "sha256_file",
+        lambda path: (
+            "RESEARCH_WORKER_HASH"
+            if Path(path).resolve() == wrong_worker.resolve()
+            else original_sha(path)
+        ),
+    )
+    backend = DLSSGBackend(
+        wrong_worker,
+        runtime,
+        official,
+        worker_identity_policy=dlssg_backend.WORKER_IDENTITY_GRID4_RESEARCH,
+    )
+    status = backend.status()
+    assert not status.available
+    assert status.state == "RESEARCH WORKER PATH MISMATCH"
+
+
+def test_grid4_research_worker_policy_rejects_pinned_c55(monkeypatch, tmp_path: Path):
+    worker, runtime, official = _configured_dlssg_identity(
+        monkeypatch,
+        tmp_path,
+        worker_hash=dlssg_backend.VALIDATED_WORKER_SHA256,
+    )
+    backend = DLSSGBackend(
+        worker,
+        runtime,
+        official,
+        worker_identity_policy=dlssg_backend.WORKER_IDENTITY_GRID4_RESEARCH,
+    )
+    status = backend.status()
+    assert not status.available
+    assert status.state == "RESEARCH WORKER REQUIRED"
 
 
 def test_backend_reports_missing_external_dependencies(tmp_path: Path):

@@ -14,7 +14,11 @@ import time
 from typing import Callable
 
 from src.backends.dlssg import DLSSGBackend
-from src.backends.dlssg_worker import (\n    DlssgWorker,\n    MOTION_MODE_NVIDIA_OPTICAL_FLOW,\n    NVOF_PROFILE_VALIDATED,\n)
+from src.backends.dlssg_worker import (
+    DlssgWorker,
+    MOTION_MODE_NVIDIA_OPTICAL_FLOW,
+    NVOF_PROFILE_VALIDATED,
+)
 from src.core.paths import safe_input
 from src.core.progress import report_progress
 

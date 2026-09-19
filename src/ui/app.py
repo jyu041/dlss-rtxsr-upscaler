@@ -8,7 +8,8 @@ from src.core.dlssg_readiness import assess, format_summary
 from src.backends.rtx_vsr import RTXVSRBackend
 from src.backends.dlss5 import DLSS5Backend, DLSS5_OUTPUT_SCALES
 from src.backends.dlss_sr import DLSSSRBackend
-from src.backends.dlssg import DLSSGBackend
+from src.backends.dlssg import DLSSGBackend, backend_for_nvof_profile
+from src.backends.dlssg_worker import NVOF_PROFILE_GRID4_GPU_CANDIDATE, NVOF_PROFILE_VALIDATED
 from src.video.ffmpeg import preview_frame
 from src.core.paths import TEMP
 from src.core.paths import output_path
@@ -100,13 +101,34 @@ def _save_last(backend, values):
         pass
 
 
-def save_dlssg_settings(motion_provider, depth_mode, multiplier=2):
-    _save_last("dlssg", {"motion_provider": motion_provider, "depth_mode": depth_mode, "multiplier": int(multiplier), "runtime_profile": DEFAULT_DLSSG_PROFILE})
+def save_dlssg_settings(motion_provider, depth_mode, multiplier=2, nvof_profile=NVOF_PROFILE_VALIDATED):
+    _save_last(
+        "dlssg",
+        {
+            "motion_provider": motion_provider,
+            "depth_mode": depth_mode,
+            "multiplier": int(multiplier),
+            "nvof_profile": nvof_profile,
+        },
+    )
     return "DLSS-G settings saved locally. Runtime paths are managed by setup.bat."
 
 
-def check_dlssg_readiness():
-    return "```text\n" + format_summary(assess(runtime_profile=DEFAULT_DLSSG_PROFILE)) + "\n```"
+def check_dlssg_readiness(nvof_profile=NVOF_PROFILE_VALIDATED):
+    if nvof_profile == NVOF_PROFILE_VALIDATED:
+        return "```text\n" + format_summary(assess(runtime_profile=DEFAULT_DLSSG_PROFILE)) + "\n```"
+    try:
+        status = backend_for_nvof_profile(nvof_profile).status()
+    except Exception as exc:
+        return f"```text\nExperimental grid4 readiness failed: {exc}\n```"
+    return (
+        "```text\n"
+        f"Profile: {nvof_profile}\n"
+        f"State: {status.state}\n"
+        f"Available: {status.available}\n"
+        f"Reason: {status.reason}\n"
+        "```"
+    )
 
 
 def validate_dlss_sr():
@@ -243,15 +265,15 @@ def load_last_render():
     return path, summary, detail, None, None, None, f"Loaded last successful render: {Path(path).name}", gr.update(interactive=True)
 
 
-def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, codec_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5", dlssg_multiplier=2):
+def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, codec_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5", dlssg_multiplier=2, dlssg_nvof_profile=NVOF_PROFILE_VALIDATED):
     if not path: return None, "Choose an input video."
     job = None
     try:
         job = CONTROLLER.start(); MONITOR.set_active(True); destination = output_path(Path(path), processing_mode, container_value, float(dlss_scale), int(dlssg_multiplier))
         if processing_mode == "DLSS Frame Generation 2X":
-            _save_last("dlssg", {"motion_provider": dlssg_motion, "depth_mode": dlssg_depth, "multiplier": int(dlssg_multiplier), "runtime_profile": DEFAULT_DLSSG_PROFILE})
+            _save_last("dlssg", {"motion_provider": dlssg_motion, "depth_mode": dlssg_depth, "multiplier": int(dlssg_multiplier), "nvof_profile": dlssg_nvof_profile})
             if dlssg_motion != "NVIDIA Optical Flow" or dlssg_depth != "Constant 0.5": raise RuntimeError("Only NVIDIA Optical Flow + Constant 0.5 depth is implemented")
-            backend = DLSSGBackend()
+            backend = backend_for_nvof_profile(dlssg_nvof_profile)
         elif processing_mode.startswith("DLSS SR"):
             backend = DLSSSRBackend(); status = backend.status()
             if status.state != "READY": raise RuntimeError(f"DLSS SR {status.state}: {status.reason}")
@@ -260,7 +282,7 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
             _save_last("dlss5" if processing_mode == "DLSS 5 only" else "rtx_vsr", {"mode": vsr_mode, "scale": float(scale_value), "quality": quality_value} if processing_mode != "DLSS 5 only" else {"scale": float(dlss_scale), "nr_preset": nrpreset, "nr_style": style, "model_preset": model, "intensity": float(intensity), "local_tone": float(tone), "local_structure": float(structure), "skin_structure": float(skin), "automatic_mask": mask == "On"})
         progress = tracker_callback(job.progress)
         if processing_mode == "DLSS Frame Generation 2X":
-            stats = render_dlssg(path, destination, backend, multiplier=int(dlssg_multiplier), codec={"H.264":"h264_nvenc", "HEVC":"hevc_nvenc"}[codec_value], cancel=job.cancel_event, progress=progress)
+            stats = render_dlssg(path, destination, backend, multiplier=int(dlssg_multiplier), codec={"H.264":"h264_nvenc", "HEVC":"hevc_nvenc"}[codec_value], cancel=job.cancel_event, progress=progress, nvof_profile=dlssg_nvof_profile)
             stats["frames"] = stats["output_frames"]; stats["fps"] = stats["end_to_end_fps"]; stats["dimensions"] = (stats["width"], stats["height"])
         elif processing_mode.startswith("DLSS SR"):
             stats = render_dlss_sr(path, destination, backend, sr_mode, sr_model, codec=codec_value, cancel=job.cancel_event, progress=progress)
@@ -289,7 +311,7 @@ def _preview_directory() -> Path:
     return directory
 
 
-def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, start_timestamp, duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5", dlssg_multiplier=2):
+def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, start_timestamp, duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5", dlssg_multiplier=2, dlssg_nvof_profile=NVOF_PROFILE_VALIDATED):
     if not path: return None, None, "Choose an input video."
     job = None
     clip_source = None
@@ -299,9 +321,9 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
             clip_source = preview_dir / "source.mp4"
             result = __import__('subprocess').run([ffmpeg_executable(), "-y", "-v", "error", "-ss", str(float(start_timestamp)), "-t", str(float(duration)), "-i", str(path), "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(clip_source)], capture_output=True, text=True, check=False)
             if result.returncode: raise RuntimeError(result.stderr[-1000:])
-            _save_last("dlssg", {"motion_provider": dlssg_motion, "depth_mode": dlssg_depth, "multiplier": int(dlssg_multiplier), "runtime_profile": DEFAULT_DLSSG_PROFILE})
-            backend = DLSSGBackend()
-            stats = render_dlssg(clip_source, destination, backend, multiplier=int(dlssg_multiplier), codec="h264_nvenc", cancel=job.cancel_event, progress=progress)
+            _save_last("dlssg", {"motion_provider": dlssg_motion, "depth_mode": dlssg_depth, "multiplier": int(dlssg_multiplier), "nvof_profile": dlssg_nvof_profile})
+            backend = backend_for_nvof_profile(dlssg_nvof_profile)
+            stats = render_dlssg(clip_source, destination, backend, multiplier=int(dlssg_multiplier), codec="h264_nvenc", cancel=job.cancel_event, progress=progress, nvof_profile=dlssg_nvof_profile)
             stats["frames"] = stats["output_frames"]; stats["fps"] = stats["output_fps"]; stats["dimensions"] = (stats["width"], stats["height"])
         elif processing_mode.startswith("DLSS SR"):
             backend = DLSSSRBackend(); status = backend.status()
@@ -347,6 +369,9 @@ def build():
     dlssglast = last.get("dlssg", {})
     dlssg_multiplier_default = dlssglast.get("multiplier", 2)
     if dlssg_multiplier_default not in {2, 3, 4}: dlssg_multiplier_default = 2
+    dlssg_nvof_default = dlssglast.get("nvof_profile", NVOF_PROFILE_VALIDATED)
+    if dlssg_nvof_default not in {NVOF_PROFILE_VALIDATED, NVOF_PROFILE_GRID4_GPU_CANDIDATE}:
+        dlssg_nvof_default = NVOF_PROFILE_VALIDATED
     previous_render = load_last_successful_render()
     sr_initial_status = DLSSSRBackend().status()
     sr_validation_enabled = sr_initial_status.state in {"SELFTEST REQUIRED", "READY"}
@@ -426,6 +451,15 @@ def build():
                     gr.Markdown("### DLSS Frame Generation")
                     gr.Markdown("`setup.bat` installs the pinned C55 worker, validated SM86 direct-host runtime, and official NVIDIA DLSS-G provider into managed project folders. Normal use does not require downloading DLLs or entering runtime paths.")
                     dlssg_multiplier = gr.Dropdown([("2X Frame Generation", 2), ("3X Multi Frame Generation", 3), ("4X Multi Frame Generation", 4)], value=dlssg_multiplier_default, label="Frame multiplier")
+                    dlssg_nvof_profile = gr.Dropdown(
+                        [
+                            ("Validated grid1 / pinned C55", NVOF_PROFILE_VALIDATED),
+                            ("Experimental grid4 / GPU-resident NVOF", NVOF_PROFILE_GRID4_GPU_CANDIDATE),
+                        ],
+                        value=dlssg_nvof_default,
+                        label="NVOF profile",
+                    )
+                    gr.Markdown("Grid4 is the hardware-tested performance candidate. It uses the isolated instrumented worker and does not replace the pinned C55 fallback.")
                     with gr.Row():
                         dlssg_check = gr.Button("Check DLSS-G readiness")
                     dlssg_readiness = gr.Markdown("Managed runtime readiness has not been refreshed.")
@@ -479,10 +513,10 @@ def build():
         mode.change(lambda value: value, mode, state)
         mode.change(visibility, mode, [rtx_group, dlss_group, sr_group, dlssg_group])
         preset.change(apply_preset, preset, [nrpreset, style, intensity, tone, structure, skin, mask])
-        dlssg_inputs = [dlssg_motion, dlssg_depth, dlssg_multiplier]
+        dlssg_inputs = [dlssg_motion, dlssg_depth, dlssg_multiplier, dlssg_nvof_profile]
         for control in dlssg_inputs:
             control.change(save_dlssg_settings, dlssg_inputs, dlssg_saved, show_progress="hidden")
-        dlssg_check.click(check_dlssg_readiness, outputs=dlssg_readiness, show_progress="hidden")
+        dlssg_check.click(check_dlssg_readiness, inputs=dlssg_nvof_profile, outputs=dlssg_readiness, show_progress="hidden")
         sr_validate.click(validate_dlss_sr, outputs=[status, sr_readiness, mode], show_progress="full")
         runtime_refresh.click(runtime_cards_markdown, outputs=runtime_cards, show_progress="hidden")
         runtime_action_button.click(runtime_action, [runtime_ids, runtime_action_choice, runtime_archive], runtime_action_result, show_progress="full")

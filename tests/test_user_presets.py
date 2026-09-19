@@ -62,7 +62,19 @@ def test_dlssg_settings_roundtrip_and_validation(tmp_path, monkeypatch):
     monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
     values = {"motion_provider": "NVIDIA Optical Flow", "depth_mode": "Constant 0.5"}
     user_presets.save_last_used("dlssg", values)
-    assert user_presets.load_last_used()["dlssg"] == {**values, "multiplier": 2}
+    assert user_presets.load_last_used()["dlssg"] == {
+        **values,
+        "multiplier": 2,
+        "nvof_profile": "validated",
+    }
+    grid4 = {**values, "multiplier": 4, "nvof_profile": "grid4-gpu-candidate"}
+    user_presets.save_last_used("dlssg", grid4)
+    assert user_presets.load_last_used()["dlssg"] == grid4
+    with pytest.raises(ValueError, match="NVOF profile"):
+        user_presets.save_last_used(
+            "dlssg",
+            {**values, "nvof_profile": "unknown"},
+        )
     with pytest.raises(ValueError):
         user_presets.save_last_used("dlssg", {**values, "motion_provider": "CPU"})
     with pytest.raises(ValueError):
@@ -87,9 +99,15 @@ def test_dlssg_legacy_runtime_fields_are_discarded(tmp_path, monkeypatch):
     }
 
     user_presets.save_last_used("dlssg", legacy)
-    assert user_presets.load_last_used()["dlssg"] == controls
+    assert user_presets.load_last_used()["dlssg"] == {
+        **controls,
+        "nvof_profile": "validated",
+    }
     persisted = json.loads(settings.read_text(encoding="utf-8"))["last_used"]["dlssg"]
-    assert persisted == controls
+    assert persisted == {
+        **controls,
+        "nvof_profile": "validated",
+    }
 
     settings.write_text(json.dumps({"schema_version": 1, "last_used": {"dlssg": legacy}}), encoding="utf-8")
     assert user_presets.load_last_used()["dlssg"] == controls

@@ -210,6 +210,43 @@ def test_grid4_research_worker_policy_rejects_pinned_c55(monkeypatch, tmp_path: 
     assert status.state == "RESEARCH WORKER REQUIRED"
 
 
+def test_backend_factory_keeps_validated_default(monkeypatch):
+    from src.backends import dlssg
+
+    sentinel = object()
+    monkeypatch.setattr(dlssg, "DLSSGBackend", lambda *args, **kwargs: sentinel)
+    assert dlssg.backend_for_nvof_profile("validated") is sentinel
+
+
+def test_backend_factory_selects_instrumented_grid4_worker(monkeypatch, tmp_path: Path):
+    from src.backends import dlssg
+
+    worker = tmp_path / "bin-instrumented" / "dlssg_sm86_offline.exe"
+    monkeypatch.setattr(dlssg, "RESEARCH_INSTRUMENTED_WORKER", worker.resolve())
+    captured = {}
+
+    class Backend:
+        pass
+
+    def factory(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return Backend()
+
+    monkeypatch.setattr(dlssg, "DLSSGBackend", factory)
+    backend = dlssg.backend_for_nvof_profile("grid4-gpu-candidate")
+    assert isinstance(backend, Backend)
+    assert captured["kwargs"]["worker"] == worker.resolve()
+    assert captured["kwargs"]["worker_identity_policy"] == dlssg.WORKER_IDENTITY_GRID4_RESEARCH
+
+
+def test_backend_factory_rejects_unknown_nvof_profile():
+    from src.backends import dlssg
+
+    with pytest.raises(ValueError, match="Unknown DLSS-G NVOF profile"):
+        dlssg.backend_for_nvof_profile("invalid")
+
+
 def test_backend_reports_missing_external_dependencies(tmp_path: Path):
     backend = DLSSGBackend(tmp_path / "worker.exe", tmp_path / "version.dll", tmp_path / "runtime")
     status = backend.status()

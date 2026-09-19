@@ -199,7 +199,7 @@ Read the full audit in [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md).
 
 - The current pipeline targets SDR RGBA video.
 - DLSS SR uses estimated optical flow rather than engine-provided motion vectors and may fail around cuts, occlusion, hair, and transparency.
-- DLSS-G behavior remains hardware/runtime dependent; the normal Ampere path is pinned to the exact C55-validated direct-host runtime. A research-only `grid4-gpu-candidate` profile now carries the tested forward/GPU-resident/4x4 NVOF settings, but it is not the normal default or a replacement for the pinned C55 binary.
+- DLSS-G behavior remains hardware/runtime dependent; the normal Ampere path is pinned to the exact C55-validated direct-host runtime. The UI now exposes `grid4-gpu-candidate` as an explicit experimental NVOF profile carrying the tested forward/GPU-resident/4x4 settings. It uses the isolated instrumented worker, fails closed when that worker is absent or invalid, and never silently replaces the validated grid1/C55 default.
 - DLSS 5 is experimental, hardware- and runtime-dependent, and may alter semantic content.
 - The currently validated RTX 3070-family/Ampere v3 path is restricted to 1.0× output; higher v3 output scales remain blocked because the tested pairing reproducibly fell back with NGX `InvalidParameter (0xBAD00005)`.
 - Visual Enhancer v10 is the newest Neuroframe research candidate. Its normal backend remains disabled; the one-frame, three-frame temporal, 16-frame real-video A/B, 32-frame scene-cut/reset, and 128-frame scene-aware soak gates have passed on the RTX 3070 Ti. Reset parity held at every tested soak cut and temporal-state influence remained active between cuts. Motion-compensated diagnostics did not establish visual-quality superiority, so the soak now exports synchronized playable A/B review clips before any normal-backend promotion is considered.
@@ -218,8 +218,10 @@ Primary development and hardware validation has been performed on:
 - A controlled research A/B measured the 4x4 NVOF output grid at roughly
   72–80% lower NVOF cross-engine bracket time than 1x1 at 720p/1080p. A first
   40-frame withheld real-video 2X campaign found no meaningful systematic
-  quality regression. This supports the grid4 candidate profile but does not
-  yet change the normal pinned C55 default.
+  quality regression, and the application-level real-video candidate gate
+  subsequently passed. The profile is therefore selectable in the application
+  as an explicit experimental mode while the normal pinned C55/grid1 path
+  remains the default and fallback.
 - DLSS 5 v3 Feature-18 provisioning and hardware self-test also passed on the
   RTX 3070 Ti with the managed hash/Defender/firewall/approval gates in place;
   the validated Ampere execution path remains the experimental 1.0× mode.

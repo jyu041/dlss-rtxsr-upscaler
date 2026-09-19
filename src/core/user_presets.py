@@ -17,7 +17,7 @@ _LOCK = threading.RLock()
 RTX_FIELDS = {"mode", "scale", "quality"}
 DLSS_FIELDS = {"scale", "nr_preset", "nr_style", "model_preset", "intensity", "local_tone", "local_structure", "skin_structure", "automatic_mask"}
 DLSS_SR_FIELDS = {"mode", "model_preset"}
-DLSSG_FIELDS = {"motion_provider", "depth_mode", "multiplier"}
+DLSSG_FIELDS = {"motion_provider", "depth_mode", "multiplier", "nvof_profile"}
 LEGACY_DLSSG_FIELDS = {"community_runtime", "official_runtime_dir", "runtime_profile"}
 
 
@@ -122,7 +122,11 @@ def _validate(backend: str, values: dict) -> dict:
             raise ValueError("Invalid DLSS-G depth mode")
         if result.get("multiplier", 2) not in {2, 3, 4}:
             raise ValueError("Invalid DLSS-G multiplier")
+        profile = result.get("nvof_profile", "validated")
+        if profile not in {"validated", "grid4-gpu-candidate"}:
+            raise ValueError("Invalid DLSS-G NVOF profile")
         result["multiplier"] = int(result.get("multiplier", 2))
+        result["nvof_profile"] = profile
     return result
 
 

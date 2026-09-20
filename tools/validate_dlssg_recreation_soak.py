@@ -110,7 +110,7 @@ def main() -> int:
                 "generated_frames": report.get("generated_frames"),
                 "end_to_end_fps": report.get("end_to_end_fps"),
                 "worker_create_features": lifecycle.get("dlssg_create_feature_count"),
-                "worker_evaluates": lifecycle.get("evaluate_count"),
+                "worker_evaluate_log_events": lifecycle.get("evaluate_count"),
                 "worker_exit_code": lifecycle.get("worker_exit_code"),
                 "device_removal_results": lifecycle.get("device_removal_results", []),
             })
@@ -128,6 +128,7 @@ def main() -> int:
         "community_runtime": str(community),
         "unique_sink_hashes": unique,
         "records": records,
+        "telemetry_note": "worker_evaluate_log_events counts optional WORKER_EVALUATE diagnostic lines; generated_frames and sink hashes are the processing evidence used by this gate.",
         "classification": (
             "fresh-process feature recreation is deterministic"
             if len(unique) == 1

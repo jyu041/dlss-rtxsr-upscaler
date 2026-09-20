@@ -18,10 +18,10 @@ jobs:
     runs-on: windows-2022
     steps:
       - name: Check out project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Check out pinned NVIDIA DLSS SDK
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: NVIDIA/DLSS
           ref: 374959484e79a640feaba44c93ac8cfb0a03f5b5
@@ -29,7 +29,7 @@ jobs:
           fetch-depth: 1
 
       - name: Check out pinned NVAPI headers
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: NVIDIA/nvapi
           ref: 87dca625e83fd89a983e19b904e5f3a580da90d2
@@ -37,7 +37,7 @@ jobs:
           fetch-depth: 1
 
       - name: Check out pinned Optical Flow interface headers
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: mbucchia/Optical-Flow-SDK
           ref: 54e68293b4898a530bc07e4d7df71efbc5d30f9b
@@ -89,7 +89,7 @@ jobs:
           Get-Content .\runtime\build\grid4-package\grid4-worker-package.json
 
       - name: Upload grid4 worker candidate
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dlssg-grid4-worker-candidate
           path: |

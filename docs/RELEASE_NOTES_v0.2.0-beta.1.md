@@ -122,13 +122,13 @@ hardware.
 
 ## Documentation
 
-- [Installation](INSTALL.md)
-- [Project status](PROJECT_STATUS.md)
-- [Testing](TESTING.md)
-- [Security audit](SECURITY_AUDIT.md)
-- [DLSS 5 approval](DLSS5_APPROVAL.md)
-- [DLSS 5 v10 application hardware evidence](DLSS5_V10_APP_HARDWARE_2026-09-19.md)
-- [Managed grid4 hardware evidence](MFG_GRID4_MANAGED_WORKER_HARDWARE_2026-09-19.md)
+- [Installation](https://github.com/jyu041/dlss-rtxsr-upscaler/blob/v0.2.0-beta.1/docs/INSTALL.md)
+- [Project status](https://github.com/jyu041/dlss-rtxsr-upscaler/blob/v0.2.0-beta.1/docs/PROJECT_STATUS.md)
+- [Testing](https://github.com/jyu041/dlss-rtxsr-upscaler/blob/v0.2.0-beta.1/docs/TESTING.md)
+- [Security audit](https://github.com/jyu041/dlss-rtxsr-upscaler/blob/v0.2.0-beta.1/docs/SECURITY_AUDIT.md)
+- [DLSS 5 approval](https://github.com/jyu041/dlss-rtxsr-upscaler/blob/v0.2.0-beta.1/docs/DLSS5_APPROVAL.md)
+- [DLSS 5 v10 application hardware evidence](https://github.com/jyu041/dlss-rtxsr-upscaler/blob/v0.2.0-beta.1/docs/DLSS5_V10_APP_HARDWARE_2026-09-19.md)
+- [Managed grid4 hardware evidence](https://github.com/jyu041/dlss-rtxsr-upscaler/blob/v0.2.0-beta.1/docs/MFG_GRID4_MANAGED_WORKER_HARDWARE_2026-09-19.md)
 
 Project-owned source remains MIT licensed. Third-party components and
 proprietary NVIDIA runtimes retain their own terms. No NVIDIA endorsement is

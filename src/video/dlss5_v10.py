@@ -29,6 +29,7 @@ from src.video.nvenc import format_preflight_failure, nvenc_preflight
 
 
 NGX_RESULT_SUCCESS = 1
+SDR_ENCODER_PIXEL_FORMAT = "yuv420p"
 
 
 def _read_exact_frame(stream, size: int, buffer: bytearray | None = None):
@@ -263,6 +264,8 @@ def render_dlss5_v10(
                 "p5",
                 "-cq",
                 "19",
+                "-pix_fmt",
+                SDR_ENCODER_PIXEL_FORMAT,
                 str(video_only),
             ],
             stdin=subprocess.PIPE,

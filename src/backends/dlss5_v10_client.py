@@ -83,7 +83,7 @@ class V10ProtocolClient:
 
     def start(self) -> None:
         raise V10ExecutionDisabled(
-            "Native DLSS5 v10 host start remains disabled; use an explicit bounded experimental entry point"
+            "Native DLSS5 v10 host start remains disabled; use an explicit bounded research or experimental application entry point"
         )
 
     def _spawn(self, command: list[str], *, env: dict[str, str] | None = None) -> None:

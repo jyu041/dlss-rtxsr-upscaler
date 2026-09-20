@@ -13,7 +13,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $SourceCommit = $SourceCommit.Trim()
 $OutputDirectory = if ($OutputDirectory) { $OutputDirectory } else { Join-Path $root 'runtime\beta-package' }
 $expected = @{

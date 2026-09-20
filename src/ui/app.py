@@ -537,7 +537,7 @@ def build():
                             quality = gr.Dropdown(["LOW", "MEDIUM", "HIGH", "ULTRA"], value=rlast.get("quality", "ULTRA"), show_label=False)
                         with gr.Column(visible=dlss_initial, elem_classes=["backend-panel", "backend-dlss"]) as dlss_group:
                             gr.Markdown("### DLSS5 Settings")
-                            gr.Markdown("**v10 Experimental:** isolated scene-aware Feature-18 application mode. Current integration is 1.0x only and capped at 1920x1080-equivalent input. v10 currently uses Style, Intensity, Local Tone, Local Structure, Skin Structure, and Automatic Mask; NR preset/model, working-resolution, and recomposition controls below remain v3-only.")
+                            gr.Markdown("**v10 Experimental:** isolated scene-aware Feature-18 application mode. Current integration remains 1.0x and capped at 1920x1080-equivalent input. Shared style/intensity/tone controls plus the collapsed v10 native-quality controls are available for bounded A/B testing. NR preset/model and reduced working-resolution/recomposition remain v3-only.")
                             _tip(DLSS5_TOOLTIPS, "builtin_preset", "Built-in preset")
                             preset = gr.Dropdown(list(load_presets()) + ["Default"], value="Photoreal Balanced", show_label=False)
                             _tip(DLSS5_TOOLTIPS, "scale", "DLSS scale")

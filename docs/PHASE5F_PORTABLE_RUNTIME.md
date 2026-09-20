@@ -1,9 +1,9 @@
 # Portable runtime release notes
 
-The release launcher is now portable-only. `start.bat` requires the runtime
-under the application directory and fails closed when Python, FFmpeg, FFprobe,
-or the build manifest is absent. It does not invoke Conda or search the
-system `PATH`. Developer use remains available through `start-dev.bat`.
+`start.bat` supports both a complete portable package and the validated source
+checkout. It prefers a complete portable runtime when present; otherwise it
+loads the saved source environment and launches through Conda. A developer-only
+source launcher remains available at `tools/start-dev.bat`.
 
 The selected Python provider is the official CPython 3.11.9 Windows x64
 PythonCore archive. Its URL, size, SHA-256, architecture, and PSF-2.0 license
@@ -25,7 +25,7 @@ FFmpeg.
 No runtime binaries, archives, generated media, or validation output are source
 tracked. They remain local release inputs or ignored evidence.
 
-Ordinary CI uses `requirements-ci.txt`, which retains the real UI/media import
+Ordinary CI uses `tools/requirements/ci.txt`, which retains the real UI/media import
 surface while excluding optional CUDA/VFX packages that are lazily imported and
 validated in hardware-specific gates. The complete portable runtime still
 bundles the validated CUDA/VFX packages when those features are selected.

@@ -14,8 +14,8 @@ normal managed backend runtime set from pinned public sources. `start.bat`
 detects whether it is running from a complete portable package; otherwise it
 loads the saved source environment and launches through Conda.
 
-`start-dev.bat` remains available as a developer-only launcher when you want to
-explicitly launch the Conda environment without the portable-runtime detection
+`tools/start-dev.bat` remains available as a developer-only launcher when you want to
+explicitly launch the Conda source environment without the portable-runtime detection
 performed by `start.bat`.
 
 For isolated development or validation, `NVE_CONDA_ENV` may name a separate
@@ -47,5 +47,9 @@ the dependency-bearing Python environment and FFmpeg. Do not copy proprietary
 NVIDIA SDK inputs, test media, generated outputs, local settings, credentials,
 or other restricted/private artifacts into the repository.
 
-Run ordinary tests with `requirements-ci.txt`; hardware-specific validation uses
+Run ordinary tests with `tools/requirements/ci.txt`; hardware-specific validation uses
 the separate project environment and explicit opt-in gates.
+
+Generated working directories such as `runtime/`, `temp/`, `logs/`, `outputs/`,
+and `inputs/` are intentionally not source-tracked. The application/setup flow
+creates the directories it needs on demand.

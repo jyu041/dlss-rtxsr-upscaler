@@ -270,7 +270,7 @@ class DLSS5Backend(Backend):
 
         return DlssOptions.create(**values)
 
-    def process_frame(self, rgba, *, options=None, nr_working_scale=1.0, recompose_backend="auto", telemetry=None):
+    def process_frame(self, rgba, *, options=None, nr_working_scale=1.0, recompose_backend="auto", telemetry=None, shimmer_suppression=0.0, color_strength=1.0, tone_preservation=0.0):
         """Process one HWC uint8 RGB/RGBA frame through Feature 18."""
         self._require_ready()
         import numpy as np
@@ -287,7 +287,8 @@ class DLSS5Backend(Backend):
             frame = np.concatenate((frame, np.full((*frame.shape[:2], 1), 255, dtype=np.uint8)), axis=2)
         options = options or self.options(upscaling_mode=1.0)
         self._validate_output_scale(options)
-        scale = validate_working_scale_for_options(options, nr_working_scale)
+        resolved_scale = resolve_working_scale(nr_working_scale, frame.shape[1], frame.shape[0])
+        scale = validate_working_scale_for_options(options, resolved_scale)
         requested_backend = _validate_recompose_backend(recompose_backend)
         native = frame
         working_width, working_height = compute_working_dimensions(frame.shape[1], frame.shape[0], scale)
@@ -300,33 +301,48 @@ class DLSS5Backend(Backend):
         feature = session.feature_report()
         _validate_feature_report(session, feature, telemetry)
         if scale == 1.0:
-            return output
-        try:
-            compositor = self._create_compositor(requested_backend, frame.shape[1], frame.shape[0], working_width, working_height)
-        except Exception:
-            if requested_backend == "auto":
-                if telemetry is not None:
-                    telemetry["recompose_backend_requested"] = requested_backend
-                    telemetry["recompose_backend_used"] = "cpu"
-                    telemetry["recompose_fallback_reason"] = "No usable CUDA compositor"
-                return residual_recompose_cpu(native, source, output)
-            raise
-        if compositor is None:
+            result = output
+        else:
+            compositor = None
+            try:
+                try:
+                    compositor = self._create_compositor(requested_backend, frame.shape[1], frame.shape[0], working_width, working_height)
+                except Exception:
+                    if requested_backend == "auto":
+                        if telemetry is not None:
+                            telemetry["recompose_backend_requested"] = requested_backend
+                            telemetry["recompose_backend_used"] = "cpu"
+                            telemetry["recompose_fallback_reason"] = "No usable CUDA compositor"
+                        compositor = None
+                    else:
+                        raise
+                if compositor is None:
+                    if telemetry is not None:
+                        telemetry["recompose_backend_requested"] = requested_backend
+                        telemetry["recompose_backend_used"] = "cpu"
+                    result = residual_recompose_cpu(native, source, output)
+                else:
+                    result, composition_telemetry = compositor.compose(native, source, output)
+                    if telemetry is not None:
+                        telemetry.update(composition_telemetry)
+                        telemetry["recompose_backend_requested"] = requested_backend
+                        telemetry["recompose_backend_used"] = "cuda"
+            finally:
+                if compositor is not None:
+                    compositor.close()
+        if float(shimmer_suppression) > 0.0 or float(color_strength) < 1.0 or float(tone_preservation) > 0.0:
+            quality = TemporalResidualStabilizer(
+                shimmer_suppression=float(shimmer_suppression),
+                color_strength=float(color_strength),
+                tone_preservation=float(tone_preservation),
+            )
+            result, quality_telemetry = quality.compose(native, result, reset=True)
             if telemetry is not None:
-                telemetry["recompose_backend_requested"] = requested_backend
-                telemetry["recompose_backend_used"] = "cpu"
-            return residual_recompose_cpu(native, source, output)
-        try:
-            result, composition_telemetry = compositor.compose(native, source, output)
-            if telemetry is not None:
-                telemetry.update(composition_telemetry)
-                telemetry["recompose_backend_requested"] = requested_backend
-                telemetry["recompose_backend_used"] = "cuda"
-            return result
-        except Exception:
-            raise
-        finally:
-            compositor.close()
+                telemetry.update({f"quality_{key}": value for key, value in asdict(quality_telemetry).items()})
+        if telemetry is not None:
+            telemetry["nr_working_scale_requested"] = nr_working_scale
+            telemetry["nr_working_scale_resolved"] = scale
+        return result
 
     def process_frames(self, frames, *, width, height, frame_count, options=None, cancel=None, nr_working_scale=1.0, telemetry=None, recompose_backend="auto", shimmer_suppression=0.0, color_strength=1.0, tone_preservation=0.0):
         """Yield temporally processed RGBA frames from one owned worker session."""

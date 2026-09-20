@@ -22,6 +22,6 @@ independently audited runtime; do not ship or advertise a portable runtime
 until its Python archive, wheel set, FFmpeg build, notices, and clean-machine
 HTTP test have all been recorded.
 
-The dependency split is now explicit in `requirements-runtime.txt`,
-`requirements-test.txt`, and `requirements-dev.txt`. This prevents pytest and
+The dependency split is now explicit in `tools/requirements/runtime.txt`,
+`tools/requirements/test.txt`, and `tools/requirements/dev.txt`. This prevents pytest and
 audit tooling from being treated as end-user runtime dependencies.

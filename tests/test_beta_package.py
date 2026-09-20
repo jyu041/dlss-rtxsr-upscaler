@@ -39,4 +39,5 @@ def test_legacy_beta2_builder_is_explicitly_historical():
     ).read_text(encoding="utf-8")
     assert "HISTORICAL REPRODUCIBILITY TOOL ONLY" in script
     assert "must not be used" in script
+    assert "Join-Path $PSScriptRoot '..\\..'" in script
     assert not (Path(__file__).parents[1] / "tools" / "build_beta_package.ps1").exists()

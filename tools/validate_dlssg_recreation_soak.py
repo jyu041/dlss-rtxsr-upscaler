@@ -59,7 +59,7 @@ def main() -> int:
     if not official.is_dir():
         raise FileNotFoundError(f"official runtime directory missing: {official}")
 
-    output = args.output.resolve()
+    output = (args.output or (ROOT / "runtime" / "audit" / f"dlssg-recreation-soak-{args.profile}-{args.multiplier}x.json")).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     records: list[dict] = []
     hashes: list[str] = []

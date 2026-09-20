@@ -1,7 +1,9 @@
-"""Fail-closed parent-side plan for an isolated DLSS5 v10 host.
+"""Legacy static-plan adapter for the isolated DLSS5 v10 host.
 
-This milestone performs static identity/ABI validation and constructs the future
-host launch contract. It deliberately contains no native-load implementation.
+This module retains the non-executing static identity/ABI planning interface
+used by earlier tests and audit tooling. Generic launch through this adapter
+stays disabled; native execution is available only through the explicit bounded
+research and experimental application entry points in the v10 client/host.
 """
 
 from __future__ import annotations
@@ -93,6 +95,6 @@ def prepare_host_plan(
 
 def launch_host(*_args, **_kwargs):
     raise V10ExecutionDisabled(
-        "DLSS5 v10 execution is disabled at the static-adapter milestone. "
-        "Complete isolated host implementation and bounded RTX 30 validation first."
+        "Generic DLSS5 v10 adapter execution is disabled; "
+        "use an explicit bounded research or experimental application entry point."
     )

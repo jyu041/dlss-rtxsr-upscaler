@@ -14,6 +14,7 @@ def test_v020_beta1_release_metadata_matches_source_install_contract():
     assert "v0.2.0-beta.1" in readme
     assert "v0.2.0-beta.1" in status
     assert "validated source-install workflow" in notes
+    assert "git clone --branch v0.2.0-beta.1 --recurse-submodules" in notes
     assert "does **not** include a no-Conda portable application bundle" in notes
     assert "DLSS 5 v10 Experimental" in notes
 

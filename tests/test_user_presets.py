@@ -134,3 +134,68 @@ def test_corrupt_local_settings_recovery_still_works(tmp_path, monkeypatch):
     monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
     assert user_presets.load_last_used() == {}
     assert list(tmp_path.glob("settings.local.json.corrupt-*"))
+
+
+def test_dlss5_experimental_quality_fields_roundtrip(tmp_path, monkeypatch):
+    settings = tmp_path / "settings.local.json"
+    presets = tmp_path / "user_presets.json"
+    monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
+    monkeypatch.setattr(user_presets, "USER_PRESETS", presets)
+    values = {
+        "scale": 1.0,
+        "nr_preset": "Default",
+        "nr_style": "Natural",
+        "model_preset": "Default",
+        "intensity": 0.6,
+        "local_tone": 0.4,
+        "local_structure": 0.4,
+        "skin_structure": 0.15,
+        "automatic_mask": False,
+        "nr_working_scale": "auto",
+        "recompose_backend": "auto",
+        "shimmer_suppression": 0.5,
+        "color_strength": 0.25,
+        "tone_preservation": 0.75,
+        "v10_nr_passes": 2,
+        "v10_face_skin_protection": 0.4,
+        "v10_grain_preservation": 0.3,
+        "v10_shimmer_suppression": 0.7,
+        "v10_prefer_nvof": True,
+    }
+    user_presets.save_last_used("dlss5", values)
+    assert user_presets.load_last_used()["dlss5"] == values
+    user_presets.save_user_preset("dlss5", "quality", values)
+    assert user_presets.get_user_preset("dlss5", "quality") == values
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("nr_working_scale", 0.6),
+        ("recompose_backend", "d3d12"),
+        ("shimmer_suppression", 1.1),
+        ("color_strength", -0.1),
+        ("tone_preservation", 2.0),
+        ("v10_nr_passes", 5),
+        ("v10_face_skin_protection", -1.0),
+        ("v10_grain_preservation", 1.5),
+        ("v10_shimmer_suppression", 1.01),
+        ("v10_prefer_nvof", "yes"),
+    ],
+)
+def test_dlss5_experimental_quality_fields_validate(tmp_path, monkeypatch, field, value):
+    settings = tmp_path / "settings.local.json"
+    monkeypatch.setattr(user_presets, "LOCAL_SETTINGS", settings)
+    base = {
+        "scale": 1.0,
+        "nr_preset": "Default",
+        "nr_style": "Natural",
+        "model_preset": "Default",
+        "intensity": 0.6,
+        "local_tone": 0.4,
+        "local_structure": 0.4,
+        "skin_structure": 0.15,
+        "automatic_mask": False,
+    }
+    with pytest.raises((ValueError, TypeError)):
+        user_presets.save_last_used("dlss5", {**base, field: value})

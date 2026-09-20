@@ -1,0 +1,84 @@
+name: prune-merged-branches
+
+# Runs once when this maintenance workflow lands on main, and remains available
+# for explicit maintainer cleanup later. It never deletes main or an open-PR
+# branch.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/prune-merged-branches.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete merged and explicitly superseded branches
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          default_branch="$(gh api "repos/$GITHUB_REPOSITORY" --jq '.default_branch')"
+          echo "Default branch: $default_branch"
+
+          mapfile -t merged_branches < <(
+            gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=closed&per_page=100"               --jq '.[] | select(.merged_at != null and .head.repo.full_name == "jyu041/dlss-rtxsr-upscaler") | .head.ref'
+          )
+
+          # These branches are not merged-PR heads, but their work is explicitly
+          # superseded or already contained by main:
+          # - phase5-portable-runtime-refresh and public-runtime-bootstrap are
+          #   strict ancestors of current main (zero unique commits);
+          # - integrate/dlss5-v10-experimental-app was superseded by merged PR #27;
+          # - validate-dlss5-v3-real-archive belonged to closed/superseded PR #3.
+          extra_stale=(
+            "phase5-portable-runtime-refresh"
+            "public-runtime-bootstrap"
+            "integrate/dlss5-v10-experimental-app"
+            "validate-dlss5-v3-real-archive"
+          )
+
+          mapfile -t candidates < <(
+            printf '%s\n' "${merged_branches[@]}" "${extra_stale[@]}" |
+              sed '/^$/d' |
+              sort -u
+          )
+
+          deleted=0
+          skipped=0
+          for candidate in "${candidates[@]}"; do
+            if [ "$candidate" = "$default_branch" ]; then
+              echo "SKIP default branch: $candidate"
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            open_prs="$(gh pr list               --repo "$GITHUB_REPOSITORY"               --head "$candidate"               --state open               --json number               --jq 'length')"
+            if [ "$open_prs" != "0" ]; then
+              echo "SKIP open-PR branch: $candidate"
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            encoded="$(jq -rn --arg value "$candidate" '$value|@uri')"
+            if ! gh api "repos/$GITHUB_REPOSITORY/branches/$encoded" >/dev/null 2>&1; then
+              echo "ALREADY ABSENT: $candidate"
+              continue
+            fi
+
+            echo "DELETE: $candidate"
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$candidate"
+            deleted=$((deleted + 1))
+          done
+
+          echo "BRANCH_PRUNE_PASS deleted=$deleted skipped=$skipped"
+          echo "Remaining branches:"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/branches?per_page=100" --jq '.[].name'

@@ -243,9 +243,10 @@ Git checkout.
 
 ## Current Beta Release
 
-`v0.2.0-beta.1` is the current source-install beta. It is intentionally not a
-no-Conda portable bundle; use the recursive clone → `setup.bat` → `start.bat`
-workflow documented above.
+[`v0.2.0-beta.1`](https://github.com/jyu041/dlss-rtxsr-upscaler/releases/tag/v0.2.0-beta.1)
+is the current source-install beta. It is intentionally not a no-Conda portable
+bundle; use the recursive clone → `setup.bat` → `start.bat` workflow
+documented above.
 
 The older `v0.1.0-beta.2` ZIP remains available as a historical prebuilt beta,
 but it predates managed grid4, the DLSS 5 v10 application path, the current

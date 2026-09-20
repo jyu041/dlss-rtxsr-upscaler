@@ -63,9 +63,10 @@ source-based beta workflow.
 
 ## Release state
 
-`v0.2.0-beta.1` is the current source-install beta milestone. It is intended
-to be used through the validated recursive clone → `setup.bat` →
-`start.bat` workflow.
+[`v0.2.0-beta.1`](https://github.com/jyu041/dlss-rtxsr-upscaler/releases/tag/v0.2.0-beta.1)
+is the current published source-install beta milestone. It is intended to be
+used through the validated recursive clone → `setup.bat` → `start.bat`
+workflow.
 
 The release deliberately does **not** introduce a no-Conda portable bundle.
 That direction remains deferred as described above.

@@ -1,3 +1,8 @@
+# HISTORICAL REPRODUCIBILITY TOOL ONLY
+# Reconstructs the published v0.1.0-beta.2 package boundary from its exact
+# validated inputs. It is intentionally version-specific and must not be used
+# to build current or future releases.
+#
 param(
     [Parameter(Mandatory=$true)][string]$WorkerPath,
     [Parameter(Mandatory=$true)][string]$DlssSrHostPath,
@@ -8,7 +13,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $SourceCommit = $SourceCommit.Trim()
 $OutputDirectory = if ($OutputDirectory) { $OutputDirectory } else { Join-Path $root 'runtime\beta-package' }
 $expected = @{

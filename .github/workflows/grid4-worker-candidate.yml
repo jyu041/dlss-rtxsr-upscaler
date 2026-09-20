@@ -3,7 +3,12 @@ name: grid4-worker-candidate
 on:
   push:
     branches:
-      - integrate/mfg-grid4-managed-worker
+      - main
+    paths:
+      - ".github/workflows/grid4-worker-candidate.yml"
+      - "native/dlssg_sm86_offline/**"
+      - "tools/package_grid4_worker.ps1"
+  pull_request:
     paths:
       - ".github/workflows/grid4-worker-candidate.yml"
       - "native/dlssg_sm86_offline/**"

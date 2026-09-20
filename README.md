@@ -229,6 +229,7 @@ Git checkout.
 | Document | Purpose |
 | --- | --- |
 | [Documentation index](docs/README.md) | Current operational docs vs historical engineering evidence |
+| [Changelog](CHANGELOG.md) | Concise release index |
 | [Project status](docs/PROJECT_STATUS.md) | Completed scope, deferred work, hardware-dependent expansion |
 | [Installation](docs/INSTALL.md) | Prerequisites, setup, runtime provisioning |
 | [Architecture](docs/ARCHITECTURE.md) | Application and backend architecture |

@@ -1,0 +1,35 @@
+# Changelog
+
+This file is a concise release index. Detailed validation evidence and
+engineering history remain under `docs/`.
+
+## v0.2.0-beta.1 — 2026-09-20
+
+Current source-install beta.
+
+Highlights:
+
+- validated recursive clone → `setup.bat` → `start.bat` onboarding;
+- managed C55 and grid4 DLSS-G runtime paths;
+- managed standalone DLSS SR host/runtime;
+- optional security-gated DLSS 5 v3 provisioning;
+- integrated isolated DLSS 5 v10 Experimental application path;
+- Enhance / Configuration / Diagnostics frontend overhaul;
+- Runtime Manager integration;
+- repository, documentation, and CI cleanup.
+
+See `docs/RELEASE_NOTES_v0.2.0-beta.1.md` and the
+[v0.2.0-beta.1 GitHub prerelease](https://github.com/jyu041/dlss-rtxsr-upscaler/releases/tag/v0.2.0-beta.1).
+
+## v0.1.0-beta.2 — 2026-09-16
+
+Historical prebuilt beta centered on RTX VSR, standalone DLSS SR, and the
+validated C55 worker.
+
+See `docs/RELEASE_NOTES_v0.1.0-beta.2.md`.
+
+## Earlier work
+
+Pre-beta and Phase 4/5 engineering history is preserved in the repository's
+dated and phase-named documents. Those reports are historical evidence, not
+current operational requirements.

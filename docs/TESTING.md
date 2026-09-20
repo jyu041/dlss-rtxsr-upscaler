@@ -55,7 +55,7 @@ explicitly.
 
 ## DLSS5 v10 research and experimental application gates
 
-The normal/default v10 backend remains disabled. The validated research
+The generic/default v10 host path remains disabled. The validated research
 sequence remains available, and the application exposes a separate explicit
 `DLSS 5 v10 Experimental` mode rather than silently replacing v3:
 

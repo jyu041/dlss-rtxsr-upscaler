@@ -9,7 +9,5 @@ updates:
       time: "09:00"
       timezone: "Pacific/Auckland"
     open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
     commit-message:
       prefix: "ci"

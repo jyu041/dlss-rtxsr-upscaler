@@ -3,9 +3,10 @@
 DLSS 5 Neural Rendering / Feature 18 is experimental in this project. Recent
 community work demonstrates experimental execution on older RTX architectures,
 including Ampere, but this is **not official NVIDIA RTX 30 DLSS5 support**.
-This repository neither ships nor downloads NVIDIA or community NR runtime
-binaries. Runtime approval, exact hash, and outbound firewall policy are
-unchanged.
+This repository does not source-track NVIDIA or community NR runtime binaries.
+The explicit v3 provisioner and v10 preflight can download their pinned public
+upstream archives after user action; runtime approval, exact-hash validation,
+Defender/firewall containment, and fail-closed policy remain in force.
 
 Successful NGX calls alone are not performance or effectiveness evidence. The
 128x128 five-frame self-test remains a contract check only. Meaningful
@@ -53,7 +54,8 @@ also includes host staging, dispatch, synchronization, and ownership copies.
 PyTorch allocator values cover only PyTorch allocations, while whole-GPU
 `nvidia-smi` values include the Feature-18 worker and other processes. No GPU
 resource sharing with the community runtime is attempted. 100% NR bypasses
-recomposition completely, and CPU/GPU frame overlap remains future work.
+recomposition completely. CPU/GPU frame overlap is a possible optimization,
+not a release blocker.
 
 ## Commands
 

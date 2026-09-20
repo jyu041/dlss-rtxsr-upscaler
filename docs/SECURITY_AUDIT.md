@@ -1,41 +1,61 @@
 # Security and Provenance
 
-The application is a local utility. Its UI binds to localhost, does not enable
-Gradio sharing, and does not silently download or execute external runtimes.
-Backend adapters fail closed when a dependency is missing or unapproved.
+The application is a local utility. Its Gradio UI binds to localhost and does
+not enable a public share link. Video processing is local.
+
+Network access is used only by explicit user-initiated provisioning or runtime
+management actions such as `setup.bat`, Runtime Manager install/repair, the
+optional DLSS 5 v3 provisioner, and the explicit DLSS 5 v10 preflight. Ordinary
+startup does not silently replace or download a backend runtime.
+
+Backend adapters fail closed when a dependency is missing, modified,
+unapproved, or incompatible.
 
 ## Runtime rules
 
-- NVIDIA VFX, DLSS/NGX, and DLSS5 runtimes must be obtained separately from a
-  legitimate source and remain outside Git.
-- DLSS SR validates the exact SHA256 of the configured `nvngx_dlss.dll` before
-  use and requires a native self-test.
-- DLSS5 validates a user-controlled approval manifest, all required hashes,
-  signed Feature-18 evidence, and an exact enabled Windows Firewall outbound
-  block for the local worker.
-- A changed hash invalidates approval. There is no silent fallback to resize,
-  RTX VSR, or another DLSS mode.
-- Do not place proprietary DLLs, model weights, media, approval manifests, or
-  generated logs in tracked paths.
+- Managed runtime sources, sizes, hashes, destinations, and activation policies
+  are recorded in `src/runtime_manager/manifest.json`.
+- Project-managed downloads are explicit actions and are verified before
+  activation.
+- DLSS SR validates the approved host/runtime identity and requires its native
+  self-test for readiness.
+- DLSS-G validates the project worker identity, the pinned SM86 direct-host
+  runtime, and the official NVIDIA provider. The experimental grid4 worker has
+  its own pinned identity and never silently replaces C55/grid1.
+- DLSS 5 v3 requires the pinned archive/file identities, Authenticode
+  observation, Microsoft Defender scan, exact enabled outbound firewall rule,
+  local approval evidence, and successful Feature-18 self-test.
+- DLSS 5 v10 remains separate from v3. Its application path requires the pinned
+  v10 identity, fresh static/Defender preflight, isolated child execution,
+  temporary exact-interpreter outbound firewall containment, process-tree
+  checks, per-frame result validation, and mandatory clean close/cleanup.
+- A changed hash or failed gate invalidates readiness. There is no silent
+  fallback to resize, RTX VSR, or another DLSS mode.
+- Do not place proprietary DLLs, model/runtime archives, user media, approval
+  manifests, generated logs, or credentials in tracked source paths.
 
-## Public references
+A pinned hash establishes identity, not inherent trust or vendor endorsement.
+A clean malware scan does not establish provenance, support, or redistribution
+rights.
 
-The only retained source submodule is
+## Public references and retained source
+
+The retained source submodule is
 [Blueforcer/ComfyUI-DLSS5-Enhancer](https://github.com/Blueforcer/ComfyUI-DLSS5-Enhancer),
-pinned to commit `796ed5927a202ba50b5c929cd08e16b365041162`. Only its generic
-`dlss5` protocol/session/settings/motion/diagnostic code is used; ComfyUI is
-not installed or modified.
+pinned to commit `796ed5927a202ba50b5c929cd08e16b365041162`. The project
+uses retained generic protocol/session/settings/motion/diagnostic code; ComfyUI
+itself is not installed or modified by this application.
 
-The official public [NVIDIA Streamline](https://github.com/NVIDIA-RTX/Streamline)
-SDK may be staged locally for development, but its normal public 2.12.0
-package does not establish the required Feature-1004/DLSS NR plugin. It is
-ignored and is not redistributed. The existing unsigned `nvngx_dlssnr.dll`
-must not be used.
+Other public upstream sources used by manifest/provisioning policy include
+NVIDIA Streamline, the validated SM86 DLSS-G project, and the explicitly pinned
+Merserk DLSS 5 archives. Their binaries and licenses remain governed by their
+respective upstream/vendor terms.
 
 ## Review guidance
 
-Before enabling an experimental runtime, record its source, exact hashes,
-Authenticode status, Defender result, and the runtime's applicable license.
-Keep the worker outbound firewall rule enabled and use synthetic or owned
-media for tests. Malware-scan cleanliness does not establish vendor
-provenance or redistribution rights.
+Before changing an experimental runtime identity or expanding an execution
+boundary, record the source, exact hashes, applicable license, signature status,
+security-scan result, containment requirements, and hardware evidence.
+
+Use synthetic or owned media for validation, and keep hardware-dependent gates
+explicit rather than treating a skipped test as a successful validation.

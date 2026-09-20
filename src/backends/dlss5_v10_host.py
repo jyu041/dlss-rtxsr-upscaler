@@ -1,7 +1,9 @@
-"""Non-executing isolated-host scaffold for DLSS5 v10.
+"""Isolated host for DLSS5 v10 protocol, research, and application sessions.
 
-Only --contract-selftest is implemented. --serve is intentionally blocked so
-no v10 DLL can be loaded during this milestone.
+The generic legacy ``--serve`` entry point remains intentionally blocked.
+Native execution is available only through the explicit bounded research
+servers or the separately acknowledged experimental application server, all of
+which require the pinned preflight/security contract.
 """
 
 from __future__ import annotations
@@ -682,8 +684,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.serve:
         print(
-            "BLOCKED: DLSS5 v10 host execution is not implemented at the "
-            "static-adapter milestone.",
+            "BLOCKED: generic DLSS5 v10 --serve is intentionally disabled; "
+            "use an explicit bounded research or experimental application mode.",
             file=sys.stderr,
         )
         return 78

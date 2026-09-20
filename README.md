@@ -228,6 +228,8 @@ Git checkout.
 
 | Document | Purpose |
 | --- | --- |
+| [Documentation index](docs/README.md) | Current operational docs vs historical engineering evidence |
+| [Project status](docs/PROJECT_STATUS.md) | Completed scope, deferred work, hardware-dependent expansion |
 | [Installation](docs/INSTALL.md) | Prerequisites, setup, runtime provisioning |
 | [Architecture](docs/ARCHITECTURE.md) | Application and backend architecture |
 | [Security audit](docs/SECURITY_AUDIT.md) | Runtime trust and execution policy |

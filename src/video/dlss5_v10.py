@@ -32,24 +32,38 @@ NGX_RESULT_SUCCESS = 1
 
 
 def _read_exact_frame(stream, size: int, buffer: bytearray | None = None):
-    """Read one exact frame, optionally into reusable storage."""
+    """Read one exact frame, optionally into reusable storage.
+
+    Real decoder pipes use readinto() to avoid a per-frame allocation/copy.
+    Generic binary streams and existing test doubles keep the original read()
+    contract for compatibility.
+    """
+    owns_storage = buffer is None
     storage = buffer if buffer is not None else bytearray(size)
     if len(storage) != size:
         raise ValueError("decoder frame buffer has the wrong size")
     view = memoryview(storage)
     offset = 0
+    use_readinto = callable(getattr(stream, "readinto", None))
     while offset < size:
-        count = stream.readinto(view[offset:])
-        if not count:
-            break
-        offset += count
+        if use_readinto:
+            count = stream.readinto(view[offset:])
+            if not count:
+                break
+            offset += count
+        else:
+            chunk = stream.read(size - offset)
+            if not chunk:
+                break
+            view[offset : offset + len(chunk)] = chunk
+            offset += len(chunk)
     if offset == 0:
         return b""
     if offset != size:
         raise RuntimeError(
             f"truncated RGBA frame from decoder: {offset} bytes, expected {size}"
         )
-    return view
+    return bytes(view) if owns_storage else view
 
 
 def _validate_output(output, *, width: int, height: int, timestamp: int, reset: bool) -> None:

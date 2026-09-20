@@ -86,8 +86,8 @@ def _tone_color_compose(
     if color_strength == 1.0 and tone_preservation == 0.0:
         return neural.copy()
 
-    source_ycc = cv2.cvtColor(source[..., :3].astype(np.float32), cv2.COLOR_RGB2YCrCb)
-    neural_ycc = cv2.cvtColor(neural[..., :3].astype(np.float32), cv2.COLOR_RGB2YCrCb)
+    source_ycc = cv2.cvtColor(source[..., :3], cv2.COLOR_RGB2YCrCb).astype(np.float32)
+    neural_ycc = cv2.cvtColor(neural[..., :3], cv2.COLOR_RGB2YCrCb).astype(np.float32)
     residual = neural_ycc - source_ycc
 
     if tone_preservation:
@@ -96,9 +96,8 @@ def _tone_color_compose(
         residual[..., 0] -= float(tone_preservation) * broad
     residual[..., 1:] *= float(color_strength)
 
-    composed_ycc = source_ycc + residual
+    composed_ycc = np.rint(source_ycc + residual).clip(0.0, 255.0).astype(np.uint8)
     rgb = cv2.cvtColor(composed_ycc, cv2.COLOR_YCrCb2RGB)
-    rgb = np.rint(rgb).clip(0.0, 255.0).astype(np.uint8)
     return np.ascontiguousarray(np.dstack((rgb, source[..., 3])))
 
 

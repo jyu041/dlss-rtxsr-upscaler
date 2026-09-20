@@ -704,10 +704,24 @@ def build():
         rtx_load.click(load_rtx, rtx_saved, [vsr_mode, scale, quality, rtx_message])
         rtx_delete.click(delete_rtx, rtx_saved, [rtx_saved, rtx_message])
         rtx_reset.click(lambda: ("Super Resolution", 2.0, "ULTRA", "RTX settings reset."), outputs=[vsr_mode, scale, quality, rtx_message])
-        dlss_save.click(save_dlss, [dlss_name, dlss_scale, nrpreset, style, model, intensity, tone, structure, skin, mask], [dlss_saved, dlss_message])
-        dlss_load.click(load_dlss, dlss_saved, [dlss_scale, nrpreset, style, model, intensity, tone, structure, skin, mask, dlss_message])
+        dlss_preset_controls = [
+            dlss_scale, nrpreset, style, model, intensity, tone, structure, skin,
+            mask, nr_working_scale, recompose_backend, shimmer_suppression,
+            color_strength, tone_preservation, v10_nr_passes,
+            v10_face_skin_protection, v10_grain_preservation,
+            v10_shimmer_suppression, v10_prefer_nvof,
+        ]
+        dlss_save.click(save_dlss, [dlss_name, *dlss_preset_controls], [dlss_saved, dlss_message])
+        dlss_load.click(load_dlss, dlss_saved, [*dlss_preset_controls, dlss_message])
         dlss_delete.click(delete_dlss, dlss_saved, [dlss_saved, dlss_message])
-        dlss_reset.click(lambda: (1.0, "Default", "Natural", "Default", .60, .40, .40, .15, "Off", "DLSS5 settings reset."), outputs=[dlss_scale, nrpreset, style, model, intensity, tone, structure, skin, mask, dlss_message])
+        dlss_reset.click(
+            lambda: (
+                1.0, "Default", "Natural", "Default", .60, .40, .40, .15, "Off",
+                1.0, "auto", 0.0, 1.0, 0.0, 1, 0.0, 0.0, .70, "Off",
+                "DLSS5 settings reset.",
+            ),
+            outputs=[*dlss_preset_controls, dlss_message],
+        )
         sr_save.click(save_dlss_sr, [sr_name, sr_mode, sr_model], [sr_saved, sr_message])
         sr_load.click(load_dlss_sr, sr_saved, [sr_mode, sr_model, sr_message])
         sr_delete.click(delete_dlss_sr, sr_saved, [sr_saved, sr_message])

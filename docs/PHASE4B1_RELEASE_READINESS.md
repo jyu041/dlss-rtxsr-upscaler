@@ -65,7 +65,7 @@ external runtime acquisition user-controlled.
 
 The package must keep project-owned source under MIT while identifying NVIDIA
 SDK material and other third-party portions under their own terms. See
-`THIRD_PARTY_NOTICES.md` and `BINARY_DISTRIBUTION_NOTICES.md`.
+`THIRD_PARTY_NOTICES.md` and `docs/legal/BINARY_DISTRIBUTION_NOTICES.md`.
 
 ## Hardcoded assumptions and security
 

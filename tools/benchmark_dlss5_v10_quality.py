@@ -42,13 +42,14 @@ def main() -> int:
 
     # Decode a source reference window once. Render outputs are trimmed to the
     # same decoded count before quality metrics are calculated.
-    source_probe, fps = decode_window(
+    source_info = probe(str(source_path))
+    fps = float(source_info["fps"])
+    expected = max(2, int(round(args.duration * fps)))
+    source_frames, _ = decode_window(
         source_path,
         start=args.start,
-        frames=max(2, int(round(args.duration * 120))),
+        frames=expected,
     )
-    expected = max(2, int(round(args.duration * fps)))
-    source_frames = source_probe[:expected]
 
     cases = [
         {"name": "baseline-current", "nr_passes": 1, "shimmer_suppression": 0.70, "color_strength": 1.0, "tone_preservation": 0.0, "prefer_nvof": False},

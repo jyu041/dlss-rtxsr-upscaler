@@ -41,13 +41,16 @@ jobs:
           # - validate-dlss5-v3-real-archive belonged to closed/superseded PR #3;
           # - auto-runtime-setup is the pre-hardening alternate v3 bootstrap design
           #   that removed readiness/security gates and is superseded by the
-          #   current managed v3 provisioning + security-hardening path.
+          #   current managed v3 provisioning + security-hardening path;
+          # - docs/public-project-metadata only carried the concise CHANGELOG.md
+          #   now incorporated by this cleanup PR.
           extra_stale=(
             "phase5-portable-runtime-refresh"
             "public-runtime-bootstrap"
             "integrate/dlss5-v10-experimental-app"
             "validate-dlss5-v3-real-archive"
             "auto-runtime-setup"
+            "docs/public-project-metadata"
           )
 
           mapfile -t candidates < <(

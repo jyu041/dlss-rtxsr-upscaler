@@ -45,7 +45,7 @@ def main() -> int:
     parser.add_argument("--worker", type=Path)
     parser.add_argument("--community-runtime", type=Path, default=DEFAULT_COMMUNITY)
     parser.add_argument("--official-runtime-dir", type=Path, default=DEFAULT_OFFICIAL)
-    parser.add_argument("--output", type=Path, default=ROOT / "runtime" / "audit" / "dlssg-recreation-soak.json")
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if args.cycles < 2 or args.frames < 3:
         parser.error("cycles must be >=2 and frames >=3")

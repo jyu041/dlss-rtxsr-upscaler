@@ -114,6 +114,7 @@ def main() -> int:
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--frames", type=int, default=90)
     parser.add_argument("--encoded", action="store_true", help="also run NVENC end-to-end cases")
+    parser.add_argument("--review-dir", type=Path, default=ROOT / "runtime" / "audit" / "dlssg-grid4-review", help="preserve encoded C55/grid4 review videos and their manifests/logs")
     parser.add_argument("--output", type=Path, default=ROOT / "runtime" / "audit" / "dlssg-grid4-matrix.json")
     args = parser.parse_args()
     if args.frames < 3:
@@ -126,6 +127,9 @@ def main() -> int:
 
     output = args.output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
+    review_dir = args.review_dir.resolve()
+    if args.encoded:
+        review_dir.mkdir(parents=True, exist_ok=True)
     rows: list[dict] = []
     with tempfile.TemporaryDirectory(prefix="nve-grid4-matrix-") as temporary:
         temp = Path(temporary)
@@ -135,7 +139,11 @@ def main() -> int:
             for profile in ("validated", "grid4-gpu-candidate"):
                 modes = (False, True) if args.encoded else (False,)
                 for encode in modes:
-                    destination = temp / f"{profile}-{multiplier}x-{'enc' if encode else 'sink'}.mp4"
+                    destination = (
+                        review_dir / f"{profile}-{multiplier}x-encoded.mp4"
+                        if encode
+                        else temp / f"{profile}-{multiplier}x-sink.mp4"
+                    )
                     report = _run(
                         bounded,
                         destination,
@@ -176,6 +184,7 @@ def main() -> int:
         "schema_version": 1,
         "status": "PASS",
         "frames": args.frames,
+        "review_dir": str(review_dir) if args.encoded else None,
         "rows": rows,
         "comparisons": comparisons,
         "promotion_policy": (

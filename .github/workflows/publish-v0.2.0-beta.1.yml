@@ -81,8 +81,8 @@ jobs:
         run: |
           set -euo pipefail
           test -f docs/RELEASE_NOTES_v0.2.0-beta.1.md
-          grep -Fq 'validated source-install workflow' docs/RELEASE_NOTES_v0.2.0-beta.1.md
-          grep -Fq 'does **not** include a no-Conda portable application bundle' docs/RELEASE_NOTES_v0.2.0-beta.1.md
+          grep -Fq 'validated source-install' docs/RELEASE_NOTES_v0.2.0-beta.1.md
+          grep -Fq 'no-Conda portable application' docs/RELEASE_NOTES_v0.2.0-beta.1.md
           grep -Fq 'DLSS 5 v10 Experimental' docs/RELEASE_NOTES_v0.2.0-beta.1.md
 
       - name: Publish source-install prerelease

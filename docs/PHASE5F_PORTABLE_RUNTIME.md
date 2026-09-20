@@ -17,10 +17,11 @@ archive hash, and two staged executable hashes recorded there.
 The CPython archive alone is not an application runtime: it still needs the
 project's pinned Python packages and their native dependencies. The validated
 local candidate contains those packages, but the current source assembler still
-accepts them as an explicitly staged directory; a complete wheel-level lock and
-Conda-free reconstruction path remain Phase 5H work. `repair.bat` reports this
-state and the pinned inputs; it never falls back to a machine-wide Python or
-FFmpeg.
+accepts them as an explicitly staged directory. A complete wheel-level lock and
+Conda-free reconstruction path are deliberately deferred and are not part of
+the current source-based release criteria. `repair.bat` reports the portable
+candidate state and pinned inputs; it never falls back to a machine-wide Python
+or FFmpeg.
 
 No runtime binaries, archives, generated media, or validation output are source
 tracked. They remain local release inputs or ignored evidence.

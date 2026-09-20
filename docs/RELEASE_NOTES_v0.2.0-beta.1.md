@@ -12,9 +12,8 @@ Microsoft Visual C++ 2015-2022 Redistributable x64.
 From PowerShell:
 
 ```powershell
-git clone --recurse-submodules https://github.com/jyu041/dlss-rtxsr-upscaler.git
+git clone --branch v0.2.0-beta.1 --recurse-submodules https://github.com/jyu041/dlss-rtxsr-upscaler.git
 cd dlss-rtxsr-upscaler
-git checkout v0.2.0-beta.1
 .\setup.bat
 .\start.bat
 ```

@@ -45,7 +45,7 @@ $outputRoot = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Force -P
 $stage = Join-Path $outputRoot $packageName
 if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
-$files = @('app.py','environment.yml','requirements.txt','setup.bat','start.bat','LICENSE','README.md','BINARY_DISTRIBUTION_NOTICES.md','THIRD_PARTY_NOTICES.md','docs\INSTALL.md','docs\SECURITY_AUDIT.md','docs\TESTING.md','docs\THIRD_PARTY.md','docs\RELEASE_NOTES_v0.1.0-beta.2.md','tools\check_dlssg_readiness.py','tools\check_dlss_sr_readiness.py')
+$files = @('app.py','environment.yml','requirements.txt','setup.bat','start.bat','LICENSE','README.md','THIRD_PARTY_NOTICES.md','docs\INSTALL.md','docs\SECURITY_AUDIT.md','docs\TESTING.md','docs\THIRD_PARTY.md','docs\RELEASE_NOTES_v0.1.0-beta.2.md','tools\check_dlssg_readiness.py','tools\check_dlss_sr_readiness.py')
 $files += @(& git -C $root ls-files src config | Where-Object { $_ -notmatch 'settings\.local\.json|user_presets\.json|\.pyc$' })
 foreach ($relative in ($files | Select-Object -Unique)) {
     $source = Join-Path $root $relative

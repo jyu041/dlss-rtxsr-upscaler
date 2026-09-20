@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.backends.dlss5_v10_app import DLSS5V10ExperimentalBackend  # noqa: E402
+from src.core.media_info import probe  # noqa: E402
 from src.video.dlss5_v10 import render_dlss5_v10  # noqa: E402
 from tools.benchmark_dlss5_quality import decode_window, quality_metrics  # noqa: E402
 

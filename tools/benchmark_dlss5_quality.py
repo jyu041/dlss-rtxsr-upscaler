@@ -235,7 +235,8 @@ def main() -> int:
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, default=ROOT / "runtime" / "audit" / "dlss5-quality")
     parser.add_argument("--start", type=float, default=0.0)
-    parser.add_argument("--frames", type=int, default=24)
+    parser.add_argument("--frames", type=int, default=90)
+    parser.add_argument("--warmup-frames", type=int, default=4)
     parser.add_argument("--working-scales", default="1.0,auto,0.875,0.75,0.6666666667,0.5")
     parser.add_argument("--temporal-scale", default="0.75")
     parser.add_argument("--shimmer-levels", default="0.25,0.5,0.75")
@@ -244,6 +245,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.frames < 2:
         parser.error("--frames must be at least 2")
+    if args.warmup_frames < 0:
+        parser.error("--warmup-frames must be non-negative")
 
     source_path = args.input.expanduser().resolve()
     output_dir = args.output_dir.expanduser().resolve()
@@ -253,6 +256,23 @@ def main() -> int:
     backend = DLSS5Backend()
     if not backend.available:
         raise RuntimeError(f"DLSS5 v3 backend is not ready: {backend.reason}")
+
+    warmup_count = min(args.warmup_frames, len(source))
+    if warmup_count:
+        warmup_outputs, warmup_result = run_case(
+            backend,
+            source[:warmup_count],
+            working_scale=1.0,
+            shimmer=0.0,
+            color_strength=1.0,
+            tone_preservation=0.0,
+            recompose_backend=args.recompose_backend,
+        )
+        print(
+            f"warmup: {warmup_count} frames; "
+            f"{warmup_result['fps']:.2f} FPS (excluded from matrix)"
+        )
+        del warmup_outputs
 
     cases: list[dict] = []
     definitions: list[tuple[str, float | str, float, float, float]] = []
@@ -302,8 +322,9 @@ def main() -> int:
         "source_fps": fps,
         "start_seconds": args.start,
         "frames": len(source),
+        "warmup_frames": warmup_count,
         "cases": cases,
-        "note": "No case changes application defaults; review quality before promoting any experimental setting.",
+        "note": "An untimed warm-up is excluded from matrix comparisons. No case changes application defaults; review quality before promoting any experimental setting.",
     }
     report_path = output_dir / "report.json"
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

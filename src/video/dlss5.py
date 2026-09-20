@@ -13,7 +13,7 @@ from src.core.progress import report_progress
 from src.video.nvenc import format_preflight_failure, nvenc_preflight
 
 
-def render_dlss5(source, destination, backend, options, *, start=0.0, duration=None, codec="H.264", cancel=None, progress=None, nr_working_scale=1.0, recompose_backend="auto"):
+def render_dlss5(source, destination, backend, options, *, start=0.0, duration=None, codec="H.264", cancel=None, progress=None, nr_working_scale=1.0, recompose_backend="auto", shimmer_suppression=0.0, color_strength=1.0, tone_preservation=0.0):
     ffmpeg = tool("ffmpeg")
     if not ffmpeg:
         raise RuntimeError("ffmpeg was not found in the bundled runtime or on PATH.")
@@ -39,16 +39,48 @@ def render_dlss5(source, destination, backend, options, *, start=0.0, duration=N
     try:
         stream = decoder.stdout
         assert stream is not None
-        stream_frames = iter(lambda: stream.read(frame_bytes), b"")
+        decode_read_ms = 0.0
+        encoder_write_ms = 0.0
+        backend_loop_ms = 0.0
 
         def frames():
-            for raw_frame in stream_frames:
-                if len(raw_frame) != frame_bytes:
+            import numpy as np
+            nonlocal decode_read_ms
+            buffers = (bytearray(frame_bytes), bytearray(frame_bytes))
+            slot = 0
+            while True:
+                buffer = buffers[slot]
+                view = memoryview(buffer)
+                offset = 0
+                read_started = time.perf_counter()
+                while offset < frame_bytes:
+                    count_read = stream.readinto(view[offset:])
+                    if not count_read:
+                        break
+                    offset += count_read
+                decode_read_ms += (time.perf_counter() - read_started) * 1000
+                if offset == 0:
                     break
-                import numpy as np
-                yield np.frombuffer(raw_frame, dtype=np.uint8).reshape(height, width, 4).copy()
+                if offset != frame_bytes:
+                    raise RuntimeError(f"truncated RGBA frame from decoder: {offset} bytes, expected {frame_bytes}")
+                yield np.frombuffer(buffer, dtype=np.uint8).reshape(height, width, 4)
+                slot ^= 1
 
-        rendered = backend.process_frames(frames(), width=width, height=height, frame_count=session_frame_count, options=options, cancel=cancel, nr_working_scale=nr_working_scale, recompose_backend=recompose_backend)
+        backend_telemetry = {}
+        rendered = backend.process_frames(
+            frames(),
+            width=width,
+            height=height,
+            frame_count=session_frame_count,
+            options=options,
+            cancel=cancel,
+            nr_working_scale=nr_working_scale,
+            recompose_backend=recompose_backend,
+            shimmer_suppression=shimmer_suppression,
+            color_strength=color_strength,
+            tone_preservation=tone_preservation,
+            telemetry=backend_telemetry,
+        )
         first, first_meta = next(rendered)
         output_height, output_width = first.shape[:2]
         encoder_name = {"H.264": "h264_nvenc", "HEVC": "hevc_nvenc", "AV1": "av1_nvenc"}[codec]
@@ -66,7 +98,10 @@ def render_dlss5(source, destination, backend, options, *, start=0.0, duration=N
             if cancel is not None and cancel.is_set():
                 raise InterruptedError("DLSS5 render cancelled")
             try:
+                write_started = time.perf_counter()
                 encoder.stdin.write(output[..., :3].tobytes())
+                encoder_write_ms += (time.perf_counter() - write_started) * 1000
+                backend_loop_ms += float(meta.get("processing_loop_ms", 0.0))
             except BrokenPipeError as exc:
                 details = (encoder.stderr.read() if encoder.stderr else b"").decode(errors="replace")
                 raise RuntimeError(f"NVENC encoder stopped early: {details[-2000:]}") from exc
@@ -89,7 +124,24 @@ def render_dlss5(source, destination, backend, options, *, start=0.0, duration=N
         result = subprocess.run(mux, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
         if result.returncode:
             raise RuntimeError(result.stderr[-2000:])
-        return {"frames": count, "fps": count / max(0.001, time.perf_counter() - started), "dimensions": (output_width, output_height), "audio_preserved": bool(info["audio_codec"] != "none"), "scene_resets": resets, "encoder": encoder_name, "frames_estimated": estimated}
+        return {
+            "frames": count,
+            "fps": count / max(0.001, time.perf_counter() - started),
+            "dimensions": (output_width, output_height),
+            "audio_preserved": bool(info["audio_codec"] != "none"),
+            "scene_resets": resets,
+            "encoder": encoder_name,
+            "frames_estimated": estimated,
+            "nr_working_scale_requested": nr_working_scale,
+            "nr_working_scale_resolved": backend_telemetry.get("nr_working_scale_resolved"),
+            "quality_controls": backend_telemetry.get("quality_controls"),
+            "performance": {
+                "decode_read_ms": decode_read_ms,
+                "backend_loop_ms": backend_loop_ms,
+                "encoder_write_ms": encoder_write_ms,
+                "transport": "double-buffered-readinto/rawvideo-stdin",
+            },
+        }
     finally:
         for process in (decoder, encoder):
             if process and process.poll() is None:

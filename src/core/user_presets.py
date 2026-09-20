@@ -15,7 +15,7 @@ LOCAL_SETTINGS = ROOT / "config" / "settings.local.json"
 _LOCK = threading.RLock()
 
 RTX_FIELDS = {"mode", "scale", "quality"}
-DLSS_FIELDS = {"scale", "nr_preset", "nr_style", "model_preset", "intensity", "local_tone", "local_structure", "skin_structure", "automatic_mask"}
+DLSS_FIELDS = {"scale", "nr_preset", "nr_style", "model_preset", "intensity", "local_tone", "local_structure", "skin_structure", "automatic_mask", "nr_working_scale", "recompose_backend", "shimmer_suppression", "color_strength", "tone_preservation", "v10_nr_passes", "v10_face_skin_protection", "v10_grain_preservation", "v10_shimmer_suppression", "v10_prefer_nvof"}
 DLSS_SR_FIELDS = {"mode", "model_preset"}
 DLSSG_FIELDS = {"motion_provider", "depth_mode", "multiplier", "nvof_profile"}
 LEGACY_DLSSG_FIELDS = {"community_runtime", "official_runtime_dir", "runtime_profile"}
@@ -110,6 +110,18 @@ def _validate(backend: str, values: dict) -> dict:
             raise ValueError("Invalid DLSS5 preset selection")
         if not isinstance(result.get("automatic_mask"), bool) or float(result.get("scale", 0)) not in {1.0, 1.5, 1.724, 2.0, 3.0}:
             raise ValueError("Invalid DLSS5 preset value")
+        working_scale = result.get("nr_working_scale", 1.0)
+        if working_scale != "auto" and float(working_scale) not in {1.0, 0.875, 0.75, 2.0 / 3.0, 0.5}:
+            raise ValueError("Invalid DLSS5 NR working scale")
+        if result.get("recompose_backend", "auto") not in {"auto", "cuda", "cpu"}:
+            raise ValueError("Invalid DLSS5 recomposition backend")
+        for field in ("shimmer_suppression", "color_strength", "tone_preservation", "v10_face_skin_protection", "v10_grain_preservation", "v10_shimmer_suppression"):
+            if field in result and not 0.0 <= float(result[field]) <= 1.0:
+                raise ValueError(f"Invalid DLSS5 {field}")
+        if "v10_nr_passes" in result and int(result["v10_nr_passes"]) not in {1, 2, 3, 4}:
+            raise ValueError("Invalid DLSS5 v10 NR pass count")
+        if "v10_prefer_nvof" in result and not isinstance(result["v10_prefer_nvof"], bool):
+            raise ValueError("Invalid DLSS5 v10 NVOF preference")
     elif key == "dlss_sr":
         if result.get("mode") not in {"DLAA", "Quality", "Balanced", "Performance", "Ultra Performance"}:
             raise ValueError("Invalid DLSS SR mode")

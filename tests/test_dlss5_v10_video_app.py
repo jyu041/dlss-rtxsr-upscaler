@@ -76,6 +76,13 @@ def test_v10_app_output_validation_rejects_invalid_evidence(field, value, match)
         )
 
 
+def test_v10_app_encoder_forces_sdr_420_compatibility():
+    source = open("src/video/dlss5_v10.py", encoding="utf-8").read()
+    assert video.SDR_ENCODER_PIXEL_FORMAT == "yuv420p"
+    assert '"-pix_fmt",' in source
+    assert "SDR_ENCODER_PIXEL_FORMAT" in source
+
+
 def test_v10_app_renderer_source_preserves_containment_and_scene_resets():
     source = open("src/video/dlss5_v10.py", encoding="utf-8").read()
     assert "install_temporary_firewall_block" in source

@@ -119,6 +119,13 @@ class DLSS5V10ExperimentalBackend(Backend):
         local_structure: float = 0.40,
         skin_structure: float = 0.15,
         automatic_mask: bool = False,
+        nr_passes: int = 1,
+        color_strength: float = 1.0,
+        tone_preservation: float = 0.0,
+        face_skin_protection: float = 0.0,
+        grain_preservation: float = 0.0,
+        shimmer_suppression: float = 0.70,
+        prefer_nvof: bool = False,
     ) -> CreateRequest:
         self.validate_geometry(width, height, scale)
         if style not in STYLE_MAP:
@@ -130,17 +137,17 @@ class DLSS5V10ExperimentalBackend(Backend):
             processing_scale=float(scale),
             style=STYLE_MAP[style],
             intensity=float(intensity),
-            nr_passes=1,
+            nr_passes=int(nr_passes),
             local_tone=float(local_tone),
             local_structure=float(local_structure),
             skin_structure=float(skin_structure),
-            color_strength=1.0,
-            tone_preservation=0.0,
-            face_skin_protection=0.0,
-            grain_preservation=0.0,
-            shimmer_suppression=0.70,
+            color_strength=float(color_strength),
+            tone_preservation=float(tone_preservation),
+            face_skin_protection=float(face_skin_protection),
+            grain_preservation=float(grain_preservation),
+            shimmer_suppression=float(shimmer_suppression),
             automatic_mask=bool(automatic_mask),
-            prefer_nvof=False,
+            prefer_nvof=bool(prefer_nvof),
         ).validate()
 
     def close(self) -> None:

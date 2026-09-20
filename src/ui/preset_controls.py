@@ -42,13 +42,61 @@ def delete_rtx(name):
     return delete_preset("rtx_vsr", name)
 
 
-def save_dlss(name, scale, nr_preset, nr_style, model_preset, intensity, tone, structure, skin, mask):
-    return save_preset("dlss5", name, {"scale": float(scale), "nr_preset": nr_preset, "nr_style": nr_style, "model_preset": model_preset, "intensity": float(intensity), "local_tone": float(tone), "local_structure": float(structure), "skin_structure": float(skin), "automatic_mask": mask == "On"})
+def save_dlss(
+    name, scale, nr_preset, nr_style, model_preset, intensity, tone, structure,
+    skin, mask, nr_working_scale=1.0, recompose_backend="auto",
+    shimmer_suppression=0.0, color_strength=1.0, tone_preservation=0.0,
+    v10_nr_passes=1, v10_face_skin_protection=0.0,
+    v10_grain_preservation=0.0, v10_shimmer_suppression=0.70,
+    v10_prefer_nvof="Off",
+):
+    return save_preset("dlss5", name, {
+        "scale": float(scale),
+        "nr_preset": nr_preset,
+        "nr_style": nr_style,
+        "model_preset": model_preset,
+        "intensity": float(intensity),
+        "local_tone": float(tone),
+        "local_structure": float(structure),
+        "skin_structure": float(skin),
+        "automatic_mask": mask == "On",
+        "nr_working_scale": nr_working_scale,
+        "recompose_backend": recompose_backend,
+        "shimmer_suppression": float(shimmer_suppression),
+        "color_strength": float(color_strength),
+        "tone_preservation": float(tone_preservation),
+        "v10_nr_passes": int(v10_nr_passes),
+        "v10_face_skin_protection": float(v10_face_skin_protection),
+        "v10_grain_preservation": float(v10_grain_preservation),
+        "v10_shimmer_suppression": float(v10_shimmer_suppression),
+        "v10_prefer_nvof": v10_prefer_nvof == "On",
+    })
 
 
 def load_dlss(name):
     values, message = load_preset("dlss5", name)
-    return [values.get("scale"), values.get("nr_preset"), values.get("nr_style"), values.get("model_preset"), values.get("intensity"), values.get("local_tone"), values.get("local_structure"), values.get("skin_structure"), "On" if values.get("automatic_mask") else "Off", message]
+    return [
+        values.get("scale", 1.0),
+        values.get("nr_preset", "Default"),
+        values.get("nr_style", "Natural"),
+        values.get("model_preset", "Default"),
+        values.get("intensity", 0.60),
+        values.get("local_tone", 0.40),
+        values.get("local_structure", 0.40),
+        values.get("skin_structure", 0.15),
+        "On" if values.get("automatic_mask") else "Off",
+        values.get("nr_working_scale", 1.0),
+        values.get("recompose_backend", "auto"),
+        values.get("shimmer_suppression", 0.0),
+        values.get("color_strength", 1.0),
+        values.get("tone_preservation", 0.0),
+        values.get("v10_nr_passes", 1),
+        values.get("v10_face_skin_protection", 0.0),
+        values.get("v10_grain_preservation", 0.0),
+        values.get("v10_shimmer_suppression", 0.70),
+        "On" if values.get("v10_prefer_nvof") else "Off",
+        message,
+    ]
 
 
 def delete_dlss(name):

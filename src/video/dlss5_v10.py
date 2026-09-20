@@ -29,23 +29,42 @@ from src.video.nvenc import format_preflight_failure, nvenc_preflight
 
 
 NGX_RESULT_SUCCESS = 1
+SDR_ENCODER_PIXEL_FORMAT = "yuv420p"
 
 
-def _read_exact_frame(stream, size: int) -> bytes:
-    chunks: list[bytes] = []
-    remaining = size
-    while remaining:
-        chunk = stream.read(remaining)
-        if not chunk:
-            break
-        chunks.append(chunk)
-        remaining -= len(chunk)
-    data = b"".join(chunks)
-    if data and len(data) != size:
+def _read_exact_frame(stream, size: int, buffer: bytearray | None = None):
+    """Read one exact frame, optionally into reusable storage.
+
+    Real decoder pipes use readinto() to avoid a per-frame allocation/copy.
+    Generic binary streams and existing test doubles keep the original read()
+    contract for compatibility.
+    """
+    owns_storage = buffer is None
+    storage = buffer if buffer is not None else bytearray(size)
+    if len(storage) != size:
+        raise ValueError("decoder frame buffer has the wrong size")
+    view = memoryview(storage)
+    offset = 0
+    use_readinto = callable(getattr(stream, "readinto", None))
+    while offset < size:
+        if use_readinto:
+            count = stream.readinto(view[offset:])
+            if not count:
+                break
+            offset += count
+        else:
+            chunk = stream.read(size - offset)
+            if not chunk:
+                break
+            view[offset : offset + len(chunk)] = chunk
+            offset += len(chunk)
+    if offset == 0:
+        return b""
+    if offset != size:
         raise RuntimeError(
-            f"truncated RGBA frame from decoder: {len(data)} bytes, expected {size}"
+            f"truncated RGBA frame from decoder: {offset} bytes, expected {size}"
         )
-    return data
+    return bytes(view) if owns_storage else view
 
 
 def _validate_output(output, *, width: int, height: int, timestamp: int, reset: bool) -> None:
@@ -96,6 +115,13 @@ def render_dlss5_v10(
     local_structure: float = 0.40,
     skin_structure: float = 0.15,
     automatic_mask: bool = False,
+    nr_passes: int = 1,
+    color_strength: float = 1.0,
+    tone_preservation: float = 0.0,
+    face_skin_protection: float = 0.0,
+    grain_preservation: float = 0.0,
+    shimmer_suppression: float = 0.70,
+    prefer_nvof: bool = False,
     start: float = 0.0,
     duration: float | None = None,
     codec: str = "H.264",
@@ -125,6 +151,13 @@ def render_dlss5_v10(
         local_structure=local_structure,
         skin_structure=skin_structure,
         automatic_mask=automatic_mask,
+        nr_passes=nr_passes,
+        color_strength=color_strength,
+        tone_preservation=tone_preservation,
+        face_skin_protection=face_skin_protection,
+        grain_preservation=grain_preservation,
+        shimmer_suppression=shimmer_suppression,
+        prefer_nvof=prefer_nvof,
     )
 
     report_progress(
@@ -161,7 +194,13 @@ def render_dlss5_v10(
     resets = 0
     cuts = 0
     started = time.perf_counter()
-    previous_raw: bytes | None = None
+    previous_raw = None
+    frame_buffers = (bytearray(frame_bytes), bytearray(frame_bytes))
+    frame_slot = 0
+    decode_read_ms = 0.0
+    scene_cut_ms = 0.0
+    native_process_ms = 0.0
+    encoder_write_ms = 0.0
     rule_name = f"NVE DLSS5 v10 app {os.getpid()}-{int(started * 1000) & 0xFFFF:X}"
     firewall_installed = False
     clean_close = False
@@ -225,6 +264,8 @@ def render_dlss5_v10(
                 "p5",
                 "-cq",
                 "19",
+                "-pix_fmt",
+                SDR_ENCODER_PIXEL_FORMAT,
                 str(video_only),
             ],
             stdin=subprocess.PIPE,
@@ -234,22 +275,31 @@ def render_dlss5_v10(
         assert decoder.stdout is not None
         assert encoder.stdin is not None
 
+        loop_started = time.perf_counter()
         while True:
             if cancel is not None and cancel.is_set():
                 raise InterruptedError("DLSS5 v10 render cancelled")
-            raw_frame = _read_exact_frame(decoder.stdout, frame_bytes)
+            read_started = time.perf_counter()
+            raw_frame = _read_exact_frame(
+                decoder.stdout, frame_bytes, frame_buffers[frame_slot]
+            )
+            decode_read_ms += (time.perf_counter() - read_started) * 1000
             if not raw_frame:
                 break
 
             reset = count == 0
             if previous_raw is not None:
+                cut_started = time.perf_counter()
                 cut = scene_cut_metrics(previous_raw, raw_frame, width, height)
+                scene_cut_ms += (time.perf_counter() - cut_started) * 1000
                 if bool(cut["is_cut"]):
                     reset = True
                     cuts += 1
+            process_started = time.perf_counter()
             output = client.process_frame(
                 FrameRequest(timestamp=count, reset=reset, rgba=raw_frame)
             )
+            native_process_ms += (time.perf_counter() - process_started) * 1000
             _validate_output(
                 output,
                 width=width,
@@ -263,9 +313,11 @@ def render_dlss5_v10(
                 height, width, 4
             )
             try:
+                write_started = time.perf_counter()
                 encoder.stdin.write(
                     np.ascontiguousarray(rendered[..., :3]).tobytes()
                 )
+                encoder_write_ms += (time.perf_counter() - write_started) * 1000
             except BrokenPipeError as exc:
                 details = (
                     encoder.stderr.read() if encoder.stderr else b""
@@ -275,6 +327,7 @@ def render_dlss5_v10(
                 ) from exc
 
             previous_raw = raw_frame
+            frame_slot ^= 1
             count += 1
             resets += int(reset)
             report_progress(
@@ -288,6 +341,7 @@ def render_dlss5_v10(
                 ),
             )
 
+        processing_loop_wall_seconds = time.perf_counter() - loop_started
         decoder.wait(timeout=30)
         if decoder.returncode:
             details = (
@@ -361,9 +415,17 @@ def render_dlss5_v10(
         if result.returncode:
             raise RuntimeError(result.stderr[-2000:])
 
+        total_wall_seconds = time.perf_counter() - started
+        setup_seconds = max(0.0, loop_started - started)
+        finalize_seconds = max(
+            0.0,
+            total_wall_seconds - setup_seconds - processing_loop_wall_seconds,
+        )
+
         return {
             "frames": count,
-            "fps": count / max(0.001, time.perf_counter() - started),
+            "fps": count / max(0.001, total_wall_seconds),
+            "processing_fps": count / max(0.001, processing_loop_wall_seconds),
             "dimensions": (width, height),
             "audio_preserved": bool(info["audio_codec"] != "none"),
             "scene_resets": resets,
@@ -372,6 +434,27 @@ def render_dlss5_v10(
             "frames_estimated": estimated,
             "experimental_backend": "dlss5-v10",
             "processing_scale": float(scale),
+            "quality_controls": {
+                "nr_passes": int(nr_passes),
+                "color_strength": float(color_strength),
+                "tone_preservation": float(tone_preservation),
+                "face_skin_protection": float(face_skin_protection),
+                "grain_preservation": float(grain_preservation),
+                "shimmer_suppression": float(shimmer_suppression),
+                "prefer_nvof": bool(prefer_nvof),
+            },
+            "performance": {
+                "total_wall_seconds": total_wall_seconds,
+                "setup_seconds": setup_seconds,
+                "processing_loop_wall_seconds": processing_loop_wall_seconds,
+                "processing_fps": count / max(0.001, processing_loop_wall_seconds),
+                "finalize_seconds": finalize_seconds,
+                "decode_read_ms": decode_read_ms,
+                "scene_cut_ms": scene_cut_ms,
+                "native_process_ms": native_process_ms,
+                "encoder_write_ms": encoder_write_ms,
+                "transport": "double-buffered-readinto/host-protocol/rawvideo-stdin",
+            },
             "host_close": "CLOSED",
             "firewall_containment": True,
             "hello": hello,

@@ -36,6 +36,10 @@ Important current hardware gates include:
 - `run_dlssg_grid4_managed_candidate.ps1`
 - `run_mfg_grid_quality_ab.ps1`
 - `validate_dlssg_candidate.py`
+- `benchmark_dlss5_quality.py` / `benchmark_dlss5_v10_quality.py` — bounded real-video DLSS5 quality/performance matrices.
+- `benchmark_dlssg_grid4_matrix.py` — C55/grid1 versus managed grid4 2X/3X/4X hardware matrix.
+- `validate_dlssg_recreation_soak.py` — repeated fresh-process DLSS-G feature-creation determinism gate.
+- `audit_dlssg_sm86_035.py` — static-only identity/configuration audit for the incompatible upstream 0.3.5 proxy candidate; never executes it.
 
 See `../docs/TESTING.md` and the dated hardware-evidence documents before
 running those gates.

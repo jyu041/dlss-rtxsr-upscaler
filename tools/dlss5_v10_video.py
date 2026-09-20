@@ -28,6 +28,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--local-structure", type=float, default=0.40)
     parser.add_argument("--skin-structure", type=float, default=0.15)
     parser.add_argument("--automatic-mask", action="store_true")
+    parser.add_argument("--nr-passes", type=int, choices=(1, 2, 3, 4), default=1)
+    parser.add_argument("--color-strength", type=float, default=1.0)
+    parser.add_argument("--tone-preservation", type=float, default=0.0)
+    parser.add_argument("--face-skin-protection", type=float, default=0.0)
+    parser.add_argument("--grain-preservation", type=float, default=0.0)
+    parser.add_argument("--shimmer-suppression", type=float, default=0.70)
+    parser.add_argument("--prefer-nvof", action="store_true")
     parser.add_argument("--codec", choices=("H.264", "HEVC"), default="H.264")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--ack", default="")
@@ -65,6 +72,13 @@ def main(argv: list[str] | None = None) -> int:
             local_structure=args.local_structure,
             skin_structure=args.skin_structure,
             automatic_mask=args.automatic_mask,
+            nr_passes=args.nr_passes,
+            color_strength=args.color_strength,
+            tone_preservation=args.tone_preservation,
+            face_skin_protection=args.face_skin_protection,
+            grain_preservation=args.grain_preservation,
+            shimmer_suppression=args.shimmer_suppression,
+            prefer_nvof=args.prefer_nvof,
             start=args.start,
             duration=args.duration,
             codec=args.codec,

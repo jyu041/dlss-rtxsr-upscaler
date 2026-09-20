@@ -7,13 +7,13 @@ import math
 import cv2
 import numpy as np
 
-SUPPORTED_NR_WORKING_SCALES = (1.0, 0.75, 2.0 / 3.0, 0.5)
+SUPPORTED_NR_WORKING_SCALES = (1.0, 0.875, 0.75, 2.0 / 3.0, 0.5)
 
 
 def validate_nr_working_scale(scale: float) -> float:
     value = float(scale)
     if not math.isfinite(value) or not any(math.isclose(value, allowed, rel_tol=0.0, abs_tol=1e-9) for allowed in SUPPORTED_NR_WORKING_SCALES):
-        raise ValueError("Unsupported nr_working_scale. Choose 1.0, 0.75, 0.6666666667, or 0.5.")
+        raise ValueError("Unsupported nr_working_scale. Choose 1.0, 0.875, 0.75, 0.6666666667, or 0.5.")
     return next(allowed for allowed in SUPPORTED_NR_WORKING_SCALES if math.isclose(value, allowed, rel_tol=0.0, abs_tol=1e-9))
 
 

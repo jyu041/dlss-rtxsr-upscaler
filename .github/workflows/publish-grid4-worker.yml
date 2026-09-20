@@ -26,7 +26,7 @@ jobs:
       SOURCE_COMMIT: "76702915f5c55423786d6fdd92e69ef1f55bbfa5"
     steps:
       - name: Check out release metadata
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download exact validated Actions artifact
         shell: bash

@@ -1,6 +1,11 @@
-# Portable runtime decision — Phase 5E
+# Portable runtime decision — deferred
 
-No-Conda turnkey launch is not claimed by this phase.
+> **Current project decision:** a no-Conda portable distribution is deliberately
+> deferred and is not part of the active completion criteria for the current
+> source-based release. The validated user path is recursive clone → setup.bat
+> → start.bat with Miniconda/Anaconda available.
+
+No-Conda turnkey launch is not claimed by the current project.
 
 The official CPython 3.11.9 Windows x64 embeddable archive is the only
 portable-Python option currently considered sufficiently reproducible for a
@@ -16,11 +21,12 @@ Gradio, and FFmpeg/NVENC. No clean extraction has yet demonstrated that the
 full production import set works from CPython’s embeddable layout without
 Conda or a system Python.
 
-Therefore the current decision is: keep Conda as the validated developer and
-test path; retain the portable builder as an explicit packager for a supplied,
-independently audited runtime; do not ship or advertise a portable runtime
-until its Python archive, wheel set, FFmpeg build, notices, and clean-machine
-HTTP test have all been recorded.
+Therefore the current decision is: keep Conda as the validated source-install
+and test path, and retain the portable builder only as historical/experimental
+packaging infrastructure. No portable-runtime work is required before the next
+source-based beta. If that product direction is resumed later, its Python
+archive, wheel set, FFmpeg build, notices, and clean-machine HTTP test must be
+validated before advertising it.
 
 The dependency split is now explicit in `tools/requirements/runtime.txt`,
 `tools/requirements/test.txt`, and `tools/requirements/dev.txt`. This prevents pytest and

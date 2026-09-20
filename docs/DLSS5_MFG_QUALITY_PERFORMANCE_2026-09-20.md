@@ -118,6 +118,14 @@ Relevant upstream findings:
 
 Therefore the 0.3.5 proxy is **not** substituted for the validated runtime.
 
+At the pinned public commit, repository code search exposes the optimization
+contract/configuration and the proxy binary identity, but did not expose a
+source implementation of the 63 optimized kernel variants/fusions that can be
+adapted into this project's direct-host worker. The upstream project describes
+its project source as GPLv3 while extracted/recompiled NVIDIA kernel resources
+retain separate upstream terms. No upstream optimization implementation or
+binary payload has been copied into this MIT repository.
+
 `tools/audit_dlssg_sm86_035.py` performs a no-execution identity/configuration
 audit for a locally supplied copy. It pins the exact Git blobs for the 0.3.5
 `version.dll` and factory INI and requires `Optimized=1`,

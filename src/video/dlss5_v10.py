@@ -272,6 +272,7 @@ def render_dlss5_v10(
         assert decoder.stdout is not None
         assert encoder.stdin is not None
 
+        loop_started = time.perf_counter()
         while True:
             if cancel is not None and cancel.is_set():
                 raise InterruptedError("DLSS5 v10 render cancelled")
@@ -337,6 +338,7 @@ def render_dlss5_v10(
                 ),
             )
 
+        processing_loop_wall_seconds = time.perf_counter() - loop_started
         decoder.wait(timeout=30)
         if decoder.returncode:
             details = (
@@ -410,9 +412,17 @@ def render_dlss5_v10(
         if result.returncode:
             raise RuntimeError(result.stderr[-2000:])
 
+        total_wall_seconds = time.perf_counter() - started
+        setup_seconds = max(0.0, loop_started - started)
+        finalize_seconds = max(
+            0.0,
+            total_wall_seconds - setup_seconds - processing_loop_wall_seconds,
+        )
+
         return {
             "frames": count,
-            "fps": count / max(0.001, time.perf_counter() - started),
+            "fps": count / max(0.001, total_wall_seconds),
+            "processing_fps": count / max(0.001, processing_loop_wall_seconds),
             "dimensions": (width, height),
             "audio_preserved": bool(info["audio_codec"] != "none"),
             "scene_resets": resets,
@@ -431,6 +441,11 @@ def render_dlss5_v10(
                 "prefer_nvof": bool(prefer_nvof),
             },
             "performance": {
+                "total_wall_seconds": total_wall_seconds,
+                "setup_seconds": setup_seconds,
+                "processing_loop_wall_seconds": processing_loop_wall_seconds,
+                "processing_fps": count / max(0.001, processing_loop_wall_seconds),
+                "finalize_seconds": finalize_seconds,
                 "decode_read_ms": decode_read_ms,
                 "scene_cut_ms": scene_cut_ms,
                 "native_process_ms": native_process_ms,

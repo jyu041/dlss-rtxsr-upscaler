@@ -99,7 +99,7 @@ def main() -> int:
             lifecycle = report.get("lifecycle_timing_seconds") or {}
             if lifecycle.get("device_removal_results"):
                 raise RuntimeError(f"cycle {cycle} reported device removal")
-            if int(report.get("worker_create_features", 0)) != 1:
+            if int(lifecycle.get("dlssg_create_feature_count", 0)) != 1:
                 raise RuntimeError(f"cycle {cycle} expected exactly one feature creation")
             hashes.append(str(digest))
             records.append({
@@ -109,8 +109,8 @@ def main() -> int:
                 "output_frames": report.get("output_frames"),
                 "generated_frames": report.get("generated_frames"),
                 "end_to_end_fps": report.get("end_to_end_fps"),
-                "worker_create_features": report.get("worker_create_features"),
-                "worker_evaluates": report.get("worker_evaluates"),
+                "worker_create_features": lifecycle.get("dlssg_create_feature_count"),
+                "worker_evaluates": lifecycle.get("evaluate_count"),
                 "worker_exit_code": lifecycle.get("worker_exit_code"),
                 "device_removal_results": lifecycle.get("device_removal_results", []),
             })

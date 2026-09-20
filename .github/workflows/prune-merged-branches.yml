@@ -38,12 +38,16 @@ jobs:
           # - phase5-portable-runtime-refresh and public-runtime-bootstrap are
           #   strict ancestors of current main (zero unique commits);
           # - integrate/dlss5-v10-experimental-app was superseded by merged PR #27;
-          # - validate-dlss5-v3-real-archive belonged to closed/superseded PR #3.
+          # - validate-dlss5-v3-real-archive belonged to closed/superseded PR #3;
+          # - auto-runtime-setup is the pre-hardening alternate v3 bootstrap design
+          #   that removed readiness/security gates and is superseded by the
+          #   current managed v3 provisioning + security-hardening path.
           extra_stale=(
             "phase5-portable-runtime-refresh"
             "public-runtime-bootstrap"
             "integrate/dlss5-v10-experimental-app"
             "validate-dlss5-v3-real-archive"
+            "auto-runtime-setup"
           )
 
           mapfile -t candidates < <(

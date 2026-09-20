@@ -16,6 +16,7 @@ on:
       - "tools/check_dlss_sr_readiness.py"
       - "tools/validate_dlssg_candidate.py"
       - ".github/workflows/fresh-source-install.yml"
+      - ".gitignore"
   pull_request:
     paths:
       - "setup.bat"
@@ -29,6 +30,7 @@ on:
       - "tools/check_dlss_sr_readiness.py"
       - "tools/validate_dlssg_candidate.py"
       - ".github/workflows/fresh-source-install.yml"
+      - ".gitignore"
   workflow_dispatch:
 
 permissions:

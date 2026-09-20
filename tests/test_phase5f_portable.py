@@ -17,7 +17,7 @@ def test_release_launcher_prefers_portable_and_supports_source_conda():
 
 
 def test_developer_launcher_keeps_conda_workflow_separate():
-    source = (ROOT / "start-dev.bat").read_text(encoding="utf-8")
+    source = (ROOT / "tools" / "start-dev.bat").read_text(encoding="utf-8")
     assert "conda run" in source
 
 

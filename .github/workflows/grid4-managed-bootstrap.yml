@@ -6,11 +6,13 @@ on:
       - main
     paths:
       - "src/runtime_manager/**"
+      - "src/backends/dlssg.py"
       - "tools/manage_runtime.py"
       - ".github/workflows/grid4-managed-bootstrap.yml"
   pull_request:
     paths:
       - "src/runtime_manager/**"
+      - "src/backends/dlssg.py"
       - "tools/manage_runtime.py"
       - ".github/workflows/grid4-managed-bootstrap.yml"
   workflow_dispatch:

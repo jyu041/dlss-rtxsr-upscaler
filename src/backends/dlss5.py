@@ -15,6 +15,7 @@ from typing import Any
 
 from .base import Backend, BackendStatus
 from .dlss5_recompose import compute_working_dimensions, downsample_for_nr, residual_recompose_cpu, validate_nr_working_scale
+from .dlss5_quality import TemporalResidualStabilizer, resolve_working_scale
 
 ROOT = Path(__file__).resolve().parents[2]
 APPROVAL = ROOT / "runtime" / "dlss5-v3" / "approval.json"
@@ -327,7 +328,7 @@ class DLSS5Backend(Backend):
         finally:
             compositor.close()
 
-    def process_frames(self, frames, *, width, height, frame_count, options=None, cancel=None, nr_working_scale=1.0, telemetry=None, recompose_backend="auto"):
+    def process_frames(self, frames, *, width, height, frame_count, options=None, cancel=None, nr_working_scale=1.0, telemetry=None, recompose_backend="auto", shimmer_suppression=0.0, color_strength=1.0, tone_preservation=0.0):
         """Yield temporally processed RGBA frames from one owned worker session."""
         self._require_ready()
         import numpy as np
@@ -338,9 +339,25 @@ class DLSS5Backend(Backend):
 
         options = options or self.options(upscaling_mode=1.0, motion_mode="optical_flow")
         self._validate_output_scale(options)
-        scale = validate_working_scale_for_options(options, nr_working_scale)
+        resolved_scale = resolve_working_scale(nr_working_scale, width, height)
+        scale = validate_working_scale_for_options(options, resolved_scale)
         requested_backend = _validate_recompose_backend(recompose_backend)
         working_width, working_height = compute_working_dimensions(width, height, scale)
+        quality = None
+        if float(shimmer_suppression) > 0.0 or float(color_strength) < 1.0 or float(tone_preservation) > 0.0:
+            quality = TemporalResidualStabilizer(
+                shimmer_suppression=float(shimmer_suppression),
+                color_strength=float(color_strength),
+                tone_preservation=float(tone_preservation),
+            )
+        if telemetry is not None:
+            telemetry["nr_working_scale_requested"] = nr_working_scale
+            telemetry["nr_working_scale_resolved"] = scale
+            telemetry["quality_controls"] = {
+                "shimmer_suppression": float(shimmer_suppression),
+                "color_strength": float(color_strength),
+                "tone_preservation": float(tone_preservation),
+            }
         session_options = options if scale == 1.0 else self.options(**{**asdict(options), "upscaling_mode": 1.0})
         session_started = time.perf_counter()
         with DlssSession(self.layout, session_options, input_width=working_width if scale < 1.0 else width, input_height=working_height if scale < 1.0 else height, frame_count=frame_count) as session:
@@ -393,8 +410,14 @@ class DLSS5Backend(Backend):
                 else:
                     final, cuda_telemetry = compositor.compose(native, source, output)
                 recompose_ms = (time.perf_counter() - recompose_started) * 1000
+                quality_meta = {}
+                if quality is not None:
+                    final, quality_telemetry = quality.compose(native, final, reset=bool(motion.reset))
+                    quality_meta = asdict(quality_telemetry)
                 processing_loop_ms = (time.perf_counter() - loop_started) * 1000
                 metadata = {"index": index, "pts": pts, "reset": motion.reset, "scene_score": motion.scene_score, "native_dimensions": [width, height], "working_dimensions": [working_width, working_height], "nr_working_scale": scale, "preprocess_ms": preprocess_ms, "motion_ms": motion_ms, "feature_submit_ms": feature_submit_ms, "motion_plus_submit_ms": motion_plus_submit_ms, "recompose_ms": recompose_ms, "recompose_wall_ms": recompose_ms, "processing_loop_ms": processing_loop_ms}
+                if quality_meta:
+                    metadata.update({f"quality_{key}": value for key, value in quality_meta.items()})
                 if scale < 1.0:
                     metadata.update({"recompose_backend_requested": requested_backend, "recompose_backend_used": "cuda" if compositor is not None else "cpu"})
                     if cuda_telemetry:

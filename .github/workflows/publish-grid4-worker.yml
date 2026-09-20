@@ -1,11 +1,8 @@
 name: publish-grid4-worker
 
+# Immutable v1 publication/verification workflow. The validated asset already
+# exists; rerun only by explicit maintainer action.
 on:
-  push:
-    branches:
-      - integrate/mfg-grid4-managed-worker
-    paths:
-      - ".github/workflows/publish-grid4-worker.yml"
   workflow_dispatch:
 
 permissions:

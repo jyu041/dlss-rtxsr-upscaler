@@ -22,6 +22,7 @@ phrases such as "not implemented", "future work", or "candidate".
 | [Security audit](SECURITY_AUDIT.md) | Runtime trust, fail-closed behavior, and containment policy |
 | [DLSS 5 approval](DLSS5_APPROVAL.md) | Current v3/v10 approval and execution boundaries |
 | [DLSS 5 research](DLSS5_RESEARCH.md) | Current experimental findings and benchmark interpretation |
+| [DLSS5 / MFG quality-performance experiment](DLSS5_MFG_QUALITY_PERFORMANCE_2026-09-20.md) | Isolated branch controls, public-upstream boundaries, and RTX 3070 Ti promotion gates |
 | [Third-party inventory](THIRD_PARTY.md) | Dependency/licensing inventory |
 | [Development](DEVELOPMENT.md) | Contributor workflow |
 | [Project status](PROJECT_STATUS.md) | What is complete, deliberately deferred, or hardware-dependent |

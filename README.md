@@ -241,12 +241,18 @@ Git checkout.
 | [Development](docs/DEVELOPMENT.md) | Contributor workflow |
 | [Contributing](CONTRIBUTING.md) | Contribution guidelines |
 
-## Existing Beta Package
+## Current Beta Release
 
-The public `v0.1.0-beta.2` package remains available as an older validated
-beta artifact. Its application source predates the current `main` branch.
-New users should use the source-install workflow above unless they specifically
-need that historical package.
+`v0.2.0-beta.1` is the current source-install beta. It is intentionally not a
+no-Conda portable bundle; use the recursive clone → `setup.bat` → `start.bat`
+workflow documented above.
+
+The older `v0.1.0-beta.2` ZIP remains available as a historical prebuilt beta,
+but it predates managed grid4, the DLSS 5 v10 application path, the current
+frontend, hardened source onboarding, and the repository cleanup.
+
+See [the v0.2.0-beta.1 release notes](docs/RELEASE_NOTES_v0.2.0-beta.1.md) for
+the current release scope and limitations.
 
 ## Acknowledgements
 

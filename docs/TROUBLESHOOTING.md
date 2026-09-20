@@ -1,33 +1,79 @@
 # Troubleshooting
 
-Run `python -m src.core.diagnostics` inside the dedicated Conda environment
-first. If FFmpeg is unavailable, install a compatible FFmpeg/FFprobe build and
-ensure both commands are on `PATH`.
+Start with the **Diagnostics** page in the UI or run
+`python -m src.core.diagnostics` inside the dedicated Conda environment.
 
-If RTX VSR is unavailable, verify the official `nvidia-vfx` package and NVIDIA
-driver. If DLSS SR is unavailable, verify the native host, the approved
-`nvngx_dlss.dll` hash, and its self-test result. If DLSS5 is unavailable, check
-the local approval manifest, all exact hashes, the signed Feature-18 evidence,
-and the worker's exact outbound Firewall block.
+If FFmpeg is unavailable, install a compatible FFmpeg/FFprobe build and ensure
+both commands are on `PATH`. Source setup requires both `h264_nvenc` and
+`hevc_nvenc` to be exposed by FFmpeg.
 
-For a passive DLSS5 report run `python -m src.backends.dlss5_diagnostics`.
-Use `--self-test` only when an approved runtime and compatible RTX hardware are
-already present. For measurements use
-`python -m src.backends.dlss5_benchmark`; it writes an ignored JSON report and
-continues after a timed-out resolution. An encoder error after a successful
-first Feature-18 output is reported as an FFmpeg/NVENC preflight failure, not
-as a DLSS5 failure. Inspect and redact local paths before sharing reports.
+## Backend readiness
+
+### RTX VSR
+
+Verify the official `nvidia-vfx` package, NVIDIA driver, and compatible RTX
+hardware. Use `python tools/check_rtx_vsr_readiness.py` for the explicit
+readiness probe.
+
+### DLSS SR
+
+Open **Configuration → DLSS SR readiness** and run validation. A verified
+host/runtime can remain installed even when the local GPU/driver self-test does
+not pass; the UI reports the readiness reason rather than falling back to
+another processor.
+
+### DLSS Frame Generation
+
+Verify the managed C55 worker, SM86 direct-host runtime, and official provider
+through Runtime Manager. The normal profile is C55/grid1. Grid4 is an explicit
+experimental profile with its own pinned worker identity.
+
+### DLSS 5 v3
+
+Check the local approval manifest, exact runtime hashes, Defender evidence,
+Feature-18 self-test, and the exact outbound Firewall block. For a passive
+report run:
+
+```powershell
+python -m src.backends.dlss5_diagnostics
+```
+
+Use `--self-test` only when an approved runtime and compatible RTX hardware
+are already present.
+
+For measurements use `python -m src.backends.dlss5_benchmark`; it writes an
+ignored JSON report and continues after a timed-out resolution. An encoder
+error after successful Feature-18 output is an FFmpeg/NVENC failure rather than
+evidence that Feature 18 itself failed.
 
 If reduced NR is selected with a DLSS5 output scale other than 1.0x, the job is
-rejected intentionally. Select `100% (Native)` NR working resolution or change
-the DLSS5 output scale to 1.0x. Reduced working resolution changes the internal
-motion/Feature-18 workload, not the final video dimensions.
+rejected intentionally. Select `100% (Native)` NR working resolution or use
+1.0x DLSS5 output. Reduced working resolution changes the internal
+motion/Feature-18 workload, not final video dimensions.
 
 If CUDA recomposition cannot select the same unambiguous GPU as the DLSS5
 runtime, `auto` records the reason and uses the CPU reference compositor. The
-explicit `cuda` option fails instead of silently falling back. CUDA Event times
-do not include all host staging and synchronization costs; compare them with
-the reported recomposition wall time.
+explicit `cuda` option fails rather than silently falling back.
 
-The application does not download replacement runtimes or silently switch
-backends. The DLSS paths are SDR-oriented and do not promise HDR preservation.
+### DLSS 5 v10 Experimental
+
+v10 is not provisioned by normal setup. Open **Configuration → DLSS 5 v10
+experimental readiness** and run **Refresh DLSS 5 v10 preflight**. This verifies
+the pinned archive/runtime identity, stages the candidate, and reruns the
+required static/Defender preflight.
+
+The current application path is intentionally restricted to SDR RGBA8, 1.0x,
+and up to 1920x1080-equivalent input. Failure of preflight, containment,
+process-tree checks, NGX/CUDA results, or clean shutdown is treated as a hard
+v10 render failure.
+
+## General behavior
+
+Ordinary application startup does not download replacement runtimes and the
+application never silently switches enhancement backends.
+
+DLSS paths are SDR-oriented and do not promise HDR preservation. Performance
+and output characteristics are hardware/runtime/content dependent.
+
+When sharing diagnostic or benchmark output, inspect it first and redact local
+filesystem paths or other machine-specific information.

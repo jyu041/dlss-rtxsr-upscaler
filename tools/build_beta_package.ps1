@@ -54,6 +54,9 @@ foreach ($relative in ($files | Select-Object -Unique)) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
     Copy-Item -LiteralPath $source -Destination $destination
 }
+$binaryNotice = Join-Path $root 'docs\legal\BINARY_DISTRIBUTION_NOTICES.md'
+if (-not (Test-Path -LiteralPath $binaryNotice -PathType Leaf)) { throw "Required package file missing: docs\legal\BINARY_DISTRIBUTION_NOTICES.md" }
+Copy-Item -LiteralPath $binaryNotice -Destination (Join-Path $stage 'BINARY_DISTRIBUTION_NOTICES.md')
 New-Item -ItemType Directory -Force -Path (Join-Path $stage 'runtime\dlssg_sm86_offline') | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $stage 'runtime\dlss-sr-host') | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $stage 'licenses') | Out-Null

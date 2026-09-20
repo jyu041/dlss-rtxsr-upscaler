@@ -99,7 +99,8 @@ def main() -> int:
             **case,
             "output": str(destination),
             "frames_compared": count,
-            "fps": stats.get("fps"),
+            "end_to_end_fps": stats.get("fps"),
+            "processing_fps": stats.get("processing_fps"),
             "scene_resets": stats.get("scene_resets"),
             "performance": stats.get("performance"),
             "quality_controls": stats.get("quality_controls"),
@@ -107,7 +108,8 @@ def main() -> int:
         }
         results.append(row)
         print(
-            f"{case['name']}: fps={float(stats.get('fps', 0)):.2f} "
+            f"{case['name']}: processing_fps={float(stats.get('processing_fps', 0)):.2f} "
+            f"e2e_fps={float(stats.get('fps', 0)):.2f} "
             f"effect={float(metrics['effect_mae'] or 0):.3f} "
             f"temporal={float(metrics['motion_compensated_residual_flicker_mae'] or 0):.3f}"
         )

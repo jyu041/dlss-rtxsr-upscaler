@@ -18,7 +18,8 @@ def test_release_launcher_prefers_portable_and_supports_source_conda():
 
 def test_developer_launcher_keeps_conda_workflow_separate():
     source = (ROOT / "tools" / "start-dev.bat").read_text(encoding="utf-8")
-    assert "conda run" in source
+    assert 'call "%NVE_CONDA_EXE%" run --no-capture-output' in source
+    assert 'cd /d "%~dp0.."' in source
 
 
 def test_toolchain_metadata_pins_providers():

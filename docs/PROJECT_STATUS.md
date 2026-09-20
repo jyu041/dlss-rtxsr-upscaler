@@ -63,12 +63,15 @@ source-based beta workflow.
 
 ## Release state
 
-The public `v0.1.0-beta.2` application package predates substantial current
-`main` improvements, including managed grid4, DLSS 5 v10 application
-integration, the frontend overhaul, hardened source onboarding, and repository
-cleanup.
+`v0.2.0-beta.1` is the current source-install beta milestone. It is intended
+to be used through the validated recursive clone → `setup.bat` →
+`start.bat` workflow.
 
-Creating a newer public application release is therefore a **release-management
-decision**, not unfinished core implementation. Until a new release is cut,
-the recommended way to use the current application is the documented source
-installation from `main`.
+The release deliberately does **not** introduce a no-Conda portable bundle.
+That direction remains deferred as described above.
+
+The historical `v0.1.0-beta.2` prebuilt ZIP remains available, but it
+predates managed grid4, the DLSS 5 v10 application path, the frontend
+overhaul, hardened source onboarding, and repository cleanup.
+
+See `RELEASE_NOTES_v0.2.0-beta.1.md` for the current release scope.

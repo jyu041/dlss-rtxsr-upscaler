@@ -205,7 +205,7 @@ def inspect(path):
     except Exception as e: return f"<span class=\"error\">Inspection failed: {e}</span>", f"Inspection failed: {e}"
 
 
-def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", *dlssg_settings):
+def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", shimmer_suppression=0.0, color_strength=1.0, tone_preservation=0.0, v10_nr_passes=1, v10_face_skin_protection=0.0, v10_grain_preservation=0.0, v10_shimmer_suppression=0.70, v10_prefer_nvof="Off", *dlssg_settings):
     if not path: return None, None, "Choose an input video."
     try:
         if mode == "DLSS Frame Generation 2X":
@@ -227,7 +227,7 @@ def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_s
             return None, None, f"{mode} unavailable. No substitute processing was performed. Install and audit the genuine runtime first."
         source_frame=TEMP/f"preview_source_{os.getpid()}.png"; preview_frame(path,timestamp,source_frame)
         if mode.startswith("DLSS"):
-            _save_last("dlss5", {"scale": float(dlss_scale), "nr_preset": nrpreset, "nr_style": style, "model_preset": model, "intensity": float(intensity), "local_tone": float(tone), "local_structure": float(structure), "skin_structure": float(skin), "automatic_mask": mask == "On"})
+            _save_last("dlss5", {"scale": float(dlss_scale), "nr_preset": nrpreset, "nr_style": style, "model_preset": model, "intensity": float(intensity), "local_tone": float(tone), "local_structure": float(structure), "skin_structure": float(skin), "automatic_mask": mask == "On", "nr_working_scale": nr_working_scale, "recompose_backend": recompose_backend, "shimmer_suppression": float(shimmer_suppression), "color_strength": float(color_strength), "tone_preservation": float(tone_preservation), "v10_nr_passes": int(v10_nr_passes), "v10_face_skin_protection": float(v10_face_skin_protection), "v10_grain_preservation": float(v10_grain_preservation), "v10_shimmer_suppression": float(v10_shimmer_suppression), "v10_prefer_nvof": v10_prefer_nvof == "On"})
         else:
             _save_last("rtx_vsr", {"mode": vsr_mode, "scale": float(scale_value), "quality": quality_value})
         from PIL import Image
@@ -237,7 +237,7 @@ def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_s
             backend = DLSS5Backend()
             options = backend.options(upscaling_mode=dlss_scale, nr_preset=nrpreset, nr_style=style, nr_intensity=float(intensity), local_tone_strength=float(tone), local_structure_strength=float(structure), skin_structure_strength=float(skin), automatic_mask=mask == "On", dlss_model_preset=model, motion_mode="none")
             composition = {}
-            enhanced = backend.process_frame(image, options=options, nr_working_scale=nr_working_scale, recompose_backend=recompose_backend, telemetry=composition)[..., :3]
+            enhanced = backend.process_frame(image, options=options, nr_working_scale=nr_working_scale, recompose_backend=recompose_backend, telemetry=composition, shimmer_suppression=float(shimmer_suppression), color_strength=float(color_strength), tone_preservation=float(tone_preservation))[..., :3]
             out=TEMP/f"preview_{os.getpid()}.png"; Image.fromarray(enhanced).save(out)
             used = composition.get("recompose_backend_used", "bypassed")
             return str(source_frame), str(out), f"DLSS5 Feature-18 verified | Recompose {used} | {dlss_scale}x | {style} | Intensity {float(intensity):.2f} | Output {enhanced.shape[1]}x{enhanced.shape[0]}"
@@ -344,7 +344,7 @@ def load_last_render():
     return path, summary, detail, None, None, None, f"Loaded last successful render: {Path(path).name}", gr.update(interactive=True)
 
 
-def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, codec_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5", dlssg_multiplier=2, dlssg_nvof_profile=NVOF_PROFILE_VALIDATED):
+def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, codec_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", shimmer_suppression=0.0, color_strength=1.0, tone_preservation=0.0, v10_nr_passes=1, v10_face_skin_protection=0.0, v10_grain_preservation=0.0, v10_shimmer_suppression=0.70, v10_prefer_nvof="Off", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5", dlssg_multiplier=2, dlssg_nvof_profile=NVOF_PROFILE_VALIDATED):
     if not path: return None, "Choose an input video."
     job = None
     try:
@@ -359,7 +359,7 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
             save_last_used("dlss_sr", {"mode": sr_mode, "model_preset": sr_model})
         else:
             if processing_mode in {"DLSS 5 only", "DLSS 5 v10 Experimental"}:
-                _save_last("dlss5", {"scale": float(dlss_scale), "nr_preset": nrpreset, "nr_style": style, "model_preset": model, "intensity": float(intensity), "local_tone": float(tone), "local_structure": float(structure), "skin_structure": float(skin), "automatic_mask": mask == "On"})
+                _save_last("dlss5", {"scale": float(dlss_scale), "nr_preset": nrpreset, "nr_style": style, "model_preset": model, "intensity": float(intensity), "local_tone": float(tone), "local_structure": float(structure), "skin_structure": float(skin), "automatic_mask": mask == "On", "nr_working_scale": nr_working_scale, "recompose_backend": recompose_backend, "shimmer_suppression": float(shimmer_suppression), "color_strength": float(color_strength), "tone_preservation": float(tone_preservation), "v10_nr_passes": int(v10_nr_passes), "v10_face_skin_protection": float(v10_face_skin_protection), "v10_grain_preservation": float(v10_grain_preservation), "v10_shimmer_suppression": float(v10_shimmer_suppression), "v10_prefer_nvof": v10_prefer_nvof == "On"})
             else:
                 _save_last("rtx_vsr", {"mode": vsr_mode, "scale": float(scale_value), "quality": quality_value})
         progress = tracker_callback(job.progress)
@@ -381,12 +381,19 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
                 local_structure=float(structure),
                 skin_structure=float(skin),
                 automatic_mask=mask == "On",
+                nr_passes=int(v10_nr_passes),
+                color_strength=float(color_strength),
+                tone_preservation=float(tone_preservation),
+                face_skin_protection=float(v10_face_skin_protection),
+                grain_preservation=float(v10_grain_preservation),
+                shimmer_suppression=float(v10_shimmer_suppression),
+                prefer_nvof=v10_prefer_nvof == "On",
                 codec=codec_value,
                 cancel=job.cancel_event,
                 progress=progress,
             )
         elif processing_mode == "DLSS 5 only":
-            backend = DLSS5Backend(); stats = render_dlss5(path, destination, backend, _dlss_options(backend, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model), codec=codec_value, cancel=job.cancel_event, progress=progress, nr_working_scale=nr_working_scale, recompose_backend=recompose_backend)
+            backend = DLSS5Backend(); stats = render_dlss5(path, destination, backend, _dlss_options(backend, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model), codec=codec_value, cancel=job.cancel_event, progress=progress, nr_working_scale=nr_working_scale, recompose_backend=recompose_backend, shimmer_suppression=float(shimmer_suppression), color_strength=float(color_strength), tone_preservation=float(tone_preservation))
         else:
             stats = render_vsr(path, destination, RTXVSRBackend(), float(scale_value), quality_value, vsr_mode, job.cancel_event, progress=progress, codec=codec_value)
         MONITOR.set_active(False); CONTROLLER.finish("COMPLETED", f"Completed: {stats['frames']} frames")
@@ -410,7 +417,7 @@ def _preview_directory() -> Path:
     return directory
 
 
-def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, start_timestamp, duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5", dlssg_multiplier=2, dlssg_nvof_profile=NVOF_PROFILE_VALIDATED):
+def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, start_timestamp, duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", shimmer_suppression=0.0, color_strength=1.0, tone_preservation=0.0, v10_nr_passes=1, v10_face_skin_protection=0.0, v10_grain_preservation=0.0, v10_shimmer_suppression=0.70, v10_prefer_nvof="Off", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5", dlssg_multiplier=2, dlssg_nvof_profile=NVOF_PROFILE_VALIDATED):
     if not path: return None, None, "Choose an input video."
     job = None
     clip_source = None
@@ -430,7 +437,7 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
             save_last_used("dlss_sr", {"mode": sr_mode, "model_preset": sr_model})
             stats = render_dlss_sr(path, destination, backend, sr_mode, sr_model, start=float(start_timestamp), duration=float(duration), codec="H.264", cancel=job.cancel_event, progress=progress)
         elif processing_mode == "DLSS 5 v10 Experimental":
-            _save_last("dlss5", {"scale": float(dlss_scale), "nr_preset": nrpreset, "nr_style": style, "model_preset": model, "intensity": float(intensity), "local_tone": float(tone), "local_structure": float(structure), "skin_structure": float(skin), "automatic_mask": mask == "On"})
+            _save_last("dlss5", {"scale": float(dlss_scale), "nr_preset": nrpreset, "nr_style": style, "model_preset": model, "intensity": float(intensity), "local_tone": float(tone), "local_structure": float(structure), "skin_structure": float(skin), "automatic_mask": mask == "On", "nr_working_scale": nr_working_scale, "recompose_backend": recompose_backend, "shimmer_suppression": float(shimmer_suppression), "color_strength": float(color_strength), "tone_preservation": float(tone_preservation), "v10_nr_passes": int(v10_nr_passes), "v10_face_skin_protection": float(v10_face_skin_protection), "v10_grain_preservation": float(v10_grain_preservation), "v10_shimmer_suppression": float(v10_shimmer_suppression), "v10_prefer_nvof": v10_prefer_nvof == "On"})
             backend = DLSS5V10ExperimentalBackend()
             stats = render_dlss5_v10(
                 path,
@@ -443,6 +450,13 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
                 local_structure=float(structure),
                 skin_structure=float(skin),
                 automatic_mask=mask == "On",
+                nr_passes=int(v10_nr_passes),
+                color_strength=float(color_strength),
+                tone_preservation=float(tone_preservation),
+                face_skin_protection=float(v10_face_skin_protection),
+                grain_preservation=float(v10_grain_preservation),
+                shimmer_suppression=float(v10_shimmer_suppression),
+                prefer_nvof=v10_prefer_nvof == "On",
                 start=float(start_timestamp),
                 duration=float(duration),
                 codec="H.264",
@@ -450,7 +464,7 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
                 progress=progress,
             )
         elif processing_mode == "DLSS 5 only":
-            backend = DLSS5Backend(); stats = render_dlss5(path, destination, backend, _dlss_options(backend, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model), start=float(start_timestamp), duration=float(duration), codec="H.264", cancel=job.cancel_event, progress=progress, nr_working_scale=nr_working_scale, recompose_backend=recompose_backend)
+            backend = DLSS5Backend(); stats = render_dlss5(path, destination, backend, _dlss_options(backend, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model), start=float(start_timestamp), duration=float(duration), codec="H.264", cancel=job.cancel_event, progress=progress, nr_working_scale=nr_working_scale, recompose_backend=recompose_backend, shimmer_suppression=float(shimmer_suppression), color_strength=float(color_strength), tone_preservation=float(tone_preservation))
         else:
             clip_source = TEMP / f"preview_input_{os.getpid()}.mp4"
             from src.core.process_utils import run
@@ -529,9 +543,19 @@ def build():
                             _tip(DLSS5_TOOLTIPS, "scale", "DLSS scale")
                             dlss_scale = gr.Dropdown(dlss_scales, value=dlss_default_scale, show_label=False)
                             _tip(DLSS5_TOOLTIPS, "working_scale", "NR Working Resolution")
-                            nr_working_scale = gr.Dropdown([("100% (Native)", 1.0), ("75%", 0.75), ("67% (2/3)", 2.0 / 3.0), ("50%", 0.5)], value=1.0, show_label=False)
+                            nr_working_scale = gr.Dropdown([("Auto (target ~720p neural workload)", "auto"), ("100% (Native)", 1.0), ("87.5%", 0.875), ("75%", 0.75), ("67% (2/3)", 2.0 / 3.0), ("50%", 0.5)], value=dlast.get("nr_working_scale", 1.0), show_label=False)
                             _tip(DLSS5_TOOLTIPS, "recompose", "Recomposition")
-                            recompose_backend = gr.Dropdown([("Auto (CUDA preferred)", "auto"), ("CUDA", "cuda"), ("CPU", "cpu")], value="auto", show_label=False)
+                            recompose_backend = gr.Dropdown([("Auto (CUDA preferred)", "auto"), ("CUDA", "cuda"), ("CPU", "cpu")], value=dlast.get("recompose_backend", "auto"), show_label=False)
+                            gr.Markdown("#### Experimental quality composition")
+                            shimmer_suppression = gr.Slider(0, 1, dlast.get("shimmer_suppression", 0.0), .05, label="v3 Temporal residual stabilization")
+                            color_strength = gr.Slider(0, 1, dlast.get("color_strength", 1.0), .05, label="Neural color strength")
+                            tone_preservation = gr.Slider(0, 1, dlast.get("tone_preservation", 0.0), .05, label="Tone preservation")
+                            with gr.Accordion("v10 native quality controls", open=False):
+                                v10_nr_passes = gr.Dropdown([1, 2, 3, 4], value=dlast.get("v10_nr_passes", 1), label="NR passes")
+                                v10_face_skin_protection = gr.Slider(0, 1, dlast.get("v10_face_skin_protection", 0.0), .05, label="Face / skin protection")
+                                v10_grain_preservation = gr.Slider(0, 1, dlast.get("v10_grain_preservation", 0.0), .05, label="Grain preservation")
+                                v10_shimmer_suppression = gr.Slider(0, 1, dlast.get("v10_shimmer_suppression", 0.70), .05, label="Native shimmer suppression")
+                                v10_prefer_nvof = gr.Dropdown(["Off", "On"], value="On" if dlast.get("v10_prefer_nvof", False) else "Off", label="Prefer NVIDIA Optical Flow")
                             _tip(DLSS5_TOOLTIPS, "nr_preset", "NR preset")
                             nrpreset = gr.Dropdown(["Default", "Preset #1", "Preset #2", "Preset #3"], value=dlast.get("nr_preset", "Default"), show_label=False)
                             _tip(DLSS5_TOOLTIPS, "nr_style", "NR style")
@@ -671,9 +695,9 @@ def build():
         v10_refresh.click(refresh_dlss5_v10_preflight, outputs=[status, v10_readiness], show_progress="full")
         runtime_refresh.click(runtime_cards_markdown, outputs=runtime_cards, show_progress="hidden")
         runtime_action_button.click(runtime_action, [runtime_ids, runtime_action_choice, runtime_archive], runtime_action_result, show_progress="full")
-        frame.click(do_frame, [inp, timestamp, state, vsr_mode, scale, quality, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [before, after, job])
-        clip.click(preview_clip, [inp, state, vsr_mode, scale, quality, container, timestamp, preview_duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [before_clip, result_video, job])
-        render.click(render_video, [inp, state, vsr_mode, scale, quality, container, codec, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, *dlssg_inputs], [result_video, job])
+        frame.click(do_frame, [inp, timestamp, state, vsr_mode, scale, quality, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, shimmer_suppression, color_strength, tone_preservation, v10_nr_passes, v10_face_skin_protection, v10_grain_preservation, v10_shimmer_suppression, v10_prefer_nvof, *dlssg_inputs], [before, after, job])
+        clip.click(preview_clip, [inp, state, vsr_mode, scale, quality, container, timestamp, preview_duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, shimmer_suppression, color_strength, tone_preservation, v10_nr_passes, v10_face_skin_protection, v10_grain_preservation, v10_shimmer_suppression, v10_prefer_nvof, *dlssg_inputs], [before_clip, result_video, job])
+        render.click(render_video, [inp, state, vsr_mode, scale, quality, container, codec, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, shimmer_suppression, color_strength, tone_preservation, v10_nr_passes, v10_face_skin_protection, v10_grain_preservation, v10_shimmer_suppression, v10_prefer_nvof, *dlssg_inputs], [result_video, job])
         stop.click(lambda: (CONTROLLER.cancel() or "Cancellation requested."), None, job)
         refresh_timer.tick(lambda: (metrics_html(), progress_html(CONTROLLER.snapshot())), outputs=[metrics, progress_panel], show_progress="hidden", queue=False)
         rtx_save.click(save_rtx, [rtx_name, vsr_mode, scale, quality], [rtx_saved, rtx_message])

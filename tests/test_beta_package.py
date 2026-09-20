@@ -20,3 +20,11 @@ def test_beta_builder_has_exact_identity_gates_and_clean_package_policy():
     for identity in ("C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916", "E23F3CD5BEB5E70001E9950C890027D46F84CEB4439A09CEA67E343AB34A34BB", "3975567B8943C53ACCE397F2B72380092F84F162D00B0D2C7D08A1025C563983", "3027F23CA5A46DD9CB8183FBD522983A86F64D7DAAC5982912BF9F214671F294"):
         assert identity in script
     assert "selftest" in script and "attestation.json" not in script
+
+def test_beta_builder_sources_binary_notice_from_docs_legal_only():
+    script = (Path(__file__).parents[1] / "tools" / "build_beta_package.ps1").read_text(encoding="utf-8")
+    files_line = next(line for line in script.splitlines() if line.startswith("$files = @("))
+    assert "BINARY_DISTRIBUTION_NOTICES.md" not in files_line
+    assert "docs\\legal\\BINARY_DISTRIBUTION_NOTICES.md" in script
+    assert "Join-Path $stage 'BINARY_DISTRIBUTION_NOTICES.md'" in script
+

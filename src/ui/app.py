@@ -512,7 +512,16 @@ def build():
                 with gr.Row(elem_classes="main-workspace"):
                     with gr.Column(scale=25, min_width=280, elem_classes=["workspace-card", "input-panel"]):
                         gr.Markdown("## Input")
-                        inp = gr.Video(label="Upload video", include_audio=True)
+                        inp = gr.File(
+                            label="Upload video file",
+                            file_types=["video"],
+                            type="filepath",
+                        )
+                        gr.Markdown(
+                            "Source upload is file-based so browser codec support does not gate processing. "
+                            "Use **Preview Frame** or **Preview Clip** for an in-app visual preview.",
+                            elem_classes="input-compatibility-note",
+                        )
                         load_render = gr.Button("Load Last Render", interactive=bool(previous_render), elem_classes="load-render")
                         summary = gr.HTML('<span class="muted">No video selected.</span>')
                         with gr.Accordion("Media details", open=False):

@@ -3,6 +3,17 @@
 This file is a concise release index. Detailed validation evidence and
 engineering history remain under `docs/`.
 
+## Unreleased
+
+- replace the separate DLSS 5 v3/v10 user modes with one **DLSS 5** mode;
+- prefer the isolated v10 application runtime automatically after its explicit
+  preflight, with v3 retained only as an internal compatibility fallback;
+- extend the v10 video path with Auto/100/87.5/75/67/50% neural working
+  resolution, residual recomposition, CUDA/CPU recomposition selection, and
+  optional temporal residual stabilization;
+- keep v10 1-pass and validated C55 MFG defaults unchanged while retaining
+  stronger neural-pass and experimental grid4 options for explicit use.
+
 ## v0.2.0-beta.1 — 2026-09-20
 
 Current source-install beta.

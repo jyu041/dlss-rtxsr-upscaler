@@ -2,7 +2,8 @@ import platform, sys, json, subprocess
 from pathlib import Path
 from .process_utils import tool
 from src.backends.rtx_vsr import RTXVSRBackend
-from src.backends.dlss5 import DLSS5Backend
+from src.backends.dlss5_unified import DLSS5UnifiedBackend
+from src.backends.dlss5_v10_app import DLSS5V10ExperimentalBackend
 from src.backends.dlss_sr import DLSSSRBackend
 from src.backends.dlssg import DLSSGBackend
 from src.backends.dlss5_neuroframe import inspect_candidate as inspect_dlss5_neuroframe
@@ -16,11 +17,24 @@ RUNTIME_INSTALL_ROOT = Path(__file__).resolve().parents[2] / "runtime"
 
 def runtime_inventory():
     try:
-        return RuntimeManager(RUNTIME_MANIFEST, RUNTIME_INSTALL_ROOT).inventory()
+        manager = RuntimeManager(RUNTIME_MANIFEST, RUNTIME_INSTALL_ROOT)
+        items = manager.inventory()
+        preferred = DLSS5V10ExperimentalBackend().status()
+        if preferred.available:
+            spec = manager.specs["dlss5-neuroframe-v10-static-candidate"]
+            for item in items:
+                if item.get("id") == spec.id:
+                    item["state"] = "READY"
+                    item["current_version"] = spec.version
+                    item["current_sha256"] = spec.sha256
+                    item["action"] = "VERIFY"
+                    item["detail"] = preferred.reason
+                    break
+        return items
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
         return [{"state": "INVALID", "action": "REVIEW", "detail": f"Runtime manifest unavailable: {exc}"}]
 def collect():
-    r=RTXVSRBackend().status(); d=DLSS5Backend().status(); sr_backend=DLSSSRBackend(); s=sr_backend.status(); fg=DLSSGBackend().status()
+    r=RTXVSRBackend().status(); d=DLSS5UnifiedBackend().status(); sr_backend=DLSSSRBackend(); s=sr_backend.status(); fg=DLSSGBackend().status()
     gpu="UNAVAILABLE"
     try:
         q=subprocess.run(["nvidia-smi","--query-gpu=name,driver_version,memory.total,compute_cap","--format=csv,noheader,nounits"],capture_output=True,text=True,timeout=10,check=False)
@@ -32,7 +46,15 @@ def collect():
     except Exception as e: cuda={"available":False,"reason":str(e)}
     vfx_version = getattr(getattr(r, "_readiness", None), "version", None)
     dlss = d.__dict__.copy()
-    dlss.update({"runtime": "Community DLSS5 v3.0" if d.available else "unavailable", "network": "Worker outbound blocked by Windows Firewall" if d.available else "not applicable", "security": "User-approved exact runtime hashes" if d.available else "not approved"})
+    try:
+        runtime_name, _implementation = DLSS5UnifiedBackend().runtime()
+    except Exception:
+        runtime_name = "unavailable"
+    dlss.update({
+        "runtime": runtime_name,
+        "network": "isolated v10 child containment" if runtime_name == "v10" else ("legacy compatibility firewall containment" if runtime_name == "v3-fallback" else "not applicable"),
+        "security": "Pinned v10 identity + Defender preflight" if runtime_name == "v10" else ("Legacy approval/self-test gates" if runtime_name == "v3-fallback" else "not approved"),
+    })
     sr = s.__dict__.copy()
     sr.update({"runtime": str(sr_backend.runtime) if sr_backend.runtime.is_file() else "unavailable",
                "validated_runtime_sha256": sr_backend.validate_runtime().get("runtime_sha256"),

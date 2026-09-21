@@ -159,75 +159,77 @@ RTX VSR needs the compatible official NVIDIA VFX package and an NVIDIA GPU. The
 source setup installs the pinned Python package; final availability remains
 hardware/driver dependent.
 
-### DLSS 5 compatibility runtime (v3)
+### DLSS 5
 
-The application now exposes one DLSS 5 mode. The validated v3 Feature-18 path
-is retained only as an internal compatibility runtime while the preferred v10
-path is being broadened. It no longer requires a user to browse for DLLs, copy
-files manually, calculate hashes, hand-write `approval.json`, or create the
-firewall rule by hand.
+The application exposes one DLSS 5 mode and uses the pinned Visual Enhancer v10
+runtime as its preferred implementation.
 
-During `setup.bat`, the user is asked whether to provision this compatibility
-runtime. Choosing Yes runs:
+During `setup.bat`, the user gets one question:
 
-```powershell
-python tools\provision_dlss5_v3.py --yes
+```text
+Enable DLSS 5 now? [Y/N]
 ```
 
-The provisioner performs the following fail-closed sequence:
+Choosing Yes runs the single managed provisioner:
 
-1. downloads `DLSS.5.Visual.Enhancer.v3.0.zip` directly from the public Merserk
+```powershell
+python tools\provision_dlss5_v10.py
+```
+
+That command:
+
+1. reuses the exact verified v10 archive if it is already cached;
+2. otherwise downloads `Visual.Enhancer.v10.0.zip` from the pinned upstream
    release;
-2. verifies the complete 466,919,995-byte archive against SHA-256
-   `6F0590D81677484F4ECDFAA5C44FC2A0E1A3835D33EEFC59D656E6C3BCF35F6A`;
-3. validates the whole ZIP namespace for traversal, symlink and
-   case-insensitive collision hazards;
-4. extracts only `nvngx.dll`, `renodx-dlss5.addon64`, `nvngx_dlssnr.dll`,
-   `dxgi.dll`, and `nvngx_dlss.dll`;
-5. verifies every extracted file against the exact v3 identities previously
-   validated by this project;
-6. records Windows Authenticode inspection results and requires a clean
-   Microsoft Defender `MpCmdRun.exe` custom scan;
-7. atomically installs the five files under `runtime/dlss5-v3/`;
-8. requests Windows UAC elevation to create and then independently verify an
-   exact enabled outbound-block firewall rule for `runtime/dlss5-v3/nvngx.dll`;
-9. writes the gitignored local approval manifest with the source, archive,
-   file, scan and firewall evidence; and
-10. runs the existing synthetic Feature-18 self-test.
+3. verifies the complete 690,203,043-byte archive against SHA-256
+   `394BED6FBB3CCA1A994AE02A0A1152213D43030D6761437F86ABAA863C33D515`;
+4. extracts only the manifest allowlist into an isolated staging directory;
+5. verifies the pinned runtime identities/static ABI evidence;
+6. requires a clean Microsoft Defender custom scan;
+7. verifies the runtime identities again after the scan;
+8. atomically stages the runtime under
+   `runtime/dlss5/neuroframe-v10-candidate/`; and
+9. verifies that the application-facing DLSS 5 backend reports ready.
 
-Only a successful self-test against the same runtime hashes can make the backend
-report `EXPERIMENTAL READY`. If any stage fails, setup continues for RTX VSR,
-DLSS SR and DLSS-G while DLSS 5 remains unavailable.
+The verified ZIP remains at
+`runtime/downloads/Visual.Enhancer.v10.0.zip`. If the Defender preflight later
+expires, the application can refresh the local scan from that cached archive
+without another network download.
 
-The setup prompt can be controlled explicitly before launch:
+The setup prompt can be controlled in advance:
 
 ```bat
 set NVE_SETUP_DLSS5=1
 setup.bat
 ```
 
-Use `NVE_SETUP_DLSS5=0` to skip the optional DLSS 5 step. A user who already
-has the exact public v3.0 release archive can run the provisioner later with
-`--archive <path>`; the same archive/file/scan/firewall/self-test gates still
-apply.
+Use `NVE_SETUP_DLSS5=0` to skip DLSS 5. If the exact pinned v10 archive is
+already available locally:
 
-The currently exercised RTX 3070-family/Ampere v3 path accepts 1.0x DLSS 5
-output. Higher output scales remain blocked for that validated pairing because
-they reproducibly fell back with NGX `InvalidParameter (0xBAD00005)`.
+```bat
+set NVE_DLSS5_ARCHIVE=C:\path\to\Visual.Enhancer.v10.0.zip
+setup.bat
+```
 
-The pinned Neuroframe v10 runtime is the preferred implementation behind the
-single **DLSS 5** mode, but it is still not activated silently by `setup.bat`.
-Runtime Manager tracks the pinned artifact and **Configuration → DLSS 5
-preferred runtime readiness → Refresh DLSS 5 runtime preflight** performs the
-explicit archive verification, staging, fresh Defender preflight, isolated-host
-containment checks, and per-render execution preparation. When that preflight is
-ready, the UI automatically uses v10; otherwise the validated v3 runtime may be
-used internally if it was provisioned. The tested native-input boundary remains
-SDR RGBA8, 1.0x output, and up to 1920x1080-equivalent input. Reduced neural
-working resolution is an application-level workload control and does not widen
-that boundary. The earlier v9 candidate remains historical static-audit
-evidence. See `docs/DLSS5_APPROVAL.md` and
-`docs/DLSS5_V10_APP_HARDWARE_2026-09-19.md`.
+The supplied archive is still checked against the same pinned size and SHA-256
+and copied into the managed cache before staging.
+
+If setup was skipped or a later repair is needed, use **Configuration → DLSS 5
+runtime → Install / Repair DLSS 5**. That button calls the same provisioner; it
+is not a separate installation path.
+
+The tested native-input boundary remains SDR RGBA8, 1.0x output, and up to
+1920x1080-equivalent input. Reduced neural working resolution is an
+application-level workload control and does not widen that boundary.
+
+The older v3 Feature-18 implementation remains in the repository only as an
+internal compatibility path for existing/manual legacy installations. It is no
+longer downloaded or requested during normal setup, and availability of the old
+upstream v3 archive is not required for a fresh installation.
+
+See `docs/DLSS5_APPROVAL.md`,
+`docs/DLSS5_V10_APP_HARDWARE_2026-09-19.md`, and
+`docs/DLSS5_UNIFIED_V10_HARDWARE_2026-09-21.md`.
 
 ## Startup behavior
 

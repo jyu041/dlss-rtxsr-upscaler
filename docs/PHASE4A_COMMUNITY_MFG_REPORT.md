@@ -10,7 +10,7 @@ Date: 2026-09-13. No commit and no push were performed.
 | [mcsoderh/RTX30MFG-Unlock](https://github.com/mcsoderh/RTX30MFG-Unlock) | `main` / `21a2b9931f0c13f46a4b3b8a5856620d9698f88e` | MIT; vendored MinHook retains its own license | Relevant Ampere source is visible under `source/native`; CMake requires Streamline, NGX, and optional ReShade/ImGui trees. The checked-in `bin` contains a prebuilt mod, which was not executed. |
 | [sdli1995/dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86) | `main` / `5f62ff44a9c08f9841fa605e7b7160f79ccd2c40` | Repository notices describe GPLv3 source ancestry and separate NVIDIA/proprietary runtime material; no standalone root license file was present | Host/runtime implementation is not source-visible. The root `version.dll` is a 15,667,520-byte prebuilt binary. Static hash: `C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2`; signature is self-signed and not trusted by the local trust provider. Classified `FUNCTIONAL_REFERENCE_ONLY_BINARY_RUNTIME`. |
 
-The three trees were cloned into `C:\Users\mark\Desktop\dlss-community-research`. No downloaded DLL, EXE, ASI, or proxy was executed.
+The three trees were cloned into `C:\Users\<user>\Desktop\dlss-community-research`. No downloaded DLL, EXE, ASI, or proxy was executed.
 
 ## B. Donor comparison
 
@@ -68,7 +68,7 @@ It has the smallest separable pure core, a source-visible validation CMake proje
 Intended command:
 
 ```powershell
-cmake -S C:\Users\mark\Desktop\dlss-community-research\MFGAmpereUnlock-RenoDx\contrib\validation -B temp\mfgampere-validation -G "Visual Studio 17 2022" -A x64
+cmake -S C:\Users\<user>\Desktop\dlss-community-research\MFGAmpereUnlock-RenoDx\contrib\validation -B temp\mfgampere-validation -G "Visual Studio 17 2022" -A x64
 cmake --build temp\mfgampere-validation --config Release
 ctest --test-dir temp\mfgampere-validation -C Release --output-on-failure
 ```

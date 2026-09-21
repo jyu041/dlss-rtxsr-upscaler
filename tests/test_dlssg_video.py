@@ -6,7 +6,7 @@ import pytest
 
 from src.backends import dlssg as dlssg_backend
 from src.backends.dlssg import DLSSGBackend
-from src.video.dlssg import _bitstream_color_options, _hresult_failed, _read_frame, output_frame_count, scene_cut_metrics
+from src.video.dlssg import _bitstream_color_options, _decoder_command, _hresult_failed, _read_frame, output_frame_count, scene_cut_metrics
 
 
 class ShortReadStream:
@@ -17,6 +17,26 @@ class ShortReadStream:
     def read(self, size: int) -> bytes:
         return self._stream.read(min(size, self._chunk_size))
 
+
+
+
+
+def test_dlssg_decoder_uses_normal_ffmpeg_timing_path():
+    command = _decoder_command("ffmpeg.exe", Path("input.mp4"))
+    assert command == [
+        "ffmpeg.exe",
+        "-v",
+        "error",
+        "-i",
+        "input.mp4",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "rgba",
+        "-",
+    ]
+    assert "-fps_mode" not in command
+    assert "-vsync" not in command
 
 def test_output_frame_count_duration_policy():
     assert output_frame_count(0) == 0

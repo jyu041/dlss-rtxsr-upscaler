@@ -747,10 +747,10 @@ def build():
                             gr.Markdown("### DLSS 5 Settings")
                             gr.Markdown("Preset and neural working resolution are the normal controls. Detailed tuning stays collapsed unless you need it.", elem_classes="compact-note")
                             _tip(DLSS5_TOOLTIPS, "builtin_preset", "Built-in preset")
-                            preset = gr.Dropdown(list(load_presets()) + ["Default"], value="Photoreal Balanced", show_label=False)
+                            preset = gr.Dropdown(list(load_presets()) + ["Default"], value="Photoreal Balanced", show_label=False, elem_classes="dlss-primary-control")
                             dlss_scale = gr.State(dlss_default_scale)
                             _tip(DLSS5_TOOLTIPS, "working_scale", "NR Working Resolution")
-                            nr_working_scale = gr.Dropdown([("Auto (target ~720p neural workload)", "auto"), ("100% (Native)", 1.0), ("87.5%", 0.875), ("75%", 0.75), ("67% (2/3)", 2.0 / 3.0), ("50%", 0.5)], value=dlast.get("nr_working_scale", 1.0), show_label=False)
+                            nr_working_scale = gr.Dropdown([("Auto (target ~720p neural workload)", "auto"), ("100% (Native)", 1.0), ("87.5%", 0.875), ("75%", 0.75), ("67% (2/3)", 2.0 / 3.0), ("50%", 0.5)], value=dlast.get("nr_working_scale", 1.0), show_label=False, elem_classes="dlss-primary-control")
 
                             nrpreset = gr.State(dlast.get("nr_preset", "Default"))
                             model = gr.State(dlast.get("model_preset", "Default"))

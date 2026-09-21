@@ -264,13 +264,21 @@ def render_dlss5_v10(
         if resolved_working_scale < 1.0:
             if requested_recompose_backend != "cpu":
                 try:
-                    from src.backends.dlss5_cuda_recompose import CudaResidualCompositor
+                    from src.backends.dlss5_cuda_recompose import (
+                        CudaResidualCompositor,
+                        select_cuda_device,
+                    )
+                    device = select_cuda_device()
+                    if device is None:
+                        raise RuntimeError(
+                            "No unambiguous CUDA device is available for DLSS 5 recomposition"
+                        )
                     compositor = CudaResidualCompositor(
                         width,
                         height,
                         working_width,
                         working_height,
-                        device=f"cuda:{backend.gpu_ordinal}",
+                        device=device,
                     )
                     recompose_backend_used = "cuda"
                 except Exception as exc:

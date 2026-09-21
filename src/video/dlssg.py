@@ -44,7 +44,7 @@ def probe_video(source: str | Path) -> dict[str, object]:
     import av
 
     path = safe_input(str(source))
-    with av.open(str(path)) as container:
+    with av.open(str(path), metadata_errors="replace") as container:
         stream = container.streams.video[0]
         context = stream.codec_context
         rate = stream.average_rate or stream.base_rate

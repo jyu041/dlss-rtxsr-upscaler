@@ -17,7 +17,7 @@ from src.video.dlssg import probe_video  # noqa: E402
 
 
 def decode(path: Path) -> tuple[list[np.ndarray], float, float, bool]:
-    with av.open(str(path)) as container:
+    with av.open(str(path), metadata_errors="replace") as container:
         stream = container.streams.video[0]
         frames = [frame.to_ndarray(format="rgba") for frame in container.decode(stream)]
         fps = float(stream.average_rate or stream.base_rate or 0)

@@ -51,7 +51,7 @@ def save_dlss(
     v10_prefer_nvof="Off",
 ):
     return save_preset("dlss5", name, {
-        "scale": float(scale),
+        "scale": 1.0,
         "nr_preset": nr_preset,
         "nr_style": nr_style,
         "model_preset": model_preset,
@@ -76,7 +76,7 @@ def save_dlss(
 def load_dlss(name):
     values, message = load_preset("dlss5", name)
     return [
-        values.get("scale", 1.0),
+        1.0,
         values.get("nr_preset", "Default"),
         values.get("nr_style", "Natural"),
         values.get("model_preset", "Default"),

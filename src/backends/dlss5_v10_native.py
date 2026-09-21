@@ -1,8 +1,8 @@
 """Reviewed ctypes binding plan for the pinned DLSS5 v10 bridge.
 
-Importing this module performs no native load. The actual load function is
-explicitly disabled unless allow_native_load=True, and the production host does
-not call it at this milestone.
+Importing this module performs no native load. Native loading remains explicit:
+callers must pass allow_native_load=True after the surrounding v10 preflight and
+execution gates have been satisfied.
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ def _text(value: bytes | str | None) -> str:
 
 
 def bind_required_exports(library: Any) -> None:
-    """Bind the ABI-6 subset used/planned by the isolated host."""
+    """Bind the ABI-6 subset used by the isolated v10 host."""
     c_float_p = ctypes.POINTER(ctypes.c_float)
 
     library.dlss5nr_version.argtypes = []
@@ -243,12 +243,13 @@ def load_bridge(
 ) -> BoundBridge:
     """Load and bind the exact bridge only after an explicit experimental gate.
 
-    This function is intentionally not called by dlss5_v10_host.py yet.
+    The isolated host calls this only from acknowledged, preflight-validated
+    bounded or application execution modes.
     """
     runtime = verify_runtime_before_load(runtime_dir)
     if not allow_native_load:
         raise V10NativeLoadDisabled(
-            "DLSS5 v10 native loading is disabled until the bounded hardware phase"
+            "DLSS5 v10 native loading requires an explicit acknowledged execution gate"
         )
 
     bridge = runtime / "neuroframe_engine_neural_rendering.dll"
@@ -284,8 +285,9 @@ class V10NativeSessionError(RuntimeError):
 class V10NativeSession:
     """One-process, one-CREATE host-memory ABI-6 session.
 
-    This class is not instantiated by dlss5_v10_host.py at the static milestone.
-    Parent process timeout/termination is the hard watchdog for native hangs.
+    The isolated v10 host owns this session for bounded research and the
+    explicitly acknowledged application path. Parent-process timeout/termination
+    remains the hard watchdog for native hangs.
     """
 
     def __init__(

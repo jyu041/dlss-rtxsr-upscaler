@@ -3,7 +3,7 @@ import io
 import numpy as np
 import pytest
 
-from src.video.rtx_vsr_worker import DONE, ERROR, FRAME, HEADER, MAGIC, OUTPUT, RTXVSRSession, _read_message, _write_message
+from src.video.rtx_vsr_worker import DONE, ERROR, FRAME, HEADER, MAGIC, OUTPUT, RTXVSRSession, _native_output_layout, _read_message, _write_message
 
 
 def test_worker_protocol_round_trip():
@@ -53,3 +53,24 @@ def test_finish_rejects_nonzero_exit_after_done(monkeypatch):
     monkeypatch.setattr("src.video.rtx_vsr_worker._write_message", lambda *args, **kwargs: None)
     with pytest.raises(RuntimeError, match="UNEXPECTED_WORKER_FAILURE_AFTER_DONE"):
         session.finish()
+
+
+
+@pytest.mark.parametrize(
+    ("shape", "width", "height", "expected"),
+    [
+        ((3, 720, 1280), 1280, 720, ("CHW", 3, False)),
+        ((4, 720, 1280), 1280, 720, ("CHW", 4, False)),
+        ((720, 1280, 3), 1280, 720, ("HWC", 3, False)),
+        ((720, 1280, 4), 1280, 720, ("HWC", 4, False)),
+        ((1, 3, 720, 1280), 1280, 720, ("CHW", 3, True)),
+        ((1, 720, 1280, 3), 1280, 720, ("HWC", 3, True)),
+    ],
+)
+def test_native_output_layout_accepts_channels_first_and_channels_last(shape, width, height, expected):
+    assert _native_output_layout(shape, width, height) == expected
+
+
+def test_native_output_layout_rejects_mismatched_geometry():
+    with pytest.raises(RuntimeError, match="tensor shape"):
+        _native_output_layout((3, 480, 640), 1280, 720)

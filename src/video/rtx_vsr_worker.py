@@ -70,6 +70,7 @@ def worker_main():
     import torch
     import nvvfx
 
+    torch.cuda.set_device(0)
     effect = None
     shape = None
     output_shape = None
@@ -85,7 +86,10 @@ def worker_main():
                     raise ValueError("Unsupported RTX VSR mode")
                 quality = prefix + options["quality"]
                 effect = nvvfx.VideoSuperRes(getattr(nvvfx.VideoSuperRes.QualityLevel, quality), device=0)
-                effect.output_width, effect.output_height = int(options["output_width"]), int(options["output_height"])
+                effect.input_width = int(options["input_width"])
+                effect.input_height = int(options["input_height"])
+                effect.output_width = int(options["output_width"])
+                effect.output_height = int(options["output_height"])
                 print("HEARTBEAT before_load", file=sys.stderr, flush=True)
                 effect.load()
                 shape = (int(options["input_width"]), int(options["input_height"]))
@@ -97,7 +101,8 @@ def worker_main():
                     raise RuntimeError("RTX VSR worker received an invalid frame")
                 frame = np.frombuffer(payload, dtype=np.uint8).reshape(shape[1], shape[0], 3).copy()
                 tensor = torch.from_numpy(frame).to("cuda", dtype=torch.float32).div_(255).permute(2, 0, 1).contiguous()
-                native = effect.run(tensor)
+                stream_ptr = torch.cuda.current_stream().cuda_stream
+                native = effect.run(tensor, stream_ptr=stream_ptr)
                 owned = torch.from_dlpack(native.image).clone()
                 layout, channels, batched = _native_output_layout(
                     owned.shape, output_shape[0], output_shape[1]

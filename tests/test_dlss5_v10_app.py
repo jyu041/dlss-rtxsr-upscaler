@@ -124,13 +124,14 @@ def test_v10_app_output_path_is_distinct(tmp_path, monkeypatch):
     from src.core import paths
 
     monkeypatch.setattr(paths, "OUTPUTS", tmp_path)
+    monkeypatch.setattr(paths, "_output_timestamp", lambda: "20260922_015301")
     result = output_path(
         tmp_path / "input.mp4",
         "DLSS 5 v10 Experimental",
         "MP4",
         1.0,
     )
-    assert result.name == "input_dlss5_v10.mp4"
+    assert result.name == "input_20260922_015301_dlss5_v10.mp4"
 
 
 def test_v10_application_ack_is_separate_from_bounded_research_tokens():

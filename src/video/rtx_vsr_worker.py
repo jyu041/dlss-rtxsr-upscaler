@@ -19,6 +19,31 @@ FRAME_TIMEOUT = 30.0
 TEARDOWN_GRACE = 1.0
 
 
+def _native_output_layout(shape, width: int, height: int) -> tuple[str, int, bool]:
+    """Describe a native VSR tensor layout without assuming channels-first.
+
+    Standard VSR currently arrives as CHW through the Python binding, while
+    same-resolution filter modes may expose an HWC-shaped DLPack view. Treat
+    the returned tensor shape as authoritative so denoise/deblur bytes are
+    serialized in real RGB pixel order instead of being reinterpreted as CHW.
+    """
+    dims = tuple(int(value) for value in shape)
+    batched = False
+    if len(dims) == 4 and dims[0] == 1:
+        dims = dims[1:]
+        batched = True
+    if len(dims) != 3:
+        raise RuntimeError(f"RTX VSR returned unsupported tensor shape {tuple(shape)}")
+    if dims[0] in (3, 4) and dims[1:] == (int(height), int(width)):
+        return "CHW", dims[0], batched
+    if dims[:2] == (int(height), int(width)) and dims[2] in (3, 4):
+        return "HWC", dims[2], batched
+    raise RuntimeError(
+        f"RTX VSR returned tensor shape {tuple(shape)} for expected "
+        f"{width}x{height} RGB output"
+    )
+
+
 def _read_message(stream):
     header = stream.read(HEADER.size)
     if len(header) != HEADER.size:
@@ -45,6 +70,7 @@ def worker_main():
     import torch
     import nvvfx
 
+    torch.cuda.set_device(0)
     effect = None
     shape = None
     output_shape = None
@@ -60,7 +86,10 @@ def worker_main():
                     raise ValueError("Unsupported RTX VSR mode")
                 quality = prefix + options["quality"]
                 effect = nvvfx.VideoSuperRes(getattr(nvvfx.VideoSuperRes.QualityLevel, quality), device=0)
-                effect.output_width, effect.output_height = int(options["output_width"]), int(options["output_height"])
+                effect.input_width = int(options["input_width"])
+                effect.input_height = int(options["input_height"])
+                effect.output_width = int(options["output_width"])
+                effect.output_height = int(options["output_height"])
                 print("HEARTBEAT before_load", file=sys.stderr, flush=True)
                 effect.load()
                 shape = (int(options["input_width"]), int(options["input_height"]))
@@ -72,10 +101,27 @@ def worker_main():
                     raise RuntimeError("RTX VSR worker received an invalid frame")
                 frame = np.frombuffer(payload, dtype=np.uint8).reshape(shape[1], shape[0], 3).copy()
                 tensor = torch.from_numpy(frame).to("cuda", dtype=torch.float32).div_(255).permute(2, 0, 1).contiguous()
-                native = effect.run(tensor)
+                stream_ptr = torch.cuda.current_stream().cuda_stream
+                native = effect.run(tensor, stream_ptr=stream_ptr)
                 owned = torch.from_dlpack(native.image).clone()
-                output = owned.clamp(0, 1).mul(255).byte().permute(1, 2, 0).cpu().numpy().tobytes()
-                del native, owned, tensor, frame
+                layout, channels, batched = _native_output_layout(
+                    owned.shape, output_shape[0], output_shape[1]
+                )
+                image = owned[0] if batched else owned
+                if layout == "CHW":
+                    image = image[:3].permute(1, 2, 0)
+                else:
+                    image = image[..., :3]
+                output = (
+                    image.contiguous()
+                    .clamp(0, 1)
+                    .mul(255)
+                    .byte()
+                    .cpu()
+                    .numpy()
+                    .tobytes()
+                )
+                del native, owned, image, tensor, frame
                 _write_message(sys.stdout.buffer, OUTPUT, index=index, width=output_shape[0], height=output_shape[1], payload=output)
                 print(f"HEARTBEAT frame={index}", file=sys.stderr, flush=True)
                 continue

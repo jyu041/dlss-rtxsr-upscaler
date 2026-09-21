@@ -69,3 +69,19 @@ def test_render_status_reports_automatic_vsr_codec_fallback():
     assert 'if stats.get("codec_fallback"):' in source
     assert "automatic fallback from" in source
     assert "{codec_note}{display_note}" in source
+
+
+
+def test_webui_mfg_does_not_emit_diagnostic_sidecars():
+    source = APP.read_text(encoding="utf-8")
+    calls = [line for line in source.splitlines() if "render_dlssg(" in line]
+    assert len(calls) >= 2
+    assert all("write_sidecars=False" in line for line in calls)
+
+
+def test_dlssg_sidecar_writes_are_explicitly_gated():
+    source = (ROOT / "src" / "video" / "dlssg.py").read_text(encoding="utf-8")
+    assert "write_sidecars: bool = True" in source
+    assert 'if write_sidecars\n        else open(os.devnull, "w", encoding="utf-8")' in source
+    assert 'manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")' in source
+    assert '"worker_diagnostics": str(log_path) if write_sidecars else None' in source

@@ -10,7 +10,7 @@ retry or alternate runtime was used.
 ## Exact command
 
 ```text
-C:\Users\mark\Desktop\dlss-community-research\Streamline_Sample_MFGAmpere\_bin\StreamlineSample.exe -d3d12 -maxFrames 200 -sllog -logToFile -width 256 -height 256 -adapter 0 -mfg-ampere -DLSSG_on -DLSSG_numFrameToGenerate 1
+C:\Users\<user>\Desktop\dlss-community-research\Streamline_Sample_MFGAmpere\_bin\StreamlineSample.exe -d3d12 -maxFrames 200 -sllog -logToFile -width 256 -height 256 -adapter 0 -mfg-ampere -DLSSG_on -DLSSG_numFrameToGenerate 1
 ```
 
 The source parser at `src/StreamlineSample.h` confirms that `-DLSSG_on` is a

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 import heapq
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -338,6 +339,7 @@ def render_dlssg(
     diagnostics: bool | None = None,
     encode_output: bool = True,
     nvof_profile: str = NVOF_PROFILE_VALIDATED,
+    write_sidecars: bool = True,
 ) -> dict[str, object]:
     """Generate ordered intermediate frames and preserve duration at multiplier CFR.
 
@@ -377,7 +379,11 @@ def render_dlssg(
     artifacts = Path(artifact_dir).resolve() if artifact_dir else destination_path.parent / f"{destination_path.stem}_frames"
     decoder = encoder = None
     worker_lines: deque[str] = deque(maxlen=2048)
-    worker_log_stream = log_path.open("w", encoding="utf-8")
+    worker_log_stream = (
+        log_path.open("w", encoding="utf-8")
+        if write_sidecars
+        else io.StringIO()
+    )
     worker_nvof_initializations = worker_create_features = worker_evaluates = 0
     worker_device_removal_queries: set[str] = set()
     worker_device_removals: set[str] = set()
@@ -768,16 +774,18 @@ def render_dlssg(
             "effective_input_fps": input_count / max(time.perf_counter() - started, 1e-9),
             "vram_before_mib": vram_before,
             "vram_peak_mib": peak_vram,
-            "worker_diagnostics": str(log_path),
+            "worker_diagnostics": str(log_path) if write_sidecars else None,
         }
         manifest["manifest_finalize_ms"] = (time.perf_counter() - manifest_started) * 1000.0
-        worker_log_stream.flush()
-        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        if write_sidecars:
+            worker_log_stream.flush()
+            manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         lifecycle["manifest_log_finalization_seconds"] = time.perf_counter() - manifest_started
         lifecycle["accounted_wall_seconds"] += lifecycle["manifest_log_finalization_seconds"]
         lifecycle["unaccounted_wall_seconds"] = max(0.0, (time.perf_counter() - started) - lifecycle["accounted_wall_seconds"])
         manifest["lifecycle_timing_seconds"] = lifecycle
-        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        if write_sidecars:
+            manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         return manifest
     finally:
         if peak_vram is None:

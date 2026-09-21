@@ -341,7 +341,7 @@ def test_v10_native_close_ack_terminates_process_lifetime_host_cleanly(monkeypat
     payload = json.dumps(
         {
             "status": "CLOSED",
-            "session_close": "CLOSED_RELEASED",
+            "session_close": "CLOSED_PROCESS_LIFETIME",
             "ngx_shutdown_called": False,
             "module_unload_called": False,
         }
@@ -349,6 +349,7 @@ def test_v10_native_close_ack_terminates_process_lifetime_host_cleanly(monkeypat
     monkeypatch.setattr(client, "_roundtrip", lambda *_args: (CLOSE, payload))
 
     assert client.close() == "CLOSED_ACK_TERMINATED"
+    assert client.last_close_error is None
     assert process.killed is True
 
 
@@ -385,6 +386,7 @@ def test_v10_native_close_rejects_failed_native_release(monkeypatch):
     monkeypatch.setattr(client, "_roundtrip", lambda *_args: (CLOSE, payload))
 
     assert client.close() == "TERMINATED_AFTER_CLOSE_FAILURE"
+    assert "native session close was not clean: CLOSED_RELEASE_FAILED" in client.last_close_error
     assert process.killed is True
 
 

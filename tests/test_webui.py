@@ -162,31 +162,6 @@ def test_dlss5_exposes_one_mode_and_unified_backend_can_be_default(monkeypatch):
     assert webui.default_mode() == "DLSS 5 only"
 
 
-def test_unified_dlss5_locks_output_scale_for_preferred_runtime(monkeypatch):
-    class Preferred:
-        def preferred_ready(self):
-            return True
-
-    monkeypatch.setattr(webui, "DLSS5UnifiedBackend", Preferred)
-    locked = webui.dlss_scale_update_for_mode("DLSS 5 only", 2.0)
-    assert locked["choices"] == [1.0]
-    assert locked["value"] == 1.0
-
-    class Compatibility:
-        def preferred_ready(self):
-            return False
-
-    class Backend:
-        def supported_output_scales(self):
-            return [1.0, 1.5, 2.0]
-
-    monkeypatch.setattr(webui, "DLSS5UnifiedBackend", Compatibility)
-    monkeypatch.setattr(webui, "DLSS5Backend", Backend)
-    restored = webui.dlss_scale_update_for_mode("DLSS 5 only", 2.0)
-    assert restored["choices"] == [1.0, 1.5, 2.0]
-    assert restored["value"] == 2.0
-
-
 def test_dlss5_ui_has_one_mode_and_preferred_runtime_preflight():
     source = open("src/ui/app.py", encoding="utf-8").read()
     assert '("DLSS 5", "DLSS 5 only")' in source
@@ -196,7 +171,10 @@ def test_dlss5_ui_has_one_mode_and_preferred_runtime_preflight():
     assert "render_dlss5_unified(" in source
     assert "refresh_dlss5_v10_preflight" in source
     assert "verify_artifact(archive, spec)" in source
-    assert "mode.change(dlss_scale_update_for_mode" in source
+    assert "mode.change(dlss_scale_update_for_mode" not in source
+    assert "dlss_scale = gr.State(dlss_default_scale)" in source
+    assert "nrpreset = gr.State" in source
+    assert "model = gr.State" in source
 
 
 def test_default_mode_prefers_ready_rtx_vsr(monkeypatch):

@@ -6,6 +6,7 @@
 
 - [ ] RTX VSR
 - [ ] DLSS SR
+- [ ] DLSS Frame Generation / MFG
 - [ ] DLSS 5
 - [ ] UI
 - [ ] video/encoding

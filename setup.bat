@@ -100,25 +100,13 @@ if not defined NVE_DLSS5_CHOICE (
   if errorlevel 2 (set "NVE_DLSS5_CHOICE=N") else (set "NVE_DLSS5_CHOICE=Y")
 )
 if /I "%NVE_DLSS5_CHOICE%"=="Y" (
-  call "%NVE_CONDA_EXE%" run --no-capture-output %NVE_CONDA_TARGET% python tools\check_setup_network.py --require-download
-  if errorlevel 1 (
-    if defined NVE_DLSS5_ARCHIVE (
-      echo Using the explicitly supplied DLSS 5 v10 archive: %NVE_DLSS5_ARCHIVE%
-      call "%NVE_CONDA_EXE%" run --no-capture-output %NVE_CONDA_TARGET% python tools\provision_dlss5_v10.py --archive "%NVE_DLSS5_ARCHIVE%" --no-download
-      if errorlevel 1 echo WARNING: DLSS 5 v10 verification/staging/preflight did not complete. Other backends remain usable.
-    ) else (
-      echo WARNING: DLSS 5 download was skipped because this shell has no usable setup download path. Other backends remain usable.
-      echo Run setup.bat again from a normal network-enabled shell, or set NVE_DLSS5_ARCHIVE to the exact pinned v10 ZIP.
-    )
+  if defined NVE_DLSS5_ARCHIVE (
+    echo Using the explicitly supplied DLSS 5 v10 archive: %NVE_DLSS5_ARCHIVE%
+    call "%NVE_CONDA_EXE%" run --no-capture-output %NVE_CONDA_TARGET% python tools\provision_dlss5_v10.py --archive "%NVE_DLSS5_ARCHIVE%"
   ) else (
-    if defined NVE_DLSS5_ARCHIVE (
-      echo Using the explicitly supplied DLSS 5 v10 archive: %NVE_DLSS5_ARCHIVE%
-      call "%NVE_CONDA_EXE%" run --no-capture-output %NVE_CONDA_TARGET% python tools\provision_dlss5_v10.py --archive "%NVE_DLSS5_ARCHIVE%"
-    ) else (
-      call "%NVE_CONDA_EXE%" run --no-capture-output %NVE_CONDA_TARGET% python tools\provision_dlss5_v10.py
-    )
-    if errorlevel 1 echo WARNING: DLSS 5 v10 verification/staging/preflight did not complete. Other backends remain usable.
+    call "%NVE_CONDA_EXE%" run --no-capture-output %NVE_CONDA_TARGET% python tools\provision_dlss5_v10.py
   )
+  if errorlevel 1 echo WARNING: DLSS 5 v10 verification/staging/preflight did not complete. Other backends remain usable.
 ) else (
   echo Skipping optional DLSS 5 provisioning. You can enable it later from Configuration or by running tools\provision_dlss5_v10.py.
 )

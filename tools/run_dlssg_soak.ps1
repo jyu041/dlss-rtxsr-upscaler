@@ -5,7 +5,7 @@ param(
     [Parameter(Mandatory = $true)] [string] $OfficialRuntimeDir,
     [string] $OutputDirectory = 'runtime/phase4a_soak',
     [string] $JobName = 'soak',
-    [string] $PythonExecutable = 'C:\Users\mark\miniconda3\python.exe',
+    [string] $PythonExecutable = '',
     [string] $FfprobeExecutable = '',
     [ValidateSet('h264_nvenc', 'libx264')] [string] $Codec = 'h264_nvenc',
     [ValidateSet(2, 3, 4)] [int] $Multiplier = 4,
@@ -16,6 +16,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+if (-not $PythonExecutable) { $PythonExecutable = (Get-Command python -ErrorAction Stop).Source }
 $out = Join-Path $root $OutputDirectory
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 $jsonPath = Join-Path $out "$JobName.json"

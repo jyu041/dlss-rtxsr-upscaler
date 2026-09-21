@@ -286,3 +286,29 @@ def test_v10_native_session_poison_skips_release(tmp_path):
     assert session.poisoned is True
     assert session.close() == "CLOSED_POISONED_RELEASE_SKIPPED"
     assert release_calls["count"] == 0
+
+
+
+def test_v10_process_lifetime_close_skips_optional_release(tmp_path):
+    library = FakeLibrary()
+    release_calls = {"count": 0}
+
+    def release():
+        release_calls["count"] += 1
+        return 0
+
+    library.dlss5nr_release_session = release
+    bound = native.BoundBridge(
+        library=library,
+        version="fake-v10",
+        frame_abi_version=6,
+        gpu_name="Fake GPU",
+        adapter_luid="fake-luid",
+    )
+    session = native.V10NativeSession(
+        bound, tmp_path, CreateRequest(64, 64)
+    )
+
+    assert session.close_process_lifetime() == "CLOSED_PROCESS_LIFETIME"
+    assert session.closed is True
+    assert release_calls["count"] == 0

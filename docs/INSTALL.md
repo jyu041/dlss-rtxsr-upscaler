@@ -158,14 +158,16 @@ RTX VSR needs the compatible official NVIDIA VFX package and an NVIDIA GPU. The
 source setup installs the pinned Python package; final availability remains
 hardware/driver dependent.
 
-### DLSS 5 v3
+### DLSS 5 compatibility runtime (v3)
 
-DLSS 5 remains experimental, but the validated v3 Feature-18 path no longer
-requires a user to browse for DLLs, copy files manually, calculate hashes, hand
-write `approval.json`, or create the firewall rule by hand.
+The application now exposes one DLSS 5 mode. The validated v3 Feature-18 path
+is retained only as an internal compatibility runtime while the preferred v10
+path is being broadened. It no longer requires a user to browse for DLLs, copy
+files manually, calculate hashes, hand-write `approval.json`, or create the
+firewall rule by hand.
 
-During `setup.bat`, the user is asked whether to provision DLSS 5 v3. Choosing
-Yes runs:
+During `setup.bat`, the user is asked whether to provision this compatibility
+runtime. Choosing Yes runs:
 
 ```powershell
 python tools\provision_dlss5_v3.py --yes
@@ -212,16 +214,19 @@ The currently exercised RTX 3070-family/Ampere v3 path accepts 1.0x DLSS 5
 output. Higher output scales remain blocked for that validated pairing because
 they reproducibly fell back with NGX `InvalidParameter (0xBAD00005)`.
 
-The pinned Neuroframe v10 runtime remains separate from the validated v3 path
-and is not provisioned or activated by `setup.bat`. Runtime Manager continues to
-track it as a selective/static candidate artifact, while the application exposes
-a separately acknowledged **DLSS 5 v10 Experimental** mode. That mode performs
-its own pinned archive verification, fresh Defender preflight, isolated-host
-containment, and per-render execution checks. The tested application boundary is
-currently SDR RGBA8, 1.0x, up to 1920x1080-equivalent input. The earlier v9
-candidate is retained as historical static-audit evidence. See
-`docs/DLSS5_APPROVAL.md` and `docs/DLSS5_V10_APP_HARDWARE_2026-09-19.md` for the
-approval and hardware-scope record.
+The pinned Neuroframe v10 runtime is the preferred implementation behind the
+single **DLSS 5** mode, but it is still not activated silently by `setup.bat`.
+Runtime Manager tracks the pinned artifact and **Configuration → DLSS 5
+preferred runtime readiness → Refresh DLSS 5 runtime preflight** performs the
+explicit archive verification, staging, fresh Defender preflight, isolated-host
+containment checks, and per-render execution preparation. When that preflight is
+ready, the UI automatically uses v10; otherwise the validated v3 runtime may be
+used internally if it was provisioned. The tested native-input boundary remains
+SDR RGBA8, 1.0x output, and up to 1920x1080-equivalent input. Reduced neural
+working resolution is an application-level workload control and does not widen
+that boundary. The earlier v9 candidate remains historical static-audit
+evidence. See `docs/DLSS5_APPROVAL.md` and
+`docs/DLSS5_V10_APP_HARDWARE_2026-09-19.md`.
 
 ## Startup behavior
 

@@ -20,6 +20,7 @@ body:
       options:
         - RTX VSR
         - DLSS SR
+        - DLSS Frame Generation / MFG
         - DLSS 5
         - UI / general
         - unsure

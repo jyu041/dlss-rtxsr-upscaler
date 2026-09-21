@@ -1,4 +1,6 @@
 from io import BytesIO
+import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -310,6 +312,80 @@ def test_v10_protocol_client_roundtrip_uses_simulator_only():
         assert client.close() == "CLOSED"
     finally:
         client.abort()
+
+
+def test_v10_native_close_ack_terminates_process_lifetime_host_cleanly(monkeypatch):
+    from src.backends.dlss5_v10_client import V10ProtocolClient
+
+    class Process:
+        def __init__(self):
+            self.returncode = None
+            self.killed = False
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout=None):
+            if not self.killed:
+                raise subprocess.TimeoutExpired("v10-host", timeout)
+            return self.returncode
+
+        def kill(self):
+            self.killed = True
+            self.returncode = -9
+
+    process = Process()
+    client = V10ProtocolClient(close_grace=0.01)
+    client.process = process
+    client._native_mode = True
+    payload = json.dumps(
+        {
+            "status": "CLOSED",
+            "session_close": "CLOSED_RELEASED",
+            "ngx_shutdown_called": False,
+            "module_unload_called": False,
+        }
+    ).encode("utf-8")
+    monkeypatch.setattr(client, "_roundtrip", lambda *_args: (CLOSE, payload))
+
+    assert client.close() == "CLOSED_ACK_TERMINATED"
+    assert process.killed is True
+
+
+def test_v10_native_close_rejects_failed_native_release(monkeypatch):
+    from src.backends.dlss5_v10_client import V10ProtocolClient
+
+    class Process:
+        def __init__(self):
+            self.returncode = None
+            self.killed = False
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def kill(self):
+            self.killed = True
+            self.returncode = -9
+
+    process = Process()
+    client = V10ProtocolClient(close_grace=0.01)
+    client.process = process
+    client._native_mode = True
+    payload = json.dumps(
+        {
+            "status": "CLOSED",
+            "session_close": "CLOSED_RELEASE_FAILED",
+            "ngx_shutdown_called": False,
+            "module_unload_called": False,
+        }
+    ).encode("utf-8")
+    monkeypatch.setattr(client, "_roundtrip", lambda *_args: (CLOSE, payload))
+
+    assert client.close() == "TERMINATED_AFTER_CLOSE_FAILURE"
+    assert process.killed is True
 
 
 def test_v10_protocol_client_native_start_is_blocked():

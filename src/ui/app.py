@@ -162,36 +162,15 @@ def validate_dlss_sr():
 
 
 def refresh_dlss5_v10_preflight():
-    """Explicitly download/stage/Defender-scan the pinned v10 candidate."""
-    runtime_id = "dlss5-neuroframe-v10-static-candidate"
-    archive = RUNTIME_ROOT / "downloads" / "Visual.Enhancer.v10.0.zip"
+    """Install or repair the preferred DLSS 5 runtime."""
     try:
-        manager = RuntimeManager(RUNTIME_MANIFEST, RUNTIME_ROOT)
-        spec = manager.specs[runtime_id]
-        archive_valid = False
-        if archive.is_file():
-            try:
-                verify_artifact(archive, spec)
-                archive_valid = True
-            except (OSError, ValueError):
-                archive_valid = False
-        if not archive_valid:
-            archive.parent.mkdir(parents=True, exist_ok=True)
-            manager.download(runtime_id, archive)
-        from tools.prepare_dlss5_v10_candidate import stage_candidate
+        from tools.provision_dlss5_v10 import prepare_dlss5_v10
 
-        stage_candidate(
-            archive,
-            destination=DEFAULT_V10_RUNTIME.parents[2],
-            report_path=DEFAULT_V10_PREFLIGHT,
-        )
+        prepare_dlss5_v10()
         status = DLSS5V10ExperimentalBackend().status()
-        return (
-            status_html(),
-            f"DLSS 5 preferred-runtime preflight: {status.state} — {status.reason}",
-        )
+        return status_html(), f"DLSS 5 runtime: {status.state} — {status.reason}"
     except Exception as exc:
-        return status_html(), f"DLSS 5 preferred-runtime preflight failed: {exc}"
+        return status_html(), f"DLSS 5 runtime setup failed: {exc}"
 
 
 def inspect(path):
@@ -634,9 +613,9 @@ def build():
                         sr_validate = gr.Button("Validate DLSS SR", interactive=sr_validation_enabled)
                     v10_initial_status = DLSS5V10ExperimentalBackend().status()
                     with gr.Group(elem_classes="backend-readiness-v10"):
-                        gr.Markdown("### DLSS 5 preferred runtime readiness")
+                        gr.Markdown("### DLSS 5 runtime")
                         v10_readiness = gr.Markdown(f"Current state: {v10_initial_status.state} — {v10_initial_status.reason}")
-                        v10_refresh = gr.Button("Refresh DLSS 5 runtime preflight")
+                        v10_refresh = gr.Button("Install / Repair DLSS 5")
                 gr.Markdown("Normal runtime paths are provisioned by `setup.bat`. Missing backends are never silently substituted.", elem_classes="configuration-note")
 
                 with gr.Group(elem_classes="configuration-card"):

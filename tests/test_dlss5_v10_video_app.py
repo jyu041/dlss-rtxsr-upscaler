@@ -130,7 +130,7 @@ def test_v10_app_host_source_has_dynamic_geometry_but_1x_cap():
 
 def test_v10_app_renderer_accepts_acknowledged_process_lifetime_termination():
     source = open("src/video/dlss5_v10.py", encoding="utf-8").read()
-    assert 'clean_close = close_result in {"CLOSED", "CLOSED_ACK_TERMINATED"}' in source
+    assert 'clean_close = close_result in {"CLOSED", "CLOSED_ACK_TERMINATED", "CLOSED_PROCESS_LIFETIME"}' in source
     assert '"host_close": close_result' in source
     assert "client.last_close_error" in source
 

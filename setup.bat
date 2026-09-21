@@ -95,7 +95,7 @@ set "NVE_DLSS5_CHOICE="
 if /I "%NVE_SETUP_DLSS5%"=="1" set "NVE_DLSS5_CHOICE=Y"
 if /I "%NVE_SETUP_DLSS5%"=="0" set "NVE_DLSS5_CHOICE=N"
 if not defined NVE_DLSS5_CHOICE (
-  echo DLSS 5 is experimental. Setup can install the exact pinned v10 runtime, verify it, and run the required Microsoft Defender preflight now.
+  echo DLSS 5 is experimental. Setup can download the exact pinned v10 runtime ^(~690 MB once^), verify it, and run the required Microsoft Defender preflight now.
   choice /C YN /N /M "Enable DLSS 5 now? [Y/N] "
   if errorlevel 2 (set "NVE_DLSS5_CHOICE=N") else (set "NVE_DLSS5_CHOICE=Y")
 )

@@ -36,7 +36,8 @@ set "NVE_FFPROBE=%~dp0runtime\tools\ffmpeg\ffprobe.exe"
 if not exist "%NVE_FFPROBE%" set "NVE_FFPROBE=ffprobe"
 "%NVE_FFMPEG%" -version >nul 2>nul || (echo FFmpeg was not found in runtime\tools\ffmpeg or on PATH. Install a compatible build or provide the bundled runtime.& exit /b 1)
 "%NVE_FFPROBE%" -version >nul 2>nul || (echo FFprobe was not found in runtime\tools\ffmpeg or on PATH. Install a compatible build or provide the bundled runtime.& exit /b 1)
-"%NVE_FFMPEG%" -hide_banner -encoders 2>nul | findstr /r /c:"h264_nvenc" /c:"hevc_nvenc" >nul || (echo FFmpeg lacks h264_nvenc/hevc_nvenc. Provide a full compatible build.& exit /b 1)
+"%NVE_FFMPEG%" -hide_banner -encoders 2>nul | findstr /r /c:"h264_nvenc" >nul || (echo FFmpeg lacks h264_nvenc. Provide a full compatible build.& exit /b 1)
+"%NVE_FFMPEG%" -hide_banner -encoders 2>nul | findstr /r /c:"hevc_nvenc" >nul || (echo FFmpeg lacks hevc_nvenc. Provide a full compatible build.& exit /b 1)
 
 echo [5/10] Installing verified public project runtimes
 set "NVE_BOOTSTRAP_ARCHIVE=%TEMP%\NVIDIA-Video-Enhancer-v0.1.0-beta.2-bootstrap.zip"

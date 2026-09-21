@@ -576,6 +576,12 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
                 if stats.get("compatibility_fallback")
                 else "; DLSS 5 preferred runtime"
             )
+        codec_note = ""
+        if stats.get("codec_fallback"):
+            codec_note = (
+                f"; output codec {stats.get('output_codec')} "
+                f"(automatic fallback from {stats.get('requested_codec')})"
+            )
         browser_video = None
         display_note = ""
         try:
@@ -590,7 +596,7 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
             )
         else:
             rate_text = f"render throughput {stats['fps']:.2f} frames/s"
-        return browser_video, f"Completed {stats.get('multiplier', 1)}X: {stats['frames']} frames; {rate_text}; {stats['dimensions'][0]}x{stats['dimensions'][1]}; audio preserved: {stats['audio_preserved']}{timing}{dlss_runtime}{display_note}"
+        return browser_video, f"Completed {stats.get('multiplier', 1)}X: {stats['frames']} frames; {rate_text}; {stats['dimensions'][0]}x{stats['dimensions'][1]}; audio preserved: {stats['audio_preserved']}{timing}{dlss_runtime}{codec_note}{display_note}"
     except InterruptedError:
         if job: MONITOR.set_active(False); CONTROLLER.finish("CANCELLED", "Render cancelled")
         return None, "Render cancelled; partial output removed."

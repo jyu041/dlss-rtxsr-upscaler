@@ -61,3 +61,11 @@ def test_render_result_uses_full_length_video_and_selects_video_tab():
     assert 'frame_event.then(lambda: gr.Tabs(selected="frame")' in source
     assert "output {stats['output_fps']:.3f} FPS" in source
     assert "render throughput {stats['end_to_end_fps']:.2f} output frames/s" in source
+
+
+
+def test_render_status_reports_automatic_vsr_codec_fallback():
+    source = APP.read_text(encoding="utf-8")
+    assert 'if stats.get("codec_fallback"):' in source
+    assert "automatic fallback from" in source
+    assert "{codec_note}{display_note}" in source

@@ -17,13 +17,19 @@ def test_vsr_encoder_preflight_passes_selected_codec(monkeypatch):
 
     monkeypatch.setattr(stream, "nvenc_preflight", fake_preflight)
 
-    stream._preflight_encoder("H.264", 1920, 1080)
+    selected = stream._select_encoder("H.264", 1920, 1080)
 
     assert calls == [("H.264", 1920, 1080)]
+    assert selected["codec"] == "H.264"
+    assert selected["encoder"] == "h264_nvenc"
+    assert selected["fallback"] is False
 
 
-def test_vsr_h264_preflight_suggests_hevc_when_same_size_passes(monkeypatch):
+def test_vsr_h264_preflight_auto_falls_back_to_hevc_when_same_size_passes(monkeypatch):
+    calls = []
+
     def fake_preflight(codec, width, height):
+        calls.append((codec, width, height))
         if codec == "H.264":
             return {
                 "available": False,
@@ -40,14 +46,17 @@ def test_vsr_h264_preflight_suggests_hevc_when_same_size_passes(monkeypatch):
 
     monkeypatch.setattr(stream, "nvenc_preflight", fake_preflight)
 
-    with pytest.raises(RuntimeError) as exc:
-        stream._preflight_encoder("H.264", 5120, 2880)
+    selected = stream._select_encoder("H.264", 5120, 2880)
 
-    message = str(exc.value)
-    assert "RTX VSR cannot encode 5120x2880 with H.264" in message
-    assert "InitializeEncoder failed: invalid param" in message
-    assert "HEVC NVENC passed at the same output size" in message
-    assert "reduce the RTX VSR scale" in message
+    assert calls == [
+        ("H.264", 5120, 2880),
+        ("HEVC", 5120, 2880),
+    ]
+    assert selected["requested_codec"] == "H.264"
+    assert selected["codec"] == "HEVC"
+    assert selected["encoder"] == "hevc_nvenc"
+    assert selected["fallback"] is True
+    assert "InitializeEncoder failed" in selected["fallback_reason"]
 
 
 def test_vsr_hevc_preflight_preserves_exact_ffmpeg_reason(monkeypatch):
@@ -66,4 +75,4 @@ def test_vsr_hevc_preflight_preserves_exact_ffmpeg_reason(monkeypatch):
         RuntimeError,
         match="device does not support requested dimensions",
     ):
-        stream._preflight_encoder("HEVC", 8192, 4320)
+        stream._select_encoder("HEVC", 8192, 4320)

@@ -9,23 +9,39 @@ from src.video.nvenc import nvenc_preflight
 from src.video.rtx_vsr_worker import RTXVSRSession
 
 
-def _preflight_encoder(codec: str, width: int, height: int) -> None:
+def _select_encoder(codec: str, width: int, height: int) -> dict[str, object]:
+    """Select a working NVENC path for the exact RTX VSR output geometry.
+
+    H.264 is kept when supported. If H.264 cannot encode the requested size but
+    HEVC can, use HEVC automatically rather than failing after the VSR work has
+    already been requested. Explicit HEVC requests never fall back to H.264.
+    """
     result = nvenc_preflight(codec, width, height)
     if result["available"]:
-        return
+        return {
+            "requested_codec": codec,
+            "codec": codec,
+            "encoder": result["encoder"],
+            "fallback": False,
+            "preflight": result,
+        }
 
     detail = result.get("stderr_tail") or "unknown FFmpeg/NVENC error"
-    hint = ""
     if codec == "H.264":
         hevc = nvenc_preflight("HEVC", width, height)
         if hevc["available"]:
-            hint = (
-                " HEVC NVENC passed at the same output size; choose HEVC in "
-                "Output settings or reduce the RTX VSR scale."
-            )
+            return {
+                "requested_codec": codec,
+                "codec": "HEVC",
+                "encoder": hevc["encoder"],
+                "fallback": True,
+                "preflight": hevc,
+                "fallback_reason": detail,
+            }
+
     raise RuntimeError(
         f"RTX VSR cannot encode {width}x{height} with {codec} "
-        f"({result.get('encoder') or 'unknown encoder'}): {detail}{hint}"
+        f"({result.get('encoder') or 'unknown encoder'}): {detail}"
     )
 
 def render_vsr(source, destination, backend, scale=2.0, quality="ULTRA", mode="Super Resolution", cancel=None, progress=None, codec="H.264"):
@@ -38,11 +54,18 @@ def render_vsr(source, destination, backend, scale=2.0, quality="ULTRA", mode="S
     frames, estimated = frame_total(info)
     raw_cmd = [ffmpeg, "-v", "error", "-i", str(source), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
     video_only = Path(destination).with_suffix(".video_only.mp4")
-    enc = {"H.264": "h264_nvenc", "HEVC": "hevc_nvenc"}.get(codec)
-    if not enc: raise ValueError("RTX VSR supports H.264 and HEVC NVENC only")
-    _preflight_encoder(codec, output[0], output[1])
+    if codec not in {"H.264", "HEVC"}:
+        raise ValueError("RTX VSR supports H.264 and HEVC NVENC only")
+    selected = _select_encoder(codec, output[0], output[1])
+    enc = str(selected["encoder"])
     enc_cmd = [ffmpeg, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{output[0]}x{output[1]}", "-r", str(info["fps"]), "-i", "-", "-an", "-c:v", enc, "-preset", "p5", "-cq", "19", str(video_only)]
-    report_progress(progress, frame_index=0, total_frames=frames, phase="INITIALIZING", message="Initializing RTX VSR")
+    init_message = "Initializing RTX VSR"
+    if selected["fallback"]:
+        init_message += (
+            f"; {selected['requested_codec']} NVENC unsupported at "
+            f"{output[0]}x{output[1]}, using {selected['codec']}"
+        )
+    report_progress(progress, frame_index=0, total_frames=frames, phase="INITIALIZING", message=init_message)
     decoder = encoder = None
     session = None
     count = 0; started = time.perf_counter(); memory_samples = []
@@ -87,7 +110,20 @@ def render_vsr(source, destination, backend, scale=2.0, quality="ULTRA", mode="S
         mux = [ffmpeg, "-y", "-v", "error", "-i", str(video_only), "-i", str(source), "-map", "0:v:0", "-map", "1:a?", "-c:v", "copy", "-c:a", "copy", "-map_metadata", "1", str(destination)]
         result = subprocess.run(mux, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
         if result.returncode: raise RuntimeError(result.stderr[-2000:])
-        return {"frames": count, "fps": count / max(.001, time.perf_counter() - started), "dimensions": output, "audio_preserved": bool(info["audio_codec"] != "none"), "encoder": enc, "gpu_memory_samples": memory_samples, "frames_estimated": estimated, "worker_teardown": teardown}
+        return {
+            "frames": count,
+            "fps": count / max(.001, time.perf_counter() - started),
+            "dimensions": output,
+            "audio_preserved": bool(info["audio_codec"] != "none"),
+            "encoder": enc,
+            "requested_codec": selected["requested_codec"],
+            "output_codec": selected["codec"],
+            "codec_fallback": bool(selected["fallback"]),
+            "codec_fallback_reason": selected.get("fallback_reason"),
+            "gpu_memory_samples": memory_samples,
+            "frames_estimated": estimated,
+            "worker_teardown": teardown,
+        }
     finally:
         if session:
             session.close()

@@ -461,8 +461,10 @@ def render_dlss5_v10(
         close_result = client.close()
         clean_close = close_result in {"CLOSED", "CLOSED_ACK_TERMINATED"}
         if not clean_close:
+            detail = client.last_close_error
+            suffix = f"; detail: {detail}" if detail else ""
             raise RuntimeError(
-                f"DLSS5 v10 isolated host did not close cleanly: {close_result}"
+                f"DLSS5 v10 isolated host did not close cleanly: {close_result}{suffix}"
             )
 
         report_progress(

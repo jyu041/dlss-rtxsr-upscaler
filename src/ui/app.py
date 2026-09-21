@@ -560,7 +560,14 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
         except Exception as exc:
             _log_ui_exception("Rendered browser preview", exc)
             preview_note = "; browser preview unavailable"
-        return browser_preview, f"Completed {stats.get('multiplier', 1)}X: {stats['frames']} frames at {stats['fps']:.2f} FPS; {stats['dimensions'][0]}x{stats['dimensions'][1]}; audio preserved: {stats['audio_preserved']}{timing}{dlss_runtime}{preview_note}"
+        if processing_mode == "DLSS Frame Generation 2X":
+            rate_text = (
+                f"output {stats['output_fps']:.3f} FPS; "
+                f"render throughput {stats['end_to_end_fps']:.2f} output frames/s"
+            )
+        else:
+            rate_text = f"render throughput {stats['fps']:.2f} frames/s"
+        return browser_preview, f"Completed {stats.get('multiplier', 1)}X: {stats['frames']} frames; {rate_text}; {stats['dimensions'][0]}x{stats['dimensions'][1]}; audio preserved: {stats['audio_preserved']}{timing}{dlss_runtime}{preview_note}"
     except InterruptedError:
         if job: MONITOR.set_active(False); CONTROLLER.finish("CANCELLED", "Render cancelled")
         return None, "Render cancelled; partial output removed."

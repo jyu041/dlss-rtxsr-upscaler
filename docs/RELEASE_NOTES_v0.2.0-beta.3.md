@@ -20,6 +20,10 @@ cd dlss-rtxsr-upscaler
 .\start.bat
 ```
 
+Use this recursive clone path rather than GitHub's automatically generated
+**Source code (zip/tar.gz)** downloads, which do not populate the pinned
+submodule and are not the validated beta.3 install artifact.
+
 During setup, DLSS 5 remains a single explicit opt-in:
 
 ```text

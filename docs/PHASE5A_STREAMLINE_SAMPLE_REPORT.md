@@ -88,7 +88,7 @@ cmake -S Streamline_Sample -B _build -G "Visual Studio 17 2022" -A x64
 Built with MSBuild 17.14.51, MSVC 19.44.35228, Windows SDK 10.0.26100. The
 Release executable is:
 
-`C:\Users\mark\Desktop\dlss-community-research\Streamline_Sample\_bin\StreamlineSample.exe`
+`C:\Users\<user>\Desktop\dlss-community-research\Streamline_Sample\_bin\StreamlineSample.exe`
 
 The build passed. CMake emitted only upstream deprecation and custom-command
 policy warnings.
@@ -99,7 +99,7 @@ The official CMake route initially lacked generated resources. ReShade’s own
 `tools/update_version.ps1` was run, then its official `ReShade.sln` target was
 built as `Release|64-bit`. Output:
 
-`C:\Users\mark\Desktop\dlss-community-research\ReShade\bin\x64\Release\ReShade64.dll`
+`C:\Users\<user>\Desktop\dlss-community-research\ReShade\bin\x64\Release\ReShade64.dll`
 
 The build passed with upstream shader/compiler warnings, including HLSL `pow`
 warnings and C4530 exception-unwind warnings.
@@ -108,7 +108,7 @@ warnings and C4530 exception-unwind warnings.
 
 The already source-built donor artifact was used:
 
-`C:\Users\mark\Desktop\dlss-community-research\renodx\build.vs\Release\renodx-mfgunlock.addon64`
+`C:\Users\<user>\Desktop\dlss-community-research\renodx\build.vs\Release\renodx-mfgunlock.addon64`
 
 SHA-256: `0FE9798C0F48AD7ADBC0E22546743221EB6397BDEAE804E438297EA133611F81`
 
@@ -148,7 +148,7 @@ DLSS-G was disabled as expected on stock Ampere. Reflex and PCL were supported.
 
 An isolated external directory was used:
 
-`C:\Users\mark\Desktop\dlss-community-research\phase5a_streamline_run`
+`C:\Users\<user>\Desktop\dlss-community-research\phase5a_streamline_run`
 
 It contained the source-built ReShade runtime as `dxgi.dll`, the source-built
 `renodx-mfgunlock.addon64`, the built sample, and the official matched runtime.

@@ -72,7 +72,7 @@ The host, official runtime, self-test, and short pipeline checks now pass.
 ### Recovered provenance
 
 The historical SDK tree exists at
-`C:\Users\mark\AppData\Local\Temp\dlssg-phase3-research\DLSS`, with Git
+`C:\Users\<user>\AppData\Local\Temp\dlssg-phase3-research\DLSS`, with Git
 HEAD `374959484e79a640feaba44c93ac8cfb0a03f5b5` and the recorded
 `LICENSE.txt` SHA-256
 `3027F23CA5A46DD9CB8183FBD522983A86F64D7DAAC5982912BF9F214671F294`.

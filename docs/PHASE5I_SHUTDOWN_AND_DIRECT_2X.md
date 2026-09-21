@@ -20,7 +20,7 @@ feature creation. The community runtime was not loaded and no direct community
   `C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2`
 - NVIDIA header snapshot: `374959484e79a640feaba44c93ac8cfb0a03f5b5`
 - Official runtime directory:
-  `C:\Users\mark\Desktop\dlss-community-research\Streamline_Sample_MFGAmpere\_bin`
+  `C:\Users\<user>\Desktop\dlss-community-research\Streamline_Sample_MFGAmpere\_bin`
 
 ## B. Exact shutdown call and smallest reproducer
 

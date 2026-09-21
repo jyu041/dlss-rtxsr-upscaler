@@ -33,7 +33,7 @@ See `docs/RELEASE_NOTES_v0.2.0-beta.2.md`.
 
 ## v0.2.0-beta.1 — 2026-09-20
 
-Current source-install beta.
+First source-install beta.
 
 Highlights:
 

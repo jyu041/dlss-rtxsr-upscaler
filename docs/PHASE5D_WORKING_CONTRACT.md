@@ -55,7 +55,7 @@ provider.
 
 | Module | Canonical path / version | SHA-256 | Role |
 |---|---|---|---|
-| `StreamlineSample.exe` | `C:\Users\mark\Desktop\dlss-community-research\Streamline_Sample_MFGAmpere\_bin\StreamlineSample.exe` | `440F7A14166C61EBED19A30F96A354BE2726D7CB6E70B013183B9FF5B2AC6B0F` | Host |
+| `StreamlineSample.exe` | `C:\Users\<user>\Desktop\dlss-community-research\Streamline_Sample_MFGAmpere\_bin\StreamlineSample.exe` | `440F7A14166C61EBED19A30F96A354BE2726D7CB6E70B013183B9FF5B2AC6B0F` | Host |
 | `sl.interposer.dll` | sample `_bin`, 2.14.1.0 | `8C87C9499461DA561EDD529AA9BF7831D67D7B94EBB1C1A5ED54EF4934E1EA4C` | Streamline API/DXGI interposer |
 | `sl.common.dll` | sample `_bin`, 2.14.1.0 | `82924A8954DD671E09351C5DE0EB87AD0EB25B944CC9F9AB955CA1D9950DE15D` | Common Streamline services |
 | `sl.dlss_g.dll` | sample `_bin`, 2.14.1.0 | `F4A6B2B14DCC0B1485989E430D3B4E3A44AC1800B92BA1AD74F476E64FB2B09C` | DLSS-G plugin |

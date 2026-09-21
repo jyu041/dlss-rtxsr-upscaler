@@ -29,6 +29,10 @@ cd dlss-rtxsr-upscaler
 .\start.bat
 ```
 
+Use the recursive Git clone shown above. GitHub's automatically generated
+**Source code (zip/tar.gz)** downloads do not populate Git submodules and are
+therefore not the validated install artifact for this release.
+
 In Command Prompt, use `setup.bat` and `start.bat` without the leading
 `.\`. Setup first looks for `conda` in the current shell and then checks
 the common per-user, LocalAppData, and ProgramData Miniconda/Anaconda install
@@ -72,8 +76,8 @@ public `v0.1.0-beta.2` release:
 
 The release ZIP is pinned to SHA-256
 `F32F8D9586D3A3006D5E26549D9BAB74DD33E10326157D5AEE4620C9DD0006C8`,
-and extracted files are re-verified before activation. An outside user does
-not need access to `dlss-rtxsr-upscaler-resources`.
+and extracted files are re-verified before activation. No private resource
+repository is required for the supported source-install workflow.
 
 ### DLSS Frame Generation
 

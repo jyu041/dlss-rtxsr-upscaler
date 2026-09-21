@@ -1,0 +1,75 @@
+name: publish-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag, for example v0.2.0-beta.4"
+        required: true
+        type: string
+      notes_file:
+        description: "Tracked release-notes path"
+        required: true
+        type: string
+      prerelease:
+        description: "Publish as a prerelease"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: github.repository == 'jyu041/dlss-rtxsr-upscaler'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out selected main revision
+        uses: actions/checkout@v7
+
+      - name: Validate release inputs
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          NOTES_FILE: ${{ inputs.notes_file }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          case "$RELEASE_TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "Release tag must start with a semantic-version-like vX.Y.Z prefix." >&2; exit 2 ;;
+          esac
+          case "$NOTES_FILE" in
+            docs/RELEASE_NOTES_*.md) ;;
+            *) echo "Release notes must be a tracked docs/RELEASE_NOTES_*.md file." >&2; exit 2 ;;
+          esac
+          test -f "$NOTES_FILE"
+          git ls-files --error-unmatch "$NOTES_FILE" >/dev/null
+          grep -F "$RELEASE_TAG" "$NOTES_FILE" >/dev/null
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; refusing to mutate an immutable release." >&2
+            exit 3
+          fi
+
+      - name: Publish release
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          NOTES_FILE: ${{ inputs.notes_file }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          args=(
+            "$RELEASE_TAG"
+            --repo "$GITHUB_REPOSITORY"
+            --target "$GITHUB_SHA"
+            --title "$RELEASE_TAG"
+            --notes-file "$NOTES_FILE"
+          )
+          if [ "$PRERELEASE" = "true" ]; then
+            args+=(--prerelease)
+          fi
+          gh release create "${args[@]}"
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"

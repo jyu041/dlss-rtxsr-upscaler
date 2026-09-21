@@ -51,7 +51,7 @@ Result: `DONOR_SOURCE_BUILD_PASS`.
 
 Artifact:
 
-`C:\Users\mark\Desktop\dlss-community-research\renodx\build.vs\Release\renodx-mfgunlock.addon64`
+`C:\Users\<user>\Desktop\dlss-community-research\renodx\build.vs\Release\renodx-mfgunlock.addon64`
 
 - Size: 441,856 bytes
 - SHA-256: `0FE9798C0F48AD7ADBC0E22546743221EB6397BDEAE804E438297EA133611F81`

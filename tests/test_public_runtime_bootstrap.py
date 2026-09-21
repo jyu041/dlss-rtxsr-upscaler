@@ -7,6 +7,7 @@ from src.runtime_manager import RuntimeManager
 ROOT = Path(__file__).parents[1]
 MANIFEST = ROOT / "src" / "runtime_manager" / "manifest.json"
 BETA2_SHA256 = "F32F8D9586D3A3006D5E26549D9BAB74DD33E10326157D5AEE4620C9DD0006C8"
+LEGACY_PRIVATE_REPO = "dlss-rtxsr-upscaler-" + "resources"
 C55_SHA256 = "C55A7BD1E39D59DF58C73783648EB9BD49D51BD6AAD21F1D7C8BE4D13D9B6916"
 GRID4_ARCHIVE_SHA256 = "5A6644CC78EFEFB3705C80E7859D53C0E75081AAAE33C676D0DC451BE74B80C9"
 GRID4_ARCHIVE_SIZE = 209_002
@@ -29,7 +30,7 @@ def test_public_release_bootstrap_manifest_is_exact_and_public():
         assert spec.redistributable is True
         assert spec.sha256 == BETA2_SHA256
         assert spec.artifact_url and "jyu041/dlss-rtxsr-upscaler/releases/download/v0.1.0-beta.2" in spec.artifact_url
-        assert "dlss-rtxsr-upscaler-resources" not in spec.artifact_url
+        assert LEGACY_PRIVATE_REPO not in spec.artifact_url
 
     assert c55.destination == "dlssg/worker"
     assert c55.extract_map[-1][1] == "dlssg_sm86_offline.exe"
@@ -121,7 +122,7 @@ def test_setup_bootstraps_validated_dlssg_path_and_persists_canonical_paths():
     assert "DLSSG_COMMUNITY_RUNTIME" in setup
     assert "DLSSG_OFFICIAL_RUNTIME_DIR" in setup
     assert "manage_runtime.py install dlssg-sm86-0.3.1-candidate" not in setup
-    assert "dlss-rtxsr-upscaler-resources" not in setup
+    assert LEGACY_PRIVATE_REPO not in setup
 
 
 def test_setup_requires_both_h264_and_hevc_nvenc():
@@ -155,4 +156,4 @@ def test_setup_offers_simple_preferred_dlss5_v10_provisioning():
 def test_manifest_json_has_no_private_bootstrap_dependency():
     data = json.loads(MANIFEST.read_text(encoding="utf-8"))
     serialized = json.dumps(data)
-    assert "dlss-rtxsr-upscaler-resources" not in serialized
+    assert LEGACY_PRIVATE_REPO not in serialized

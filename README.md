@@ -109,6 +109,10 @@ cd dlss-rtxsr-upscaler
 .\start.bat
 ```
 
+Use the recursive Git clone shown above. GitHub's automatically generated
+**Source code (zip/tar.gz)** downloads do not populate Git submodules and are
+not the validated install artifact for this release.
+
 From Command Prompt, use `setup.bat` and `start.bat` without the leading
 `.\`.
 

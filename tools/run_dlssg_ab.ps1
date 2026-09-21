@@ -5,7 +5,7 @@ param(
     [Parameter(Mandatory = $true)] [string] $LongInput,
     [Parameter(Mandatory = $true)] [string] $CommunityRuntime,
     [Parameter(Mandatory = $true)] [string] $OfficialRuntimeDir,
-    [string] $PythonExecutable = 'C:\Users\mark\miniconda3\python.exe',
+    [string] $PythonExecutable = '',
     [string] $OutputDirectory = 'runtime',
     [int] $Repeats = 3,
     [int] $PerRunTimeoutSeconds = 180,
@@ -16,6 +16,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+if (-not $PythonExecutable) { $PythonExecutable = (Get-Command python -ErrorAction Stop).Source }
 $outputRoot = Join-Path $root $OutputDirectory
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 

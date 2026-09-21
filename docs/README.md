@@ -26,7 +26,7 @@ phrases such as "not implemented", "future work", or "candidate".
 | [Third-party inventory](THIRD_PARTY.md) | Dependency/licensing inventory |
 | [Development](DEVELOPMENT.md) | Contributor workflow |
 | [Project status](PROJECT_STATUS.md) | What is complete, deliberately deferred, or hardware-dependent |
-| [v0.2.0-beta.2 release notes](RELEASE_NOTES_v0.2.0-beta.2.md) | Current source-beta changes, validation scope, and limitations |
+| [v0.2.0-beta.3 release notes](RELEASE_NOTES_v0.2.0-beta.3.md) | Current public-launch source-beta changes, validation scope, and limitations |
 | [Binary distribution boundary](legal/BINARY_DISTRIBUTION_NOTICES.md) | Packaging/distribution constraints |
 
 ## Current hardware evidence

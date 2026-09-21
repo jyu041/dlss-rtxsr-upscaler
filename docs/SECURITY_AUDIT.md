@@ -4,8 +4,9 @@ The application is a local utility. Its Gradio UI binds to localhost and does
 not enable a public share link. Video processing is local.
 
 Network access is used only by explicit user-initiated provisioning or runtime
-management actions such as `setup.bat`, Runtime Manager install/repair, the
-optional DLSS 5 v3 provisioner, and the explicit DLSS 5 v10 preflight. Ordinary
+management actions such as `setup.bat`, Runtime Manager install/repair, and
+the managed DLSS 5 v10 provisioner/preflight. The retained v3 provisioner is
+legacy compatibility tooling and is not part of normal onboarding. Ordinary
 startup does not silently replace or download a backend runtime.
 
 Backend adapters fail closed when a dependency is missing, modified,

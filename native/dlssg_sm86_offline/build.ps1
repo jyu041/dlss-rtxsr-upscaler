@@ -1,6 +1,6 @@
 param(
-    [string]$NgxSdk = 'C:\Users\mark\AppData\Local\Temp\dlssg-phase3-research\DLSS',
-    [string]$NvApi = 'C:\Users\mark\Desktop\dlss-community-research\renodx\external\NVAPI',
+    [string]$NgxSdk = $env:NVE_NGX_SDK,
+    [string]$NvApi = $env:NVE_NVAPI_SDK,
     [string]$NvOfSdk = $env:NVOF_SDK,
     [string]$Output = "$PSScriptRoot\bin-instrumented"
 )
@@ -17,6 +17,13 @@ if (-not $includeLine -or -not $libLine -or -not $pathLine) { throw 'Visual Stud
 [Environment]::SetEnvironmentVariable('LIB', $libLine.Substring($libLine.IndexOf('=') + 1), 'Process')
 [Environment]::SetEnvironmentVariable('Path', $pathLine.Substring($pathLine.IndexOf('=') + 1), 'Process')
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$localNgx = Join-Path $root 'third_party\local\nvidia-dlss-sdk-full'
+if (-not $NgxSdk -and (Test-Path -LiteralPath (Join-Path $localNgx 'include\nvsdk_ngx.h') -PathType Leaf)) {
+    $NgxSdk = $localNgx
+}
+if (-not $NgxSdk) {
+    throw 'NVIDIA NGX/DLSS SDK was not provided. Pass -NgxSdk, set NVE_NGX_SDK, or stage it under third_party\local\nvidia-dlss-sdk-full.'
+}
 $inc = Join-Path $NgxSdk 'include'; $lib = Join-Path $NgxSdk 'lib\Windows_x86_64\x64'
 $ngxHeader = Join-Path $inc 'nvsdk_ngx.h'
 $ngxLib = Join-Path $lib 'nvsdk_ngx_d.lib'

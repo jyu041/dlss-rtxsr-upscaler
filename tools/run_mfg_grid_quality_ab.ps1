@@ -8,7 +8,7 @@ param(
     [int]$Groups = 8,
     [ValidateRange(0,1000000)]
     [int]$StartFrame = 0,
-    [string]$NgxSdk = 'C:\Users\mark\AppData\Local\Temp\dlssg-phase3-research\DLSS',
+    [string]$NgxSdk = $env:NVE_NGX_SDK,
     [string]$NvApi = '',
     [string]$NvOfSdk = $env:NVOF_SDK,
     [string]$OutputDir = "$PSScriptRoot\..\runtime\quality\mfg-grid-ab"

@@ -17,8 +17,9 @@ def test_discard_proxy_is_rejected(monkeypatch):
         lambda: {"https": "http://127.0.0.1:9"},
     )
     assert network.blocked_discard_proxies() == {"https": "http://127.0.0.1:9"}
-    with pytest.raises(RuntimeError, match="local discard proxy"):
+    with pytest.raises(RuntimeError, match="local discard proxy") as exc:
         network.require_download_network_context()
+    assert "v3 archive" not in str(exc.value)
 
 
 def test_legitimate_local_proxy_is_not_rejected(monkeypatch):

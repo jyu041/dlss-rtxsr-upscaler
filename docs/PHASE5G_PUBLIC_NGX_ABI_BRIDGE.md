@@ -15,7 +15,7 @@ was loaded or executed and no GPU Evaluate was attempted.
 ## A. Baselines and artifacts
 
 - Primary repository HEAD/origin: `34f379afe0da49aae4b30acfeda6fa439f9bc0f5`
-- Community repository: `C:\Users\mark\Desktop\dlss-community-research\dlssg_for_sm86`
+- Community repository: `C:\Users\<user>\Desktop\dlss-community-research\dlssg_for_sm86`
 - Community HEAD: `5f62ff44a9c08f9841fa605e7b7160f79ccd2c40`
 - Runtime: `version.dll`
 - Runtime SHA-256: `C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2`
@@ -26,7 +26,7 @@ was loaded or executed and no GPU Evaluate was attempted.
 
 Local NVIDIA DLSS SDK header snapshot:
 
-- Header tree: `C:\Users\mark\AppData\Local\Temp\dlssg-phase3-research\DLSS`
+- Header tree: `C:\Users\<user>\AppData\Local\Temp\dlssg-phase3-research\DLSS`
 - Header commit: `374959484e79a640feaba44c93ac8cfb0a03f5b5`
 
 `NVSDK_NGX_Parameter` is a C++ abstract interface with virtual overloads for

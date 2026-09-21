@@ -1,4 +1,8 @@
-param([string]$Output = $(Join-Path $PSScriptRoot 'build'), [string]$NgxRoot = 'C:\Users\mark\Desktop\dlss-community-research\renodx\external\DLSS', [string]$NvapiRoot = 'C:\Users\mark\Desktop\dlss-community-research\renodx\external\NVAPI')
+param(
+    [string]$Output = $(Join-Path $PSScriptRoot 'build'),
+    [string]$NgxRoot = $env:NVE_NGX_SDK,
+    [string]$NvapiRoot = $env:NVE_NVAPI_SDK
+)
 $ErrorActionPreference = 'Stop'
 $vswhere = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe'
 if (-not (Test-Path -LiteralPath $vswhere)) { throw 'Visual Studio C++ Build Tools not found' }

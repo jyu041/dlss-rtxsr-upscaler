@@ -17,12 +17,26 @@ A normal user should not need to run them.
 - `check_rtx_vsr_readiness.py` — RTX VSR readiness diagnostics.
 - `check_dlss_sr_readiness.py` — DLSS SR readiness/self-test entry point.
 - `check_dlssg_readiness.py` — DLSS-G managed-runtime/readiness diagnostics.
-- `provision_dlss5_v3.py` — explicit pinned DLSS 5 v3 provisioning and
-  security validation.
-- `prepare_dlss5_v10_candidate.py` / `audit_dlss5_v10.ps1` — explicit v10
-  candidate staging/static preflight used by the Configuration workflow.
+- `provision_dlss5_v10.py` — normal explicit DLSS 5 provisioning/repair entry
+  point for the preferred pinned v10 runtime.
+- `prepare_dlss5_v10_candidate.py` / `audit_dlss5_v10.ps1` — v10 staging,
+  identity/static audit, and Defender-preflight helpers used by the managed
+  provisioner and validation workflows.
+
+### Legacy compatibility tooling
+
+- `provision_dlss5_v3.py` / `cache_dlss5_v3_archive.py` — retained only for
+  existing/manual DLSS 5 v3 compatibility installations. They are not part of
+  normal setup or the recommended user workflow.
 - `start-dev.bat` — developer source launcher using the remembered Conda
   environment.
+
+## Local SDK paths for native research builds
+
+Native research/build scripts no longer contain developer-specific absolute
+paths. Pass `-NgxSdk` / `-NvApi` explicitly, set `NVE_NGX_SDK` /
+`NVE_NVAPI_SDK`, or use the documented `third_party/local/` staging
+locations. Optical Flow headers may be provided with `NVOF_SDK`.
 
 ## Hardware validation and research
 

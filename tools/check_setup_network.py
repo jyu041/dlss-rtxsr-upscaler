@@ -46,8 +46,7 @@ def require_download_network_context() -> None:
     raise RuntimeError(
         "setup download is blocked by a local discard proxy "
         f"({details}). This commonly appears in sandboxed/automation shells. "
-        "Run setup from a normal interactive shell with network access, or provide "
-        "the exact pinned DLSS5 v3 archive through NVE_DLSS5_ARCHIVE. The project "
+        "Run setup from a normal interactive shell with network access. The project "
         "will not silently bypass a configured proxy/security boundary."
     )
 

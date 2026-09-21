@@ -44,7 +44,7 @@ SELFTEST_COMPLETE
 Exactly one corrected retry was executed:
 
 ```text
-C:\Users\mark\Desktop\dlss-rtxsr-upscaler\native\dlssg_sm86_offline\bin\dlssg_sm86_offline.exe --run-2x C:\Users\mark\Desktop\dlss-community-research\dlssg_for_sm86\version.dll C:\Users\mark\Desktop\dlss-community-research\Streamline_Sample_MFGAmpere\_bin
+C:\Users\<user>\Desktop\dlss-rtxsr-upscaler\native\dlssg_sm86_offline\bin\dlssg_sm86_offline.exe --run-2x C:\Users\<user>\Desktop\dlss-community-research\dlssg_for_sm86\version.dll C:\Users\<user>\Desktop\dlss-community-research\Streamline_Sample_MFGAmpere\_bin
 ```
 
 Attempts: `1`; retries: `0`.

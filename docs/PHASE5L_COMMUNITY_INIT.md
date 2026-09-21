@@ -36,7 +36,7 @@ exact community export name and Phase 5G static argument analysis match it.
 | Project ID | `f8a17d65-4f1e-4e82-b0f2-4f6f93a7c8c1` |
 | Engine type | `NVSDK_NGX_ENGINE_TYPE_CUSTOM` |
 | Engine version | `1.0` |
-| Application data path | `C:\Users\mark\Desktop\dlss-community-research\Streamline_Sample_MFGAmpere\_bin` |
+| Application data path | `C:\Users\<user>\Desktop\dlss-community-research\Streamline_Sample_MFGAmpere\_bin` |
 | D3D12 device | `0x0000022C4D17DE10` |
 | Feature info | official `NVSDK_NGX_FeatureCommonInfo` with the official runtime directory |
 | SDK version | `NVSDK_NGX_Version_API` |

@@ -20,12 +20,12 @@ implementation boundary, not a generation failure.
 - Primary HEAD/origin: `34f379afe0da49aae4b30acfeda6fa439f9bc0f5`
 - Community HEAD: `5f62ff44a9c08f9841fa605e7b7160f79ccd2c40`
 - Community binary:
-  `C:\Users\mark\Desktop\dlss-community-research\dlssg_for_sm86\version.dll`
+  `C:\Users\<user>\Desktop\dlss-community-research\dlssg_for_sm86\version.dll`
 - Size: `15,667,520` bytes
 - SHA-256: `C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2`
 - NVIDIA header snapshot: `374959484e79a640feaba44c93ac8cfb0a03f5b5`
 - Official runtime directory:
-  `C:\Users\mark\Desktop\dlss-community-research\Streamline_Sample_MFGAmpere\_bin`
+  `C:\Users\<user>\Desktop\dlss-community-research\Streamline_Sample_MFGAmpere\_bin`
 
 ## B. GPU and official parameter object
 

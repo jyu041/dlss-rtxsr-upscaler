@@ -29,8 +29,8 @@ official NVIDIA DLSS-G provider remain separate manifest-managed dependencies.
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File `
   .\tools\run_dlssg_grid4_managed_candidate.ps1 `
-  -Input "C:\Users\mark\Desktop\trimmed.mp4" `
-  -CandidateArchive "C:\Users\mark\Desktop\dlssg-grid4-worker-candidate.zip"
+  -Input "C:\Users\<user>\Desktop\trimmed.mp4" `
+  -CandidateArchive "C:\Users\<user>\Desktop\dlssg-grid4-worker-candidate.zip"
 ```
 
 The gate verifies the exact archive/worker identities, stages the worker at

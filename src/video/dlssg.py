@@ -632,7 +632,8 @@ def render_dlssg(
         if encode_output and preserve_audio and bool(info["audio"]):
             mux = subprocess.run(
                 [ffmpeg, "-y", "-v", "error", "-i", str(temporary), "-i", str(source_path), "-map", "0:v:0",
-                 "-map", "1:a?", "-c:v", "copy", "-c:a", "copy", "-map_metadata", "-1", str(destination_path)],
+                 "-map", "1:a?", "-c:v", "copy", "-c:a", "copy", "-map_metadata", "-1",
+                 "-map_chapters", "-1", "-movflags", "+faststart", str(destination_path)],
                 capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
             )
             if mux.returncode:

@@ -338,3 +338,9 @@ def test_backend_requires_configuration(tmp_path: Path):
     backend = DLSSGBackend(tmp_path / "worker.exe", tmp_path / "version.dll", tmp_path / "runtime")
     with pytest.raises(RuntimeError, match="unavailable"):
         backend.require_configuration()
+
+
+def test_dlssg_output_drops_arbitrary_source_container_metadata():
+    source = (Path(__file__).resolve().parents[1] / "src" / "video" / "dlssg.py").read_text(encoding="utf-8")
+    assert '"-map_metadata", "-1"' in source
+    assert '"-map_metadata", "1"' not in source

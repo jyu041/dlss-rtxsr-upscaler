@@ -3,6 +3,20 @@
 This file is a concise release index. Detailed validation evidence and
 engineering history remain under `docs/`.
 
+## v0.2.0-beta.3 — 2026-09-21
+
+Public-launch source beta.
+
+- harden setup so both `h264_nvenc` and `hevc_nvenc` are required independently;
+- add regression coverage for the two-encoder prerequisite gate;
+- automatically prune merged pull-request branches while retaining default/open-PR safeguards;
+- add a visual project overview and a more scan-friendly README landing section;
+- retain the unified DLSS 5 v10 path, validated C55 default, experimental grid4 option, and source-install onboarding established in beta.2.
+
+Validation for the release-audit patch: **528 passed, 3 skipped**, public bootstrap verification passed, and the fresh `clone -> setup.bat -> start.bat` acceptance workflow passed.
+
+See `docs/RELEASE_NOTES_v0.2.0-beta.3.md`.
+
 ## v0.2.0-beta.2 — 2026-09-21
 
 - replace the separate DLSS 5 v3/v10 user modes with one **DLSS 5** mode;

@@ -13,9 +13,9 @@ readback was attempted. No retry was made.
 
 - Primary HEAD/origin: `34f379afe0da49aae4b30acfeda6fa439f9bc0f5`
 - Canonical community repository commit: `5f62ff44a9c08f9841fa605e7b7160f79ccd2c40`
-- Community runtime: `C:\Users\mark\Desktop\dlss-community-research\dlssg_for_sm86\version.dll`
+- Community runtime: `C:\Users\<user>\Desktop\dlss-community-research\dlssg_for_sm86\version.dll`
 - Community runtime SHA-256: `C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2`
-- Official runtime directory: `C:\Users\mark\Desktop\dlss-community-research\Streamline_Sample_MFGAmpere\_bin`
+- Official runtime directory: `C:\Users\<user>\Desktop\dlss-community-research\Streamline_Sample_MFGAmpere\_bin`
 - NVIDIA headers: local DLSS SDK include snapshot used by the existing host
 - Community Evaluate calls: `1` (bootstrap only); measured calls: `0`
 

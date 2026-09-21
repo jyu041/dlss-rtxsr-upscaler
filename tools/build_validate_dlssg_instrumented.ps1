@@ -1,6 +1,6 @@
 param(
-    [string]$NgxSdk = 'C:\Users\mark\AppData\Local\Temp\dlssg-phase3-research\DLSS',
-    [string]$NvApi = 'C:\Users\mark\Desktop\dlss-community-research\renodx\external\NVAPI',
+    [string]$NgxSdk = $env:NVE_NGX_SDK,
+    [string]$NvApi = $env:NVE_NVAPI_SDK,
     [string]$NvOfSdk = $env:NVOF_SDK,
     [string]$CommunityRuntime = "$PSScriptRoot\..\runtime\dlssg\legacy\version.dll",
     [string]$OfficialRuntimeDir = "$PSScriptRoot\..\runtime\dlssg\official",

@@ -1,6 +1,6 @@
 # Project Status
 
-Last reviewed against unified DLSS 5 integration branch: 2026-09-21.
+Last reviewed against current `main` release candidate: 2026-09-21.
 
 ## Complete for the current source-based beta
 
@@ -64,8 +64,8 @@ source-based beta workflow.
 
 ## Release state
 
-[`v0.2.0-beta.1`](https://github.com/jyu041/dlss-rtxsr-upscaler/releases/tag/v0.2.0-beta.1)
-is the current published source-install beta milestone. It is intended to be
+[`v0.2.0-beta.2`](https://github.com/jyu041/dlss-rtxsr-upscaler/releases/tag/v0.2.0-beta.2)
+is the current source-install beta milestone. It is intended to be
 used through the validated recursive clone → `setup.bat` → `start.bat`
 workflow.
 
@@ -76,4 +76,4 @@ The historical `v0.1.0-beta.2` prebuilt ZIP remains available, but it
 predates managed grid4, the DLSS 5 v10 application path, the frontend
 overhaul, hardened source onboarding, and repository cleanup.
 
-See `RELEASE_NOTES_v0.2.0-beta.1.md` for the current release scope.
+See `RELEASE_NOTES_v0.2.0-beta.2.md` for the current release scope.

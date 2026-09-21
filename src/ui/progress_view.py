@@ -13,6 +13,6 @@ def progress_html(progress: JobProgress) -> str:
         '<div class="job-progress">'
         f'<div class="progress-head"><strong>{escape(progress.phase)}</strong><span>{percent:.0f}%</span></div>'
         f'<div class="progress-track"><div class="progress-fill" style="width:{percent:.1f}%"></div></div>'
-        f'<div class="progress-meta"><span>Frames: {"—" if progress.state == "IDLE" else f"{progress.frames_done} / {total}"}</span><span>Processing FPS: {"—" if progress.state == "IDLE" else f"{fps:.2f}"}</span><span>Wall elapsed: {"—" if progress.state == "IDLE" else format_duration(progress.elapsed_seconds)}</span><span>Frame ETA: {escape(eta)}</span></div>'
+        f'<div class="progress-meta"><span>Frames: {"—" if progress.state == "IDLE" else f"{progress.frames_done} / {total}"}</span><span>Throughput: {"—" if progress.state == "IDLE" else f"{fps:.2f} frames/s"}</span><span>Wall elapsed: {"—" if progress.state == "IDLE" else format_duration(progress.elapsed_seconds)}</span><span>Frame ETA: {escape(eta)}</span></div>'
         f'<div class="progress-message">{escape(progress.message)}</div></div>'
     )

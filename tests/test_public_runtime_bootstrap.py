@@ -124,6 +124,15 @@ def test_setup_bootstraps_validated_dlssg_path_and_persists_canonical_paths():
     assert "dlss-rtxsr-upscaler-resources" not in setup
 
 
+def test_setup_requires_both_h264_and_hevc_nvenc():
+    setup = (ROOT / "setup.bat").read_text(encoding="utf-8")
+    assert 'findstr /r /c:"h264_nvenc" /c:"hevc_nvenc"' not in setup
+    assert setup.count('findstr /r /c:"h264_nvenc" >nul') == 1
+    assert setup.count('findstr /r /c:"hevc_nvenc" >nul') == 1
+    assert "FFmpeg lacks h264_nvenc." in setup
+    assert "FFmpeg lacks hevc_nvenc." in setup
+
+
 def test_start_reuses_setup_conda_executable_and_preserves_shell_overrides():
     start = (ROOT / "start.bat").read_text(encoding="utf-8")
     assert 'if exist "%~dp0config\\source_env.bat" call "%~dp0config\\source_env.bat"' in start

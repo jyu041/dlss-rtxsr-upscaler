@@ -348,7 +348,7 @@ def test_v10_native_close_ack_terminates_process_lifetime_host_cleanly(monkeypat
     ).encode("utf-8")
     monkeypatch.setattr(client, "_roundtrip", lambda *_args: (CLOSE, payload))
 
-    assert client.close() == "CLOSED_ACK_TERMINATED"
+    assert client.close() == "CLOSED_PROCESS_LIFETIME"
     assert client.last_close_error is None
     assert process.killed is True
 

@@ -1,4 +1,14 @@
-import os, json, shutil, tempfile, gradio as gr
+import os, json, shutil, sys, tempfile, traceback, warnings
+
+# Gradio 6.16 currently references Starlette's deprecated HTTP 422 alias on
+# queue joins. It is upstream noise rather than an application failure, so
+# suppress only that exact warning instead of hiding deprecations globally.
+warnings.filterwarnings(
+    "ignore",
+    message=r"'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated\. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead\.",
+)
+
+import gradio as gr
 from html import escape
 from pathlib import Path
 from src.core.media_info import probe, format_info
@@ -37,6 +47,12 @@ CONTROLLER = JobController()
 RUNTIME_MANIFEST = Path(__file__).resolve().parents[1] / "runtime_manager" / "manifest.json"
 RUNTIME_ROOT = Path(__file__).resolve().parents[2] / "runtime"
 DEFAULT_DLSSG_PROFILE = "legacy"
+
+
+def _log_ui_exception(operation: str, exc: BaseException) -> None:
+    """Keep the WebUI concise while preserving a complete console traceback."""
+    print(f"{operation} failed: {exc}", file=sys.stderr, flush=True)
+    traceback.print_exc(file=sys.stderr)
 
 
 def runtime_action(runtime_id: str, action: str, archive_path: str | None = None) -> str:
@@ -233,7 +249,9 @@ def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_s
         out=TEMP/f"preview_{os.getpid()}.png"; Image.fromarray(enhanced).save(out)
         del image,enhanced
         return str(source_frame), str(out), f"RTX VSR {vsr_mode} preview completed at {target[0]}x{target[1]}."
-    except Exception as e: return None, None, str(e)
+    except Exception as e:
+        _log_ui_exception("Frame preview", e)
+        return None, None, str(e)
 
 
 def apply_preset(name):
@@ -379,6 +397,7 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
         if job: MONITOR.set_active(False); CONTROLLER.finish("CANCELLED", "Render cancelled")
         return None, "Render cancelled; partial output removed."
     except Exception as exc:
+        _log_ui_exception("Render", exc)
         if job: MONITOR.set_active(False); CONTROLLER.finish("FAILED", str(exc))
         return None, f"Render failed: {exc}"
 
@@ -399,7 +418,7 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
         job = CONTROLLER.start(); MONITOR.set_active(True); progress = tracker_callback(job.progress); preview_dir = _preview_directory(); destination = preview_dir / "processed.mp4"
         if processing_mode == "DLSS Frame Generation 2X":
             clip_source = preview_dir / "source.mp4"
-            result = __import__('subprocess').run([ffmpeg_executable(), "-y", "-v", "error", "-ss", str(float(start_timestamp)), "-t", str(float(duration)), "-i", str(path), "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(clip_source)], capture_output=True, text=True, check=False)
+            result = __import__('subprocess').run([ffmpeg_executable(), "-y", "-v", "error", "-ss", str(float(start_timestamp)), "-t", str(float(duration)), "-i", str(path), "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(clip_source)], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
             if result.returncode: raise RuntimeError(result.stderr[-1000:])
             _save_last("dlssg", {"motion_provider": dlssg_motion, "depth_mode": dlssg_depth, "multiplier": int(dlssg_multiplier), "nvof_profile": dlssg_nvof_profile})
             backend = backend_for_nvof_profile(dlssg_nvof_profile)
@@ -463,6 +482,7 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
         if job: MONITOR.set_active(False); CONTROLLER.finish("CANCELLED", "Preview cancelled")
         return None, None, "Preview cancelled; partial output removed."
     except Exception as exc:
+        _log_ui_exception("Clip preview", exc)
         if job: MONITOR.set_active(False); CONTROLLER.finish("FAILED", str(exc))
         return None, None, f"Preview failed: {exc}"
 

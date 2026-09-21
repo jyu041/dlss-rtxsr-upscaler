@@ -14,7 +14,7 @@ or executed.
 ## A. Repository
 
 - URL: https://github.com/sdli1995/dlssg_for_sm86
-- Local path: `C:\Users\mark\Desktop\dlss-community-research\dlssg_for_sm86`
+- Local path: `C:\Users\<user>\Desktop\dlss-community-research\dlssg_for_sm86`
 - HEAD: `5f62ff44a9c08f9841fa605e7b7160f79ccd2c40`
 - Submodules: none materially present
 - Source classification: `BINARY_ONLY_RUNTIME`
@@ -32,7 +32,7 @@ synchronization, and presentation.
 
 Analyzed file:
 
-`C:\Users\mark\Desktop\dlss-community-research\dlssg_for_sm86\version.dll`
+`C:\Users\<user>\Desktop\dlss-community-research\dlssg_for_sm86\version.dll`
 
 - Size: `15,667,520` bytes
 - SHA-256: `C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2`

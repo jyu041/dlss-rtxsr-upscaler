@@ -45,7 +45,7 @@ Not implemented as a complete operational path:
 
 - Primary HEAD/origin: `34f379afe0da49aae4b30acfeda6fa439f9bc0f5`
 - Community HEAD: `5f62ff44a9c08f9841fa605e7b7160f79ccd2c40`
-- Community DLL: `C:\Users\mark\Desktop\dlss-community-research\dlssg_for_sm86\version.dll`
+- Community DLL: `C:\Users\<user>\Desktop\dlss-community-research\dlssg_for_sm86\version.dll`
 - Community DLL SHA-256: `C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2`
 - Header snapshot: `374959484e79a640feaba44c93ac8cfb0a03f5b5`
 

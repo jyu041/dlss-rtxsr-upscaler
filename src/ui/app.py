@@ -393,7 +393,14 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
         save_last_successful_render(destination)
         performance = stats.get("timings_mean_ms", {})
         timing = f"; native median {performance.get('total_process_ms', 0):.1f} ms" if performance else ""
-        return str(destination), f"Completed {stats.get('multiplier', 1)}X: {stats['frames']} frames at {stats['fps']:.2f} FPS; {stats['dimensions'][0]}x{stats['dimensions'][1]}; audio preserved: {stats['audio_preserved']}{timing}"
+        dlss_runtime = ""
+        if "dlss5_runtime" in stats:
+            dlss_runtime = (
+                "; DLSS 5 compatibility fallback"
+                if stats.get("compatibility_fallback")
+                else "; DLSS 5 preferred runtime"
+            )
+        return str(destination), f"Completed {stats.get('multiplier', 1)}X: {stats['frames']} frames at {stats['fps']:.2f} FPS; {stats['dimensions'][0]}x{stats['dimensions'][1]}; audio preserved: {stats['audio_preserved']}{timing}{dlss_runtime}"
     except InterruptedError:
         if job: MONITOR.set_active(False); CONTROLLER.finish("CANCELLED", "Render cancelled")
         return None, "Render cancelled; partial output removed."
@@ -470,7 +477,14 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
         MONITOR.set_active(False); CONTROLLER.finish("COMPLETED", f"Preview completed: {stats['frames']} frames")
         if processing_mode == "DLSS Frame Generation 2X":
             return str(clip_source), str(destination), f"Preview {stats['multiplier']}X: source {probe(clip_source)['fps']:.3f} FPS → output {stats['output_fps']:.3f} FPS; {stats['generated_frames']} generated frames; {stats['total_wall_seconds']:.2f}s"
-        return None, str(destination), f"Preview completed: {stats['frames']} frames at {stats['fps']:.2f} FPS; {stats['dimensions'][0]}x{stats['dimensions'][1]}"
+        runtime_note = ""
+        if "dlss5_runtime" in stats:
+            runtime_note = (
+                "; compatibility fallback"
+                if stats.get("compatibility_fallback")
+                else "; preferred runtime"
+            )
+        return None, str(destination), f"Preview completed: {stats['frames']} frames at {stats['fps']:.2f} FPS; {stats['dimensions'][0]}x{stats['dimensions'][1]}{runtime_note}"
     except InterruptedError:
         if job: MONITOR.set_active(False); CONTROLLER.finish("CANCELLED", "Preview cancelled")
         return None, None, "Preview cancelled; partial output removed."

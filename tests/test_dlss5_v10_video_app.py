@@ -138,3 +138,11 @@ def test_v10_firewall_and_host_processes_are_windowless():
     assert security.count('"-WindowStyle"') >= 2
     assert "-WindowStyle Hidden -Verb RunAs" in security
     assert 'creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)' in client
+
+
+
+def test_v10_app_output_mux_drops_source_metadata_and_faststarts_mp4():
+    source = open("src/video/dlss5_v10.py", encoding="utf-8").read()
+    assert '"-map_metadata",\n            "-1"' in source
+    assert '"-map_chapters",\n            "-1"' in source
+    assert 'mux += ["-movflags", "+faststart"]' in source

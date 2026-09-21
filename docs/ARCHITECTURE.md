@@ -84,6 +84,8 @@ destination, and verification policy for each managed component.
 Generated runtimes, approvals, logs, previews, temporary files, outputs, and
 user media remain outside the tracked source tree.
 
-Each backend is independently gated. Missing runtimes, identity mismatches,
-failed self-tests, or failed security gates stop that backend operation rather
-than falling back to another enhancer.
+Each enhancement family is independently gated. Missing runtimes, identity
+mismatches, failed self-tests, or failed security gates stop that family rather
+than substituting a different enhancer. Inside the single DLSS 5 family, the
+validated v3 compatibility runtime may be selected when v10 is not ready; that
+state is reported explicitly and v10-only settings are never silently ignored.

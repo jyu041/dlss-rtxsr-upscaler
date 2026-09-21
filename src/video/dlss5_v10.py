@@ -459,7 +459,7 @@ def render_dlss5_v10(
             )
 
         close_result = client.close()
-        clean_close = close_result in {"CLOSED", "CLOSED_ACK_TERMINATED"}
+        clean_close = close_result in {"CLOSED", "CLOSED_ACK_TERMINATED", "CLOSED_PROCESS_LIFETIME"}
         if not clean_close:
             detail = client.last_close_error
             suffix = f"; detail: {detail}" if detail else ""

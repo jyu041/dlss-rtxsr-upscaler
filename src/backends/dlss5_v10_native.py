@@ -249,7 +249,7 @@ def load_bridge(
     runtime = verify_runtime_before_load(runtime_dir)
     if not allow_native_load:
         raise V10NativeLoadDisabled(
-            "DLSS5 v10 native loading requires an explicit acknowledged execution gate"
+            "DLSS5 v10 native loading is disabled without an explicit acknowledged execution gate"
         )
 
     bridge = runtime / "neuroframe_engine_neural_rendering.dll"

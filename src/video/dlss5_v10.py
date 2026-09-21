@@ -487,8 +487,12 @@ def render_dlss5_v10(
             "-c:a",
             "copy",
             "-map_metadata",
-            "1",
+            "-1",
+            "-map_chapters",
+            "-1",
         ]
+        if Path(destination).suffix.lower() in {".mp4", ".mov", ".m4v"}:
+            mux += ["-movflags", "+faststart"]
         if duration:
             mux += [
                 "-t",

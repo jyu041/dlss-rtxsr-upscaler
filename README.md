@@ -143,7 +143,10 @@ runtime/
 │   ├── grid4-worker/
 │   ├── legacy/
 │   └── official/
-├── dlss5/\n│   └── neuroframe-v10-candidate/     # preferred DLSS 5 runtime after setup opt-in\n└── downloads/\n    └── Visual.Enhancer.v10.0.zip     # verified local cache for repair/preflight refresh
+├── dlss5/
+│   └── neuroframe-v10-candidate/     # preferred DLSS 5 runtime after setup opt-in
+└── downloads/
+    └── Visual.Enhancer.v10.0.zip     # verified local cache for repair/preflight refresh
 ```
 
 Advanced runtime/environment overrides remain available for development and
@@ -192,6 +195,7 @@ RTX 30-series DLSS 5 support.
 
 Key evidence:
 
+- [Unified DLSS 5 v10 hardware validation](docs/DLSS5_UNIFIED_V10_HARDWARE_2026-09-21.md)
 - [DLSS 5 v10 application hardware validation](docs/DLSS5_V10_APP_HARDWARE_2026-09-19.md)
 - [Managed grid4 worker hardware validation](docs/MFG_GRID4_MANAGED_WORKER_HARDWARE_2026-09-19.md)
 - [Testing classes and commands](docs/TESTING.md)
@@ -239,7 +243,7 @@ Git checkout.
 
 ## Current Beta Release
 
-[`v0.2.0-beta.1`](https://github.com/jyu041/dlss-rtxsr-upscaler/releases/tag/v0.2.0-beta.1)
+[`v0.2.0-beta.2`](https://github.com/jyu041/dlss-rtxsr-upscaler/releases/tag/v0.2.0-beta.2)
 is the current source-install beta. It is intentionally not a no-Conda portable
 bundle; use the recursive clone → `setup.bat` → `start.bat` workflow
 documented above.
@@ -248,7 +252,7 @@ The older `v0.1.0-beta.2` ZIP remains available as a historical prebuilt beta,
 but it predates managed grid4, the DLSS 5 v10 application path, the current
 frontend, hardened source onboarding, and the repository cleanup.
 
-See [the v0.2.0-beta.1 release notes](docs/RELEASE_NOTES_v0.2.0-beta.1.md) for
+See [the v0.2.0-beta.2 release notes](docs/RELEASE_NOTES_v0.2.0-beta.2.md) for
 the current release scope and limitations.
 
 ## Acknowledgements

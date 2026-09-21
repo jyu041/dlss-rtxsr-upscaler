@@ -3,7 +3,7 @@
 This file is a concise release index. Detailed validation evidence and
 engineering history remain under `docs/`.
 
-## Unreleased
+## v0.2.0-beta.2 — 2026-09-21
 
 - replace the separate DLSS 5 v3/v10 user modes with one **DLSS 5** mode;
 - simplify fresh-install DLSS 5 onboarding to one setup opt-in that provisions the preferred pinned v10 runtime directly, with a single Configuration repair action and local cached preflight refresh;
@@ -14,6 +14,8 @@ engineering history remain under `docs/`.
   optional temporal residual stabilization;
 - keep v10 1-pass and validated C55 MFG defaults unchanged while retaining
   stronger neural-pass and experimental grid4 options for explicit use.
+
+See `docs/RELEASE_NOTES_v0.2.0-beta.2.md`.
 
 ## v0.2.0-beta.1 — 2026-09-20
 

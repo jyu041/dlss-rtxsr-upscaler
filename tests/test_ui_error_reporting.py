@@ -35,4 +35,18 @@ def test_source_upload_generates_browser_safe_preview_proxy():
     assert '"yuv420p"' in source
     assert '"+faststart"' in source
     assert 'source_preview = gr.Video(' in source
-    assert 'inp.change(inspect_with_preview' in source
+    assert 'source_state = gr.State(None)' in source
+    assert 'inp.upload(' in source
+    assert 'select_source,' in source
+    assert 'replace_input.click(' in source
+    assert 'frame.click(do_frame, [source_state,' in source
+    assert 'clip.click(preview_clip, [source_state,' in source
+    assert 'render.click(render_video, [source_state,' in source
+
+
+def test_render_result_uses_browser_safe_preview_proxy():
+    source = APP.read_text(encoding="utf-8")
+    assert 'browser_preview = _browser_preview(destination)' in source
+    assert 'browser preview: first 12s' in source
+    assert "output {stats['output_fps']:.3f} FPS" in source
+    assert "render throughput {stats['end_to_end_fps']:.2f} output frames/s" in source

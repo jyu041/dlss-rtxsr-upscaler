@@ -30,43 +30,46 @@ experimental profile with its own pinned worker identity.
 
 ### DLSS 5
 
-The UI exposes one DLSS 5 mode. Check **Configuration → DLSS 5 preferred
-runtime readiness** first. **Refresh DLSS 5 runtime preflight** verifies and
-stages the pinned v10 runtime, refreshes Defender evidence, and prepares the
-isolated application path. When that preferred runtime is ready it is selected
-automatically.
+Normal installation is handled by `setup.bat`. If you answered Yes to
+**Enable DLSS 5 now?**, setup should leave the preferred v10 runtime staged and
+ready without any additional UI action.
 
-If the preferred runtime is not ready, the application may use the validated
-v3 compatibility backend internally if it has been provisioned. For that
-fallback, check the local approval manifest, exact runtime hashes, Defender
-evidence, Feature-18 self-test, and exact outbound firewall block:
+If DLSS 5 is unavailable later, use **Configuration → DLSS 5 runtime → Install /
+Repair DLSS 5**. That action uses the same managed provisioner as setup: it
+reuses the verified cached v10 archive when possible, otherwise downloads the
+exact pinned archive, then verifies/stages it and refreshes the Microsoft
+Defender preflight.
 
-```powershell
-python -m src.backends.dlss5_diagnostics
+The verified archive is cached at:
+
+```text
+runtime/downloads/Visual.Enhancer.v10.0.zip
 ```
 
-Use `--self-test` only when an approved compatibility runtime and compatible RTX
-hardware are already present.
+A time-expired Defender preflight is normally refreshed automatically from that
+cache when the unified DLSS 5 backend is checked. This local refresh does not
+require another download.
 
-For measurements use `python -m src.backends.dlss5_benchmark`; it writes an
-ignored JSON report and continues after a timed-out resolution. An encoder error
-after successful Feature-18 output is an FFmpeg/NVENC failure rather than
-evidence that Feature 18 itself failed.
+If provisioning fails, run the same entry point from PowerShell to get the
+direct error:
+
+```powershell
+conda run -n dlss-rtxsr-upscaler python tools\provision_dlss5_v10.py
+```
 
 Reduced NR working resolution changes the internal Neural Rendering workload,
-not final video dimensions. The preferred v10 path now supports the same
-Auto/100/87.5/75/67/50% application-level working-resolution and residual
-recomposition controls. The current preferred-runtime hardware boundary remains
-SDR RGBA8, 1.0x output, and up to 1920x1080-equivalent native input.
+not final video dimensions. The preferred v10 path supports
+Auto/100/87.5/75/67/50% application-level working resolution plus residual
+recomposition. The current preferred-runtime hardware boundary remains SDR
+RGBA8, 1.0x output, and up to 1920x1080-equivalent native input.
 
 If CUDA recomposition cannot initialize on the selected GPU, `auto` records the
 reason and uses the CPU reference compositor. The explicit `cuda` option fails
 rather than silently falling back.
 
-The v3 compatibility runtime does not implement the v10-only neural-pass,
-face/skin, grain, native-shimmer, or NVOF-preference controls. If the preferred
-runtime is unavailable and one of those controls is changed from its compatible
-default, the job fails explicitly instead of silently ignoring the setting.
+The older v3 compatibility implementation is not part of normal onboarding. An
+existing/manual legacy v3 installation may still be used internally if v10 is
+unavailable, and the UI explicitly reports that compatibility fallback.
 
 ## General behavior
 

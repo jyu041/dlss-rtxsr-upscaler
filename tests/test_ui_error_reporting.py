@@ -28,25 +28,37 @@ def test_source_upload_does_not_require_browser_video_playback():
     assert 'inp = gr.Video(label="Upload video"' not in source
 
 
-def test_source_upload_generates_browser_safe_preview_proxy():
+def test_source_upload_uses_full_length_browser_display_video():
     source = APP.read_text(encoding="utf-8")
-    assert 'def _browser_preview(' in source
-    assert '"libx264"' in source
-    assert '"yuv420p"' in source
-    assert '"+faststart"' in source
-    assert 'source_preview = gr.Video(' in source
+    helper = source[source.index("def _browser_display_video("):source.index("\n\ndef select_source(")]
+    assert 'full-length browser-playable MP4' in helper
+    assert 'command += ["-c:v", "copy"]' in helper
+    assert '"-movflags"' in helper
+    assert '"+faststart"' in helper
+    assert '"-t"' not in helper
+    assert '"-vf"' not in helper
     assert 'source_state = gr.State(None)' in source
+    assert 'source_preview = gr.Video(' in source
+    assert 'format="mp4"' in source
     assert 'inp.upload(' in source
     assert 'select_source,' in source
     assert 'replace_input.click(' in source
-    assert 'frame.click(do_frame, [source_state,' in source
-    assert 'clip.click(preview_clip, [source_state,' in source
-    assert 'render.click(render_video, [source_state,' in source
+    assert 'frame.click(do_frame, [source_state,' not in source
+    assert 'frame_event = frame.click(do_frame, [source_state,' in source
+    assert 'clip_event = clip.click(preview_clip, [source_state,' in source
+    assert 'render_event = render.click(render_video, [source_state,' in source
+    assert 'browser-safe proxy' not in source
 
 
-def test_render_result_uses_browser_safe_preview_proxy():
+def test_render_result_uses_full_length_video_and_selects_video_tab():
     source = APP.read_text(encoding="utf-8")
-    assert 'browser_preview = _browser_preview(destination)' in source
-    assert 'browser preview: first 12s' in source
+    assert 'browser_video = _browser_display_video(destination)' in source
+    assert 'browser preview: first 12s' not in source
+    assert 'with gr.Tabs(selected="video"' in source
+    assert 'with gr.Tab("Video", id="video")' in source
+    assert 'with gr.Tab("Frame", id="frame")' in source
+    assert 'render_event.then(lambda: gr.Tabs(selected="video")' in source
+    assert 'clip_event.then(lambda: gr.Tabs(selected="video")' in source
+    assert 'frame_event.then(lambda: gr.Tabs(selected="frame")' in source
     assert "output {stats['output_fps']:.3f} FPS" in source
     assert "render throughput {stats['end_to_end_fps']:.2f} output frames/s" in source

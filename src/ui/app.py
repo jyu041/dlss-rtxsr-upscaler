@@ -219,8 +219,15 @@ def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_s
             enhanced = process_dlss_sr_frame(__import__("numpy").asarray(image), backend, sr_mode, sr_model)
             out=TEMP/f"preview_{os.getpid()}.png"; Image.fromarray(enhanced).save(out)
             return str(source_frame), str(out), f"DLSS SR verified | {sr_mode} | Model {sr_model} | {image.width}x{image.height} -> {enhanced.shape[1]}x{enhanced.shape[0]}"
-        available = DLSS5UnifiedBackend().status().available if mode == "DLSS 5 only" else RTXVSRBackend().status().available
-        if not available:
+        if mode == "DLSS 5 only":
+            legacy_status = DLSS5Backend().status()
+            if not legacy_status.available:
+                return None, None, (
+                    "Single-frame DLSS 5 preview is unavailable because the "
+                    "compatibility frame-preview backend is not ready. Use "
+                    "Preview Clip or Render Video to exercise the preferred runtime."
+                )
+        elif not RTXVSRBackend().status().available:
             return None, None, f"{mode} unavailable. No substitute processing was performed. Install and audit the genuine runtime first."
         source_frame=TEMP/f"preview_source_{os.getpid()}.png"; preview_frame(path,timestamp,source_frame)
         if mode.startswith("DLSS"):

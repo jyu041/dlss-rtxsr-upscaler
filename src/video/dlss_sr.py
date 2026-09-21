@@ -212,7 +212,14 @@ def render_dlss_sr(source, destination, backend, mode="Quality", preset="K", *, 
         if duration:
             mux += ["-t", str(max(0.001, float(duration))), "-shortest"]
         mux += [str(destination)]
-        result = subprocess.run(mux, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            mux,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
         if result.returncode:
             raise RuntimeError(result.stderr[-2000:])
         return {"frames": count, "fps": count / max(0.001, time.perf_counter() - started),

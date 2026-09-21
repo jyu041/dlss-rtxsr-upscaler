@@ -69,7 +69,7 @@ class DLSSSRBackend(Backend):
 
     def _machine_identity(self) -> dict[str, str] | None:
         try:
-            result = subprocess.run(["nvidia-smi", "--query-gpu=uuid,name,driver_version", "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=10, check=False)
+            result = subprocess.run(["nvidia-smi", "--query-gpu=uuid,name,driver_version", "--format=csv,noheader,nounits"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10, check=False)
             if result.returncode == 0 and result.stdout.strip():
                 devices = []
                 for row in csv.reader(result.stdout.splitlines(), skipinitialspace=True):

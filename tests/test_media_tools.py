@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 
 from src.core import process_utils
 
@@ -26,3 +27,11 @@ def test_missing_tool_falls_back_to_path(tmp_path, monkeypatch):
     monkeypatch.setattr(process_utils, "PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(process_utils.shutil, "which", lambda name: f"C:/system/{name}.exe")
     assert process_utils.tool("ffmpeg") == "C:/system/ffmpeg.exe"
+
+
+def test_process_runner_replaces_invalid_utf8_in_diagnostics():
+    result = process_utils.run(
+        [sys.executable, "-c", "import os; os.write(1, b'\\x89PNG\\r\\n')"]
+    )
+    assert result.returncode == 0
+    assert result.stdout.startswith("\ufffdPNG")

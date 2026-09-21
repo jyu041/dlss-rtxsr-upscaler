@@ -103,6 +103,8 @@ class SystemMonitor:
                 ["nvidia-smi", f"--id={self.gpu_index}", "--query-gpu=name,utilization.gpu,memory.used,memory.total", "--format=csv,noheader,nounits"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=5,
                 check=False,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),

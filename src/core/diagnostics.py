@@ -37,7 +37,7 @@ def collect():
     r=RTXVSRBackend().status(); d=DLSS5UnifiedBackend().status(); sr_backend=DLSSSRBackend(); s=sr_backend.status(); fg=DLSSGBackend().status()
     gpu="UNAVAILABLE"
     try:
-        q=subprocess.run(["nvidia-smi","--query-gpu=name,driver_version,memory.total,compute_cap","--format=csv,noheader,nounits"],capture_output=True,text=True,timeout=10,check=False)
+        q=subprocess.run(["nvidia-smi","--query-gpu=name,driver_version,memory.total,compute_cap","--format=csv,noheader,nounits"],capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=10,check=False)
         if q.returncode == 0: gpu=q.stdout.strip()
     except (OSError, subprocess.TimeoutExpired): pass
     try:

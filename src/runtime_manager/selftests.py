@@ -51,7 +51,15 @@ def _project_grid4_worker(path: Path) -> None:
     if provenance.get("worker", {}).get("sha256") != GRID4_WORKER_SHA256:
         raise RuntimeError("public project grid4 provenance worker identity mismatch")
     try:
-        result = subprocess.run([str(worker), "--selftest"], capture_output=True, text=True, timeout=30, check=False)
+        result = subprocess.run(
+            [str(worker), "--selftest"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            check=False,
+        )
     except (OSError, subprocess.SubprocessError) as exc:
         raise RuntimeError(f"public project grid4 worker selftest could not run: {exc}") from exc
     output = (result.stdout or "") + "\n" + (result.stderr or "")

@@ -84,7 +84,7 @@ def _tool_launch(name: str, args: list[str], verbose: bool) -> tuple[bool, str |
     if not executable:
         return False, None, f"{name} is not on PATH"
     try:
-        result = subprocess.run([executable, *args], capture_output=True, text=True, timeout=5, check=False)
+        result = subprocess.run([executable, *args], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5, check=False)
     except subprocess.TimeoutExpired:
         return False, executable if verbose else None, f"{name} did not respond within 5 seconds"
     except OSError as exc:
@@ -100,7 +100,7 @@ def _ffmpeg_check(verbose: bool) -> ReadinessCheck:
         return ReadinessCheck("FFMPEG", "MISSING" if "not on PATH" in detail else "BROKEN", False, detail, identity)
     executable = tool("ffmpeg")
     try:
-        result = subprocess.run([executable, "-hide_banner", "-encoders"], capture_output=True, text=True, timeout=5, check=False)
+        result = subprocess.run([executable, "-hide_banner", "-encoders"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return ReadinessCheck("FFMPEG", "BROKEN", False, "FFmpeg encoder query failed", identity)
     text = result.stdout + result.stderr
@@ -120,7 +120,7 @@ def _gpu_check(verbose: bool) -> ReadinessCheck:
     if not executable:
         return ReadinessCheck("SYSTEM", "MISSING", False, "nvidia-smi is not on PATH; cannot identify GPU or driver")
     try:
-        result = subprocess.run([executable, "--query-gpu=name,driver_version", "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=5, check=False)
+        result = subprocess.run([executable, "--query-gpu=name,driver_version", "--format=csv,noheader,nounits"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5, check=False)
     except subprocess.TimeoutExpired:
         return ReadinessCheck("SYSTEM", "BROKEN", False, "nvidia-smi did not respond within 5 seconds")
     except OSError as exc:

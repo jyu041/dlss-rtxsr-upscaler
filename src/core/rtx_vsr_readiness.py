@@ -38,7 +38,7 @@ def inspect_api(module=None) -> VSRReadiness:
         # child performs import and enum inspection only; GPU probing remains
         # a separate explicit operation.
         try:
-            completed = subprocess.run([sys.executable, "-u", "-c", _STATIC_CODE], capture_output=True, text=True, timeout=15, check=False)
+            completed = subprocess.run([sys.executable, "-u", "-c", _STATIC_CODE], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15, check=False)
             if completed.returncode:
                 return VSRReadiness("UNAVAILABLE", False, completed.stderr.strip() or "static child inspection failed")
             data = json.loads(completed.stdout)
@@ -106,7 +106,7 @@ def probe_gpu(quality="LOW", timeout_seconds=30.0, heartbeat: Optional[Callable[
         return {"state": "UNAVAILABLE", "reason": "RTX VSR validation requires Windows"}
     if quality not in REQUIRED_QUALITIES:
         raise ValueError(f"Unsupported probe quality: {quality}")
-    process = popen([sys.executable, "-u", "-c", _PROBE_CODE, quality], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+    process = popen([sys.executable, "-u", "-c", _PROBE_CODE, quality], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1, creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
     lines = []
     output = queue.Queue()
     def read_output():

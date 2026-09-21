@@ -60,6 +60,6 @@ def test_progress_view_prefers_stable_average_processing_fps():
         state="PROCESSING",
     )
     html = progress_html(progress)
-    assert "Processing FPS: 25.00" in html
+    assert "Throughput: 25.00 frames/s" in html
     assert "Wall elapsed: 00:12" in html
     assert "Frame ETA: 00:02" in html

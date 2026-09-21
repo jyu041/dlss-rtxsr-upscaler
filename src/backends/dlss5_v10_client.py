@@ -573,14 +573,39 @@ class V10ProtocolClient:
                 if self._native_mode:
                     if value.get("ngx_shutdown_called") is not False or value.get("module_unload_called") is not False:
                         raise V10ProtocolError("native CLOSE violated process-lifetime NGX contract")
+                    session_close = str(value.get("session_close") or "")
+                    allowed_native_close = {
+                        "CLOSED_RELEASED",
+                        "CLOSED_NO_RELEASE_EXPORT",
+                        "CLOSED_WITHOUT_NATIVE_SESSION",
+                    }
+                    if session_close not in allowed_native_close:
+                        raise V10ProtocolError(
+                            f"native session close was not clean: {session_close or 'missing status'}"
+                        )
                 elif value.get("native_loaded") is not False:
                     raise V10ProtocolError("invalid CLOSE acknowledgement")
-                self.process.wait(timeout=self.close_grace)
-                if self.process.returncode != 0:
-                    raise V10ProtocolError(
-                        f"v10 protocol host exited with {self.process.returncode}"
-                    )
-                result = "CLOSED"
+
+                try:
+                    self.process.wait(timeout=self.close_grace)
+                except subprocess.TimeoutExpired:
+                    if not self._native_mode:
+                        raise
+                    # The v10 runtime deliberately keeps D3D12/NGX/module state
+                    # process-lifetime. Once the host has acknowledged a clean
+                    # native session close, the isolated process itself is the
+                    # final lifetime boundary. Do not turn a loader/interpreter
+                    # teardown stall into a failed render: terminate only this
+                    # owned host after the clean CLOSE acknowledgement.
+                    self.process.kill()
+                    self.process.wait(timeout=5)
+                    result = "CLOSED_ACK_TERMINATED"
+                else:
+                    if self.process.returncode != 0:
+                        raise V10ProtocolError(
+                            f"v10 protocol host exited with {self.process.returncode}"
+                        )
+                    result = "CLOSED"
             except (OSError, subprocess.TimeoutExpired, TimeoutError, V10ProtocolError):
                 self.abort()
                 result = "TERMINATED_AFTER_CLOSE_FAILURE"

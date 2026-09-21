@@ -1,15 +1,22 @@
 name: prune-merged-branches
 
-# Runs once when this maintenance workflow lands on main, and remains available
-# for explicit maintainer cleanup later. It never deletes main or an open-PR
-# branch.
+# Runs when this maintenance workflow changes on main and after a PR is merged.
+# It never deletes main or an open-PR branch. pull_request_target is safe here:
+# the workflow never checks out or executes pull-request code.
 on:
   push:
     branches:
       - main
     paths:
       - ".github/workflows/prune-merged-branches.yml"
+  pull_request_target:
+    types:
+      - closed
   workflow_dispatch:
+
+concurrency:
+  group: prune-merged-branches
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -17,6 +24,7 @@ permissions:
 
 jobs:
   prune:
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
       - name: Delete merged and explicitly superseded branches

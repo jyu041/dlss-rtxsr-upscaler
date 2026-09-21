@@ -264,15 +264,48 @@ def _browser_preview(path: str | Path, *, seconds: float = 12.0) -> str:
     return str(destination)
 
 
-def inspect_with_preview(path):
+def select_source(path):
+    """Accept an original source while exposing only one input surface at a time."""
     summary, detail = inspect(path)
     if not path or detail.startswith("Inspection failed"):
-        return summary, detail, None
+        return (
+            None,
+            gr.update(visible=True),
+            gr.update(value=None, visible=False),
+            gr.update(visible=False),
+            summary,
+            detail,
+        )
     try:
-        return summary, detail, _browser_preview(path)
+        preview = _browser_preview(path)
     except Exception as exc:
         _log_ui_exception("Source browser preview", exc)
-        return summary, detail + f"\n\nBrowser preview unavailable: {exc}", None
+        preview = None
+        detail += f"\n\nBrowser preview unavailable: {exc}"
+    return (
+        str(Path(path).expanduser().resolve()),
+        gr.update(visible=False),
+        gr.update(value=preview, visible=bool(preview)),
+        gr.update(visible=True),
+        summary,
+        detail,
+    )
+
+
+def clear_source():
+    return (
+        None,
+        gr.update(value=None, visible=True),
+        gr.update(value=None, visible=False),
+        gr.update(visible=False),
+        '<span class="muted">No video selected.</span>',
+        "No video selected.",
+        None,
+        None,
+        None,
+        None,
+        "Ready. One GPU job at a time.",
+    )
 
 
 def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", shimmer_suppression=0.0, color_strength=1.0, tone_preservation=0.0, v10_nr_passes=1, v10_face_skin_protection=0.0, v10_grain_preservation=0.0, v10_shimmer_suppression=0.70, v10_prefer_nvof="Off", *dlssg_settings):
@@ -399,18 +432,57 @@ def default_mode():
 def load_last_render():
     path = load_last_successful_render()
     if not path:
-        return None, '<span class="muted">No previous render available.</span>', "No previous render available.", None, None, None, None, "No previous render available.", gr.update(interactive=False)
+        return (
+            None,
+            gr.update(value=None, visible=True),
+            gr.update(value=None, visible=False),
+            gr.update(visible=False),
+            '<span class="muted">No previous render available.</span>',
+            "No previous render available.",
+            None,
+            None,
+            None,
+            None,
+            "No previous render available.",
+            gr.update(interactive=False),
+        )
     summary, detail = inspect(path)
     if detail.startswith("Inspection failed"):
         clear_last_successful_render()
-        return None, '<span class="error">Previous render is not a readable video.</span>', detail, None, None, None, None, "Previous render is not a readable video.", gr.update(interactive=False)
+        return (
+            None,
+            gr.update(value=None, visible=True),
+            gr.update(value=None, visible=False),
+            gr.update(visible=False),
+            '<span class="error">Previous render is not a readable video.</span>',
+            detail,
+            None,
+            None,
+            None,
+            None,
+            "Previous render is not a readable video.",
+            gr.update(interactive=False),
+        )
     try:
-        source_preview = _browser_preview(path)
+        preview = _browser_preview(path)
     except Exception as exc:
         _log_ui_exception("Last render browser preview", exc)
-        source_preview = None
+        preview = None
         detail += f"\n\nBrowser preview unavailable: {exc}"
-    return path, summary, detail, source_preview, None, None, None, f"Loaded last successful render: {Path(path).name}", gr.update(interactive=True)
+    return (
+        str(Path(path).resolve()),
+        gr.update(value=None, visible=False),
+        gr.update(value=preview, visible=bool(preview)),
+        gr.update(visible=True),
+        summary,
+        detail,
+        None,
+        None,
+        None,
+        None,
+        f"Loaded last successful render: {Path(path).name}",
+        gr.update(interactive=True),
+    )
 
 
 def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, codec_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", shimmer_suppression=0.0, color_strength=1.0, tone_preservation=0.0, v10_nr_passes=1, v10_face_skin_protection=0.0, v10_grain_preservation=0.0, v10_shimmer_suppression=0.70, v10_prefer_nvof="Off", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5", dlssg_multiplier=2, dlssg_nvof_profile=NVOF_PROFILE_VALIDATED):
@@ -479,7 +551,15 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
                 if stats.get("compatibility_fallback")
                 else "; DLSS 5 preferred runtime"
             )
-        return str(destination), f"Completed {stats.get('multiplier', 1)}X: {stats['frames']} frames at {stats['fps']:.2f} FPS; {stats['dimensions'][0]}x{stats['dimensions'][1]}; audio preserved: {stats['audio_preserved']}{timing}{dlss_runtime}"
+        browser_preview = None
+        preview_note = ""
+        try:
+            browser_preview = _browser_preview(destination)
+            preview_note = "; browser preview: first 12s"
+        except Exception as exc:
+            _log_ui_exception("Rendered browser preview", exc)
+            preview_note = "; browser preview unavailable"
+        return browser_preview, f"Completed {stats.get('multiplier', 1)}X: {stats['frames']} frames at {stats['fps']:.2f} FPS; {stats['dimensions'][0]}x{stats['dimensions'][1]}; audio preserved: {stats['audio_preserved']}{timing}{dlss_runtime}{preview_note}"
     except InterruptedError:
         if job: MONITOR.set_active(False); CONTROLLER.finish("CANCELLED", "Render cancelled")
         return None, "Render cancelled; partial output removed."
@@ -556,7 +636,9 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
             stats = render_vsr(clip_source, destination, RTXVSRBackend(), float(scale_value), quality_value, vsr_mode, job.cancel_event, progress=progress)
         MONITOR.set_active(False); CONTROLLER.finish("COMPLETED", f"Preview completed: {stats['frames']} frames")
         if processing_mode == "DLSS Frame Generation 2X":
-            return str(clip_source), str(destination), f"Preview {stats['multiplier']}X: source {probe(clip_source)['fps']:.3f} FPS → output {stats['output_fps']:.3f} FPS; {stats['generated_frames']} generated frames; {stats['total_wall_seconds']:.2f}s"
+            before_playback = _browser_preview(clip_source, seconds=float(duration))
+            after_playback = _browser_preview(destination, seconds=float(duration))
+            return before_playback, after_playback, f"Preview {stats['multiplier']}X: source {probe(clip_source)['fps']:.3f} FPS → output {stats['output_fps']:.3f} FPS; {stats['generated_frames']} generated frames; {stats['total_wall_seconds']:.2f}s"
         runtime_note = ""
         if "dlss5_runtime" in stats:
             runtime_note = (
@@ -564,7 +646,7 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
                 if stats.get("compatibility_fallback")
                 else "; preferred runtime"
             )
-        return None, str(destination), f"Preview completed: {stats['frames']} frames at {stats['fps']:.2f} FPS; {stats['dimensions'][0]}x{stats['dimensions'][1]}{runtime_note}"
+        return None, _browser_preview(destination, seconds=float(duration)), f"Preview completed: {stats['frames']} frames at {stats['fps']:.2f} FPS; {stats['dimensions'][0]}x{stats['dimensions'][1]}{runtime_note}"
     except InterruptedError:
         if job: MONITOR.set_active(False); CONTROLLER.finish("CANCELLED", "Preview cancelled")
         return None, None, "Preview cancelled; partial output removed."
@@ -599,20 +681,23 @@ def build():
                 with gr.Row(elem_classes="main-workspace"):
                     with gr.Column(scale=25, min_width=280, elem_classes=["workspace-card", "input-panel"]):
                         gr.Markdown("## Input")
-                        inp = gr.File(
-                            label="Upload video file",
-                            file_types=["video"],
-                            type="filepath",
-                        )
+                        source_state = gr.State(None)
+                        with gr.Column(elem_classes="source-input-shell"):
+                            inp = gr.File(
+                                label="Choose video",
+                                file_types=["video"],
+                                type="filepath",
+                            )
+                            source_preview = gr.Video(
+                                label="Input video",
+                                interactive=False,
+                                include_audio=True,
+                                visible=False,
+                            )
+                            replace_input = gr.Button("Choose a different video", visible=False, elem_classes="replace-input")
                         gr.Markdown(
-                            "The original file is used for processing. The player below is a short "
-                            "browser-safe H.264/AAC proxy and does not modify the source.",
+                            "The original file is processed. The in-app player uses a browser-safe proxy.",
                             elem_classes="input-compatibility-note",
-                        )
-                        source_preview = gr.Video(
-                            label="Source preview (first 12 seconds)",
-                            interactive=False,
-                            include_audio=True,
                         )
                         load_render = gr.Button("Load Last Render", interactive=bool(previous_render), elem_classes="load-render")
                         summary = gr.HTML('<span class="muted">No video selected.</span>')
@@ -773,8 +858,21 @@ def build():
         def visibility(selected):
             rtx_visible, dlss_visible, sr_visible, dlssg_visible = mode_visibility(selected)
             return gr.update(visible=rtx_visible), gr.update(visible=dlss_visible), gr.update(visible=sr_visible), gr.update(visible=dlssg_visible)
-        inp.change(inspect_with_preview, inp, [summary, info, source_preview])
-        load_render.click(load_last_render, outputs=[inp, summary, info, source_preview, before, after, result_video, job, load_render])
+        inp.upload(
+            select_source,
+            inp,
+            [source_state, inp, source_preview, replace_input, summary, info],
+            show_progress="full",
+        )
+        replace_input.click(
+            clear_source,
+            outputs=[source_state, inp, source_preview, replace_input, summary, info, before, after, before_clip, result_video, job],
+            show_progress="hidden",
+        )
+        load_render.click(
+            load_last_render,
+            outputs=[source_state, inp, source_preview, replace_input, summary, info, before, after, before_clip, result_video, job, load_render],
+        )
         mode.change(lambda value: value, mode, state)
         mode.change(visibility, mode, [rtx_group, dlss_group, sr_group, dlssg_group])
         preset.change(apply_preset, preset, [nrpreset, style, intensity, tone, structure, skin, mask])
@@ -786,9 +884,9 @@ def build():
         v10_refresh.click(refresh_dlss5_v10_preflight, outputs=[status, v10_readiness], show_progress="full")
         runtime_refresh.click(runtime_cards_markdown, outputs=runtime_cards, show_progress="hidden")
         runtime_action_button.click(runtime_action, [runtime_ids, runtime_action_choice, runtime_archive], runtime_action_result, show_progress="full")
-        frame.click(do_frame, [inp, timestamp, state, vsr_mode, scale, quality, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, shimmer_suppression, color_strength, tone_preservation, v10_nr_passes, v10_face_skin_protection, v10_grain_preservation, v10_shimmer_suppression, v10_prefer_nvof, *dlssg_inputs], [before, after, job])
-        clip.click(preview_clip, [inp, state, vsr_mode, scale, quality, container, timestamp, preview_duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, shimmer_suppression, color_strength, tone_preservation, v10_nr_passes, v10_face_skin_protection, v10_grain_preservation, v10_shimmer_suppression, v10_prefer_nvof, *dlssg_inputs], [before_clip, result_video, job])
-        render.click(render_video, [inp, state, vsr_mode, scale, quality, container, codec, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, shimmer_suppression, color_strength, tone_preservation, v10_nr_passes, v10_face_skin_protection, v10_grain_preservation, v10_shimmer_suppression, v10_prefer_nvof, *dlssg_inputs], [result_video, job])
+        frame.click(do_frame, [source_state, timestamp, state, vsr_mode, scale, quality, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, shimmer_suppression, color_strength, tone_preservation, v10_nr_passes, v10_face_skin_protection, v10_grain_preservation, v10_shimmer_suppression, v10_prefer_nvof, *dlssg_inputs], [before, after, job])
+        clip.click(preview_clip, [source_state, state, vsr_mode, scale, quality, container, timestamp, preview_duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, shimmer_suppression, color_strength, tone_preservation, v10_nr_passes, v10_face_skin_protection, v10_grain_preservation, v10_shimmer_suppression, v10_prefer_nvof, *dlssg_inputs], [before_clip, result_video, job])
+        render.click(render_video, [source_state, state, vsr_mode, scale, quality, container, codec, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, shimmer_suppression, color_strength, tone_preservation, v10_nr_passes, v10_face_skin_protection, v10_grain_preservation, v10_shimmer_suppression, v10_prefer_nvof, *dlssg_inputs], [result_video, job])
         stop.click(lambda: (CONTROLLER.cancel() or "Cancellation requested."), None, job)
         refresh_timer.tick(lambda: (metrics_html(), progress_html(CONTROLLER.snapshot())), outputs=[metrics, progress_panel], show_progress="hidden", queue=False)
         rtx_save.click(save_rtx, [rtx_name, vsr_mode, scale, quality], [rtx_saved, rtx_message])

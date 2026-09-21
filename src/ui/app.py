@@ -6,7 +6,7 @@ from src.core.config import load_settings, save_settings, load_presets
 from src.core.diagnostics import collect, runtime_inventory
 from src.core.dlssg_readiness import assess, format_summary
 from src.backends.rtx_vsr import RTXVSRBackend
-from src.backends.dlss5 import DLSS5Backend, DLSS5_OUTPUT_SCALES
+from src.backends.dlss5 import DLSS5Backend
 from src.backends.dlss5_unified import DLSS5UnifiedBackend
 from src.backends.dlss5_v10_app import (
     DLSS5V10ExperimentalBackend,
@@ -298,26 +298,6 @@ def available_mode_choices():
     return choices
 
 
-def dlss_scale_update_for_mode(selected, current_scale=1.0):
-    if selected == "DLSS 5 only":
-        try:
-            if DLSS5UnifiedBackend().preferred_ready():
-                return gr.update(choices=[1.0], value=1.0)
-        except Exception:
-            pass
-    try:
-        choices = list(DLSS5Backend().supported_output_scales())
-    except Exception:
-        choices = list(DLSS5_OUTPUT_SCALES)
-    try:
-        current = float(current_scale)
-    except (TypeError, ValueError):
-        current = 1.0
-    if current not in choices:
-        current = 1.0
-    return gr.update(choices=choices, value=current)
-
-
 def default_mode():
     """Choose a practical first-run backend without requiring user configuration."""
     try:
@@ -503,20 +483,7 @@ def build():
     last = load_last_used()
     rlast = last.get("rtx_vsr", {})
     dlast = last.get("dlss5", {})
-    try:
-        unified_dlss = DLSS5UnifiedBackend()
-        if unified_dlss.preferred_ready():
-            dlss_scales = [1.0]
-        else:
-            dlss_scales = unified_dlss.legacy.supported_output_scales()
-    except Exception:
-        dlss_scales = [1.0]
-    try:
-        dlss_default_scale = float(dlast.get("scale", 1.0))
-    except (TypeError, ValueError):
-        dlss_default_scale = 1.0
-    if dlss_default_scale not in dlss_scales:
-        dlss_default_scale = 1.0
+    dlss_default_scale = 1.0
     srlast = last.get("dlss_sr", {})
     dlssglast = last.get("dlssg", {})
     dlssg_multiplier_default = dlssglast.get("multiplier", 2)
@@ -559,8 +526,7 @@ def build():
                             gr.Markdown("One DLSS 5 mode. The preferred Neural Rendering runtime is used automatically when its preflight is ready; the validated compatibility backend remains internal fallback only. Reduced working resolution, recomposition, temporal stabilization, and neural quality controls now apply through the unified path.")
                             _tip(DLSS5_TOOLTIPS, "builtin_preset", "Built-in preset")
                             preset = gr.Dropdown(list(load_presets()) + ["Default"], value="Photoreal Balanced", show_label=False)
-                            _tip(DLSS5_TOOLTIPS, "scale", "DLSS scale")
-                            dlss_scale = gr.Dropdown(dlss_scales, value=dlss_default_scale, show_label=False)
+                            dlss_scale = gr.State(dlss_default_scale)
                             _tip(DLSS5_TOOLTIPS, "working_scale", "NR Working Resolution")
                             nr_working_scale = gr.Dropdown([("Auto (target ~720p neural workload)", "auto"), ("100% (Native)", 1.0), ("87.5%", 0.875), ("75%", 0.75), ("67% (2/3)", 2.0 / 3.0), ("50%", 0.5)], value=dlast.get("nr_working_scale", 1.0), show_label=False)
                             _tip(DLSS5_TOOLTIPS, "recompose", "Recomposition")
@@ -575,12 +541,10 @@ def build():
                                 v10_grain_preservation = gr.Slider(0, 1, dlast.get("v10_grain_preservation", 0.0), .05, label="Grain preservation")
                                 v10_shimmer_suppression = gr.Slider(0, 1, dlast.get("v10_shimmer_suppression", 0.70), .05, label="Native shimmer suppression")
                                 v10_prefer_nvof = gr.Dropdown(["Off", "On"], value="On" if dlast.get("v10_prefer_nvof", False) else "Off", label="Prefer NVIDIA Optical Flow")
-                            _tip(DLSS5_TOOLTIPS, "nr_preset", "NR preset")
-                            nrpreset = gr.Dropdown(["Default", "Preset #1", "Preset #2", "Preset #3"], value=dlast.get("nr_preset", "Default"), show_label=False)
+                            nrpreset = gr.State(dlast.get("nr_preset", "Default"))
                             _tip(DLSS5_TOOLTIPS, "nr_style", "NR style")
                             style = gr.Dropdown(["Default", "Natural", "Cinematic"], value=dlast.get("nr_style", "Natural"), show_label=False)
-                            _tip(DLSS5_TOOLTIPS, "model_preset", "DLSS model preset")
-                            model = gr.Dropdown(["Default", "J", "K", "L", "M"], value=dlast.get("model_preset", "Default"), show_label=False)
+                            model = gr.State(dlast.get("model_preset", "Default"))
                             _tip(DLSS5_TOOLTIPS, "intensity", "NR intensity")
                             intensity = gr.Slider(0, 2, dlast.get("intensity", .60), .05, show_label=False)
                             _tip(DLSS5_TOOLTIPS, "tone", "Local tone strength")
@@ -704,7 +668,6 @@ def build():
         load_render.click(load_last_render, outputs=[inp, summary, info, before, after, result_video, job, load_render])
         mode.change(lambda value: value, mode, state)
         mode.change(visibility, mode, [rtx_group, dlss_group, sr_group, dlssg_group])
-        mode.change(dlss_scale_update_for_mode, [mode, dlss_scale], dlss_scale, show_progress="hidden")
         preset.change(apply_preset, preset, [nrpreset, style, intensity, tone, structure, skin, mask])
         dlssg_inputs = [dlssg_motion, dlssg_depth, dlssg_multiplier, dlssg_nvof_profile]
         for control in dlssg_inputs:

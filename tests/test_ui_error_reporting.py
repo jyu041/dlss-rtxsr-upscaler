@@ -82,6 +82,6 @@ def test_webui_mfg_does_not_emit_diagnostic_sidecars():
 def test_dlssg_sidecar_writes_are_explicitly_gated():
     source = (ROOT / "src" / "video" / "dlssg.py").read_text(encoding="utf-8")
     assert "write_sidecars: bool = True" in source
-    assert "if write_sidecars\n        else io.StringIO()" in source
+    assert 'if write_sidecars\n        else open(os.devnull, "w", encoding="utf-8")' in source
     assert 'manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")' in source
     assert '"worker_diagnostics": str(log_path) if write_sidecars else None' in source

@@ -88,12 +88,13 @@ runtime folders and replacement DLLs are not accepted by the managed path.
 
 ## Preferred v10 runtime behind the unified DLSS 5 mode
 
-Visual Enhancer v10 is not executed silently by setup. Runtime Manager retains
-the pinned upstream artifact and the Configuration page performs the explicit
-archive/staging/Defender preflight. Once that preflight is ready,
-`DLSS5UnifiedBackend` selects v10 automatically for the single user-facing
-**DLSS 5** mode. If it is not ready, the validated v3 runtime may be used
-internally when available.
+Visual Enhancer v10 is the normal implementation behind the single
+user-facing **DLSS 5** mode. Setup provisions it only after the explicit DLSS 5
+opt-in, using the same pinned archive/staging/Defender-preflight path exposed by
+the Configuration repair action. Once ready, `DLSS5UnifiedBackend` selects v10
+automatically. If its local preflight later expires, the cached verified archive
+can be re-scanned locally; an already-provisioned v3 runtime may still serve as
+an internal compatibility fallback when available.
 
 The v10 boundary preserves the materially different in-process D3D12/NGX bridge
 plus caller-shim lifecycle: bridge ABI 6, process-lifetime NGX state, isolated

@@ -28,7 +28,7 @@ def _hash(path: Path) -> str | None:
 
 def _gpu() -> dict[str, Any]:
     try:
-        result = subprocess.run(["nvidia-smi", "--query-gpu=name,driver_version,compute_cap", "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=10, check=False)
+        result = subprocess.run(["nvidia-smi", "--query-gpu=name,driver_version,compute_cap", "--format=csv,noheader,nounits"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10, check=False)
         values = [item.strip() for item in result.stdout.strip().split(",")]
         if result.returncode == 0 and len(values) >= 3:
             architecture = "Ampere" if values[2].startswith("8.") else None

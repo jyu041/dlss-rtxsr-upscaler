@@ -18,3 +18,11 @@ def test_ui_preserves_tracebacks_for_render_and_preview_failures():
     assert '_log_ui_exception("Render", exc)' in source
     assert '_log_ui_exception("Clip preview", exc)' in source
     assert '_log_ui_exception("Frame preview", e)' in source
+
+
+def test_source_upload_does_not_require_browser_video_playback():
+    source = APP.read_text(encoding="utf-8")
+    assert 'inp = gr.File(' in source
+    assert 'file_types=["video"]' in source
+    assert 'type="filepath"' in source
+    assert 'inp = gr.Video(label="Upload video"' not in source

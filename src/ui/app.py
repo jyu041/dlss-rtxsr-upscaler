@@ -530,7 +530,7 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
                 _save_last("rtx_vsr", {"mode": vsr_mode, "scale": float(scale_value), "quality": quality_value})
         progress = tracker_callback(job.progress)
         if processing_mode == "DLSS Frame Generation 2X":
-            stats = render_dlssg(path, destination, backend, multiplier=int(dlssg_multiplier), codec={"H.264":"h264_nvenc", "HEVC":"hevc_nvenc"}[codec_value], cancel=job.cancel_event, progress=progress, nvof_profile=dlssg_nvof_profile)
+            stats = render_dlssg(path, destination, backend, multiplier=int(dlssg_multiplier), codec={"H.264":"h264_nvenc", "HEVC":"hevc_nvenc"}[codec_value], cancel=job.cancel_event, progress=progress, nvof_profile=dlssg_nvof_profile, write_sidecars=False)
             stats["frames"] = stats["output_frames"]; stats["fps"] = stats["end_to_end_fps"]; stats["dimensions"] = (stats["width"], stats["height"])
         elif processing_mode.startswith("DLSS SR"):
             stats = render_dlss_sr(path, destination, backend, sr_mode, sr_model, codec=codec_value, cancel=job.cancel_event, progress=progress)
@@ -626,7 +626,7 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
             if result.returncode: raise RuntimeError(result.stderr[-1000:])
             _save_last("dlssg", {"motion_provider": dlssg_motion, "depth_mode": dlssg_depth, "multiplier": int(dlssg_multiplier), "nvof_profile": dlssg_nvof_profile})
             backend = backend_for_nvof_profile(dlssg_nvof_profile)
-            stats = render_dlssg(clip_source, destination, backend, multiplier=int(dlssg_multiplier), codec="h264_nvenc", cancel=job.cancel_event, progress=progress, nvof_profile=dlssg_nvof_profile)
+            stats = render_dlssg(clip_source, destination, backend, multiplier=int(dlssg_multiplier), codec="h264_nvenc", cancel=job.cancel_event, progress=progress, nvof_profile=dlssg_nvof_profile, write_sidecars=False)
             stats["frames"] = stats["output_frames"]; stats["fps"] = stats["output_fps"]; stats["dimensions"] = (stats["width"], stats["height"])
         elif processing_mode.startswith("DLSS SR"):
             backend = DLSSSRBackend(); status = backend.status()

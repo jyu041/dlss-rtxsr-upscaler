@@ -43,7 +43,6 @@ def test_source_upload_uses_full_length_browser_display_video():
     assert 'inp.upload(' in source
     assert 'select_source,' in source
     assert 'replace_input.click(' in source
-    assert 'frame.click(do_frame, [source_state,' not in source
     assert 'frame_event = frame.click(do_frame, [source_state,' in source
     assert 'clip_event = clip.click(preview_clip, [source_state,' in source
     assert 'render_event = render.click(render_video, [source_state,' in source

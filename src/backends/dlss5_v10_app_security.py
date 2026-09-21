@@ -19,22 +19,31 @@ def _run_elevated_script(script: str, *, timeout: int = 120) -> None:
         path = Path(temporary) / "firewall.ps1"
         path.write_text(script, encoding="utf-8")
         argument = (
-            "-NoProfile -ExecutionPolicy Bypass -File "
+            "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "
             f'"{str(path).replace(chr(34), chr(34) * 2)}"'
         )
         command = (
             "$p=Start-Process -FilePath 'powershell.exe' "
             f"-ArgumentList '{_quote_ps(argument)}' "
-            "-Verb RunAs -Wait -PassThru; exit $p.ExitCode"
+            "-WindowStyle Hidden -Verb RunAs -Wait -PassThru; exit $p.ExitCode"
         )
         result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                command,
+            ],
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
             check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if result.returncode:
             raise RuntimeError(
@@ -66,13 +75,22 @@ def install_temporary_firewall_block(program: Path, rule_name: str) -> None:
         "program=($a.Program -join ';')} | ConvertTo-Json -Compress"
     )
     result = subprocess.run(
-        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", verify],
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            verify,
+        ],
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
         timeout=30,
         check=False,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     if result.returncode:
         raise RuntimeError("temporary v10 firewall rule could not be verified")

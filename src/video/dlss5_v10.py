@@ -459,7 +459,7 @@ def render_dlss5_v10(
             )
 
         close_result = client.close()
-        clean_close = close_result == "CLOSED"
+        clean_close = close_result in {"CLOSED", "CLOSED_ACK_TERMINATED"}
         if not clean_close:
             raise RuntimeError(
                 f"DLSS5 v10 isolated host did not close cleanly: {close_result}"
@@ -487,8 +487,12 @@ def render_dlss5_v10(
             "-c:a",
             "copy",
             "-map_metadata",
-            "1",
+            "-1",
+            "-map_chapters",
+            "-1",
         ]
+        if Path(destination).suffix.lower() in {".mp4", ".mov", ".m4v"}:
+            mux += ["-movflags", "+faststart"]
         if duration:
             mux += [
                 "-t",
@@ -557,7 +561,7 @@ def render_dlss5_v10(
                 "encoder_write_ms": encoder_write_ms,
                 "transport": "double-buffered-readinto/host-protocol/rawvideo-stdin",
             },
-            "host_close": "CLOSED",
+            "host_close": close_result,
             "firewall_containment": True,
             "hello": hello,
             "initialization": initialization,

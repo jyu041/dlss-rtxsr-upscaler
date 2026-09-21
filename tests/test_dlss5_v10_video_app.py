@@ -122,3 +122,27 @@ def test_v10_app_host_source_has_dynamic_geometry_but_1x_cap():
     assert "create.input_width" in source
     assert "create.input_height" in source
     assert "FrameRequest.decode(" in source
+
+
+
+def test_v10_app_renderer_accepts_acknowledged_process_lifetime_termination():
+    source = open("src/video/dlss5_v10.py", encoding="utf-8").read()
+    assert 'clean_close = close_result in {"CLOSED", "CLOSED_ACK_TERMINATED"}' in source
+    assert '"host_close": close_result' in source
+
+
+def test_v10_firewall_and_host_processes_are_windowless():
+    security = open("src/backends/dlss5_v10_app_security.py", encoding="utf-8").read()
+    client = open("src/backends/dlss5_v10_client.py", encoding="utf-8").read()
+    assert 'creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)' in security
+    assert security.count('"-WindowStyle"') >= 2
+    assert "-WindowStyle Hidden -Verb RunAs" in security
+    assert 'creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)' in client
+
+
+
+def test_v10_app_output_mux_drops_source_metadata_and_faststarts_mp4():
+    source = open("src/video/dlss5_v10.py", encoding="utf-8").read()
+    assert '"-map_metadata",\n            "-1"' in source
+    assert '"-map_chapters",\n            "-1"' in source
+    assert 'mux += ["-movflags", "+faststart"]' in source

@@ -745,38 +745,40 @@ def build():
                             quality = gr.Dropdown(["LOW", "MEDIUM", "HIGH", "ULTRA"], value=rlast.get("quality", "ULTRA"), show_label=False)
                         with gr.Column(visible=dlss_initial, elem_classes=["backend-panel", "backend-dlss"]) as dlss_group:
                             gr.Markdown("### DLSS 5 Settings")
-                            gr.Markdown("One DLSS 5 mode. The preferred Neural Rendering runtime is used automatically when its preflight is ready; the validated compatibility backend remains internal fallback only. Reduced working resolution, recomposition, temporal stabilization, and neural quality controls now apply through the unified path.")
+                            gr.Markdown("Preset and neural working resolution are the normal controls. Detailed tuning stays collapsed unless you need it.", elem_classes="compact-note")
                             _tip(DLSS5_TOOLTIPS, "builtin_preset", "Built-in preset")
                             preset = gr.Dropdown(list(load_presets()) + ["Default"], value="Photoreal Balanced", show_label=False)
                             dlss_scale = gr.State(dlss_default_scale)
                             _tip(DLSS5_TOOLTIPS, "working_scale", "NR Working Resolution")
                             nr_working_scale = gr.Dropdown([("Auto (target ~720p neural workload)", "auto"), ("100% (Native)", 1.0), ("87.5%", 0.875), ("75%", 0.75), ("67% (2/3)", 2.0 / 3.0), ("50%", 0.5)], value=dlast.get("nr_working_scale", 1.0), show_label=False)
-                            _tip(DLSS5_TOOLTIPS, "recompose", "Recomposition")
-                            recompose_backend = gr.Dropdown([("Auto (CUDA preferred)", "auto"), ("CUDA", "cuda"), ("CPU", "cpu")], value=dlast.get("recompose_backend", "auto"), show_label=False)
-                            gr.Markdown("#### Experimental quality composition")
-                            shimmer_suppression = gr.Slider(0, 1, dlast.get("shimmer_suppression", 0.0), .05, label="Temporal residual stabilization")
-                            color_strength = gr.Slider(0, 1, dlast.get("color_strength", 1.0), .05, label="Neural color strength")
-                            tone_preservation = gr.Slider(0, 1, dlast.get("tone_preservation", 0.0), .05, label="Tone preservation")
-                            with gr.Accordion("Advanced neural quality controls", open=False):
+
+                            nrpreset = gr.State(dlast.get("nr_preset", "Default"))
+                            model = gr.State(dlast.get("model_preset", "Default"))
+                            with gr.Accordion("Quality tuning", open=False, elem_classes="compact-settings"):
+                                _tip(DLSS5_TOOLTIPS, "nr_style", "NR style")
+                                style = gr.Dropdown(["Default", "Natural", "Cinematic"], value=dlast.get("nr_style", "Natural"), show_label=False)
+                                _tip(DLSS5_TOOLTIPS, "intensity", "NR intensity")
+                                intensity = gr.Slider(0, 2, dlast.get("intensity", .60), .05, show_label=False)
+                                _tip(DLSS5_TOOLTIPS, "tone", "Local tone strength")
+                                tone = gr.Slider(0, 2, dlast.get("local_tone", .40), .05, show_label=False)
+                                _tip(DLSS5_TOOLTIPS, "structure", "Local structure strength")
+                                structure = gr.Slider(0, 2, dlast.get("local_structure", .40), .05, show_label=False)
+                                _tip(DLSS5_TOOLTIPS, "skin", "Skin structure strength")
+                                skin = gr.Slider(-1, 2, dlast.get("skin_structure", .15), .05, show_label=False)
+                                _tip(DLSS5_TOOLTIPS, "mask", "Automatic mask")
+                                mask = gr.Dropdown(["Off", "On"], value="On" if dlast.get("automatic_mask", False) else "Off", show_label=False)
+                                shimmer_suppression = gr.Slider(0, 1, dlast.get("shimmer_suppression", 0.0), .05, label="Temporal residual stabilization")
+                                color_strength = gr.Slider(0, 1, dlast.get("color_strength", 1.0), .05, label="Neural color strength")
+                                tone_preservation = gr.Slider(0, 1, dlast.get("tone_preservation", 0.0), .05, label="Tone preservation")
+
+                            with gr.Accordion("Advanced runtime / neural controls", open=False, elem_classes="compact-settings"):
+                                _tip(DLSS5_TOOLTIPS, "recompose", "Recomposition")
+                                recompose_backend = gr.Dropdown([("Auto (CUDA preferred)", "auto"), ("CUDA", "cuda"), ("CPU", "cpu")], value=dlast.get("recompose_backend", "auto"), show_label=False)
                                 v10_nr_passes = gr.Dropdown([1, 2, 3, 4], value=dlast.get("v10_nr_passes", 1), label="NR passes")
                                 v10_face_skin_protection = gr.Slider(0, 1, dlast.get("v10_face_skin_protection", 0.0), .05, label="Face / skin protection")
                                 v10_grain_preservation = gr.Slider(0, 1, dlast.get("v10_grain_preservation", 0.0), .05, label="Grain preservation")
                                 v10_shimmer_suppression = gr.Slider(0, 1, dlast.get("v10_shimmer_suppression", 0.70), .05, label="Native shimmer suppression")
                                 v10_prefer_nvof = gr.Dropdown(["Off", "On"], value="On" if dlast.get("v10_prefer_nvof", False) else "Off", label="Prefer NVIDIA Optical Flow")
-                            nrpreset = gr.State(dlast.get("nr_preset", "Default"))
-                            _tip(DLSS5_TOOLTIPS, "nr_style", "NR style")
-                            style = gr.Dropdown(["Default", "Natural", "Cinematic"], value=dlast.get("nr_style", "Natural"), show_label=False)
-                            model = gr.State(dlast.get("model_preset", "Default"))
-                            _tip(DLSS5_TOOLTIPS, "intensity", "NR intensity")
-                            intensity = gr.Slider(0, 2, dlast.get("intensity", .60), .05, show_label=False)
-                            _tip(DLSS5_TOOLTIPS, "tone", "Local tone strength")
-                            tone = gr.Slider(0, 2, dlast.get("local_tone", .40), .05, show_label=False)
-                            _tip(DLSS5_TOOLTIPS, "structure", "Local structure strength")
-                            structure = gr.Slider(0, 2, dlast.get("local_structure", .40), .05, show_label=False)
-                            _tip(DLSS5_TOOLTIPS, "skin", "Skin structure strength")
-                            skin = gr.Slider(-1, 2, dlast.get("skin_structure", .15), .05, show_label=False)
-                            _tip(DLSS5_TOOLTIPS, "mask", "Automatic mask")
-                            mask = gr.Dropdown(["Off", "On"], value="On" if dlast.get("automatic_mask", False) else "Off", show_label=False)
                         with gr.Column(visible=sr_initial, elem_classes=["backend-panel", "backend-sr"]) as sr_group:
                             gr.Markdown("### DLSS SR Settings")
                             _tip(DLSS_SR_TOOLTIPS, "mode", "Mode")
@@ -795,19 +797,24 @@ def build():
                                 value=dlssg_nvof_default,
                                 label="NVOF profile",
                             )
-                            gr.Markdown("Grid4 is the hardware-tested performance candidate. setup.bat installs its exact pinned managed worker automatically; it remains opt-in and does not replace the pinned C55/grid1 default.")
-                            with gr.Row():
-                                dlssg_check = gr.Button("Check DLSS-G readiness")
-                            dlssg_readiness = gr.Markdown("Managed runtime readiness has not been refreshed.")
-                            dlssg_motion = gr.Dropdown(["NVIDIA Optical Flow"], value=dlssglast.get("motion_provider", "NVIDIA Optical Flow"), label="Motion provider")
-                            dlssg_depth = gr.Dropdown(["Constant 0.5"], value=dlssglast.get("depth_mode", "Constant 0.5"), label="Depth mode")
-                            dlssg_saved = gr.Markdown()
-                            gr.Markdown("Constant depth is a first-generation quality limitation; it is not renderer-quality depth.")
-                            gr.Markdown("2X Frame Generation, 3X Multi Frame Generation, and 4X Multi Frame Generation are hardware-validated on the tested RTX 3070 Ti configuration.")
+                            gr.Markdown("Grid4 is the hardware-tested performance candidate; the pinned grid1 profile remains the default.", elem_classes="compact-note")
+                            with gr.Accordion("Runtime / advanced", open=False, elem_classes="compact-settings"):
+                                with gr.Row():
+                                    dlssg_check = gr.Button("Check DLSS-G readiness")
+                                dlssg_readiness = gr.Markdown("Managed runtime readiness has not been refreshed.")
+                                dlssg_motion = gr.Dropdown(["NVIDIA Optical Flow"], value=dlssglast.get("motion_provider", "NVIDIA Optical Flow"), label="Motion provider")
+                                dlssg_depth = gr.Dropdown(["Constant 0.5"], value=dlssglast.get("depth_mode", "Constant 0.5"), label="Depth mode")
+                                dlssg_saved = gr.Markdown()
+                                gr.Markdown("Constant depth is a first-generation quality limitation; it is not renderer-quality depth.")
+                                gr.Markdown("2X Frame Generation, 3X Multi Frame Generation, and 4X Multi Frame Generation are hardware-validated on the tested RTX 3070 Ti configuration.")
                         with gr.Accordion("Output settings", open=False):
                             codec = gr.Dropdown(["H.264", "HEVC"], value="H.264", label="Codec")
                             container = gr.Dropdown(["MP4", "MKV", "MOV"], value="MP4", label="Container")
                     with gr.Column(scale=40, min_width=420, elem_classes=["workspace-card", "preview-panel"]):
+                        progress_panel = gr.HTML(
+                            progress_html(CONTROLLER.snapshot()),
+                            elem_classes=["workspace-progress", "preview-progress"],
+                        )
                         gr.Markdown("## Preview / Output")
                         with gr.Tabs(selected="video", elem_classes="preview-tabs") as preview_tabs:
                             with gr.Tab("Video", id="video"):
@@ -829,7 +836,6 @@ def build():
                         stop = gr.Button("Cancel", interactive=False, elem_classes="cancel-button")
                         job = gr.Markdown("Ready. One GPU job at a time.")
 
-                progress_panel = gr.HTML(progress_html(CONTROLLER.snapshot()), elem_classes="workspace-progress")
             with gr.Tab("Configuration"):
                 gr.Markdown("## Configuration")
                 gr.Markdown("Validation, runtime maintenance, and reusable presets. Normal video work stays in Enhance.")

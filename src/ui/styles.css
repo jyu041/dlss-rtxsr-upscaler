@@ -361,9 +361,29 @@ button.primary {
   font-weight: 700 !important;
 }
 
-/* Progress belongs to Enhance, below the workspace rather than above it. */
+/* Progress is local to Preview / Output so it does not span unrelated columns. */
 .workspace-progress {
-  margin-top: 10px;
+  margin: 0 0 10px;
+}
+
+.preview-progress .job-progress {
+  padding: 8px 10px;
+}
+
+.compact-note {
+  color: var(--nve-muted);
+  font-size: .76rem;
+  line-height: 1.35;
+  margin: -2px 0 7px;
+}
+
+.compact-settings {
+  margin-top: 7px;
+}
+
+.compact-settings > .label-wrap,
+.compact-settings > button {
+  min-height: 34px;
 }
 
 .job-progress {

@@ -18,9 +18,22 @@ Generation, and experimental DLSS 5 Neural Rendering from one localhost UI.
 
 </div>
 
+<p align="center">
+  <img src="docs/assets/project-overview.svg" alt="NVIDIA Video Enhancer overview: local video input through RTX VSR, DLSS SR, DLSS Frame Generation/MFG, or experimental DLSS 5 to NVENC output" width="100%">
+</p>
+
+## At a glance
+
+| | |
+| --- | --- |
+| **One local UI** | Upload, preview, configure, render, inspect diagnostics, and manage supported runtimes from the same localhost application. |
+| **Four enhancement paths** | RTX VSR, standalone DLSS SR, DLSS Frame Generation / MFG, and experimental DLSS 5 Neural Rendering. |
+| **Local processing** | Video processing stays on the Windows machine; the Gradio UI binds to `127.0.0.1` with public sharing disabled. |
+| **Managed setup** | `setup.bat` creates the Conda environment, verifies prerequisites, provisions pinned runtimes, and performs readiness checks. |
+
 ## Current release
 
-**v0.2.0-beta.2** is the current source-install beta.
+**v0.2.0-beta.3** is the current public-launch source beta.
 
 The normal user workflow is intentionally simple:
 
@@ -32,7 +45,7 @@ Setup provisions the managed backends into project-local runtime directories.
 Normal users should not need to download DLLs manually, copy backend files
 between repositories, or enter executable/runtime paths in the UI.
 
-See the [v0.2.0-beta.2 release notes](docs/RELEASE_NOTES_v0.2.0-beta.2.md) for
+See the [v0.2.0-beta.3 release notes](docs/RELEASE_NOTES_v0.2.0-beta.3.md) for
 the complete change list and validation scope.
 
 ## Supported modes

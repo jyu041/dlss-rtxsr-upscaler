@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="500" viewBox="0 0 1200 500" role="img" aria-labelledby="title desc">
+  <title id="title">NVIDIA Video Enhancer project overview</title>
+  <desc id="desc">A local Windows video enhancement pipeline with RTX VSR, DLSS Super Resolution, DLSS Frame Generation, and experimental DLSS 5 Neural Rendering.</desc>
+  <rect width="1200" height="500" rx="28" fill="#0b0f14"/>
+  <text x="60" y="74" fill="#f5f7fa" font-family="Segoe UI, Arial, sans-serif" font-size="40" font-weight="700">NVIDIA Video Enhancer</text>
+  <text x="60" y="112" fill="#aeb8c4" font-family="Segoe UI, Arial, sans-serif" font-size="21">Local Windows video enhancement for NVIDIA RTX GPUs</text>
+
+  <rect x="60" y="160" width="190" height="96" rx="18" fill="#151c24" stroke="#33404d"/>
+  <text x="155" y="197" text-anchor="middle" fill="#f5f7fa" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="600">Input video</text>
+  <text x="155" y="228" text-anchor="middle" fill="#9aa7b4" font-family="Segoe UI, Arial, sans-serif" font-size="16">H.264 / HEVC / more</text>
+
+  <path d="M270 208 H325" stroke="#76b900" stroke-width="5" stroke-linecap="round"/>
+  <path d="M315 198 L327 208 L315 218" fill="none" stroke="#76b900" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="345" y="145" width="510" height="235" rx="24" fill="#111820" stroke="#2d3945"/>
+  <text x="600" y="182" text-anchor="middle" fill="#dfe6ed" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="600">Choose an enhancement path</text>
+
+  <rect x="380" y="205" width="205" height="62" rx="14" fill="#1b2530" stroke="#465564"/>
+  <text x="482.5" y="244" text-anchor="middle" fill="#f5f7fa" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="600">RTX VSR</text>
+
+  <rect x="615" y="205" width="205" height="62" rx="14" fill="#1b2530" stroke="#465564"/>
+  <text x="717.5" y="244" text-anchor="middle" fill="#f5f7fa" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="600">DLSS SR</text>
+
+  <rect x="380" y="290" width="205" height="62" rx="14" fill="#1b2530" stroke="#465564"/>
+  <text x="482.5" y="329" text-anchor="middle" fill="#f5f7fa" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="600">DLSS FG / MFG</text>
+
+  <rect x="615" y="290" width="205" height="62" rx="14" fill="#182617" stroke="#76b900"/>
+  <text x="717.5" y="319" text-anchor="middle" fill="#f5f7fa" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="600">DLSS 5</text>
+  <text x="717.5" y="342" text-anchor="middle" fill="#a9c98f" font-family="Segoe UI, Arial, sans-serif" font-size="14">experimental neural rendering</text>
+
+  <path d="M875 208 H930" stroke="#76b900" stroke-width="5" stroke-linecap="round"/>
+  <path d="M920 198 L932 208 L920 218" fill="none" stroke="#76b900" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="950" y="160" width="190" height="96" rx="18" fill="#151c24" stroke="#33404d"/>
+  <text x="1045" y="197" text-anchor="middle" fill="#f5f7fa" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="600">Output video</text>
+  <text x="1045" y="228" text-anchor="middle" fill="#9aa7b4" font-family="Segoe UI, Arial, sans-serif" font-size="16">NVENC H.264 / HEVC</text>
+
+  <rect x="60" y="420" width="1080" height="1" fill="#26313c"/>
+  <text x="60" y="458" fill="#9aa7b4" font-family="Segoe UI, Arial, sans-serif" font-size="17">Local processing • localhost UI • managed runtime verification • source-install beta</text>
+  <text x="1140" y="458" text-anchor="end" fill="#76b900" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="600">Unofficial community project</text>
+</svg>

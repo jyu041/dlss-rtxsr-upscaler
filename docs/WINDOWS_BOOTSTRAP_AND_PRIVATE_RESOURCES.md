@@ -5,7 +5,7 @@ Date: 2026-09-14
 ## A. Machine inventory
 
 Validated on Windows 10.0.26200 with PowerShell 7, Git 2.55.0, Git LFS 3.7.1,
-Conda at `C:\Users\mark\miniconda3`, NVIDIA GeForce RTX 3070 Ti (compute
+Conda at `C:\Users\<user>\miniconda3`, NVIDIA GeForce RTX 3070 Ti (compute
 8.6), NVIDIA driver 610.62, and `nvidia-smi` at `C:\Windows\System32\nvidia-smi.exe`.
 The installed Visual Studio 2022 components were discovered through
 `C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe`;
@@ -71,13 +71,13 @@ rehosted because redistribution rights were not established. NVIDIA runtime,
 SDK, and `nvofapi64.dll` are also not rehosted. Exact acquisition and hash
 guidance is in the private repository’s `external/README.md`.
 
-## H–I. Private repository and bootstrap
+## H–I. Historical private-resource bootstrap
 
-Private repository: sibling path `C:\Users\mark\Desktop\dlss-rtxsr-upscaler-resources`;
-remote `https://github.com/jyu041/dlss-rtxsr-upscaler-resources.git`, branch
-`main`. It contains LFS rules, the project-owned worker, lock manifest, and
-idempotent `bootstrap.ps1`, `verify.ps1`, and `sync-to-public.ps1`. Latest
-private commit is `259e517`; push succeeded and LFS reports no pending objects.
+A separate private resource repository was used during early bootstrap work.
+It contained LFS rules, project-owned worker artifacts, lock metadata, and
+bootstrap/verification utilities. Current public source installation no longer
+requires access to that repository; validated public bootstrap artifacts are
+retrieved from this project's pinned releases.
 PowerShell syntax checks passed.
 
 ## J. Application

@@ -388,6 +388,41 @@ button.primary {
 }
 
 /* Keep tuning controls dense without adding wrapper boxes that clip help popovers. */
+.backend-dlss .form {
+  --form-gap-width: 6px;
+  gap: 6px !important;
+  overflow: visible !important;
+}
+
+.backend-dlss .setting-label {
+  margin: 2px 0 -2px !important;
+  overflow: visible !important;
+  position: relative;
+  z-index: 30;
+}
+
+.backend-dlss .setting-label-row,
+.backend-dlss .setting-help {
+  overflow: visible !important;
+}
+
+.backend-dlss .setting-label-row {
+  font-size: .74rem;
+  min-height: 16px;
+}
+
+.backend-dlss .setting-tooltip {
+  bottom: auto;
+  top: calc(100% + 6px);
+  z-index: 1000;
+}
+
+.backend-dlss .dlss-primary-control.block.padded {
+  margin: 0 !important;
+  padding-top: 5px !important;
+  padding-bottom: 5px !important;
+}
+
 .compact-settings {
   --form-gap-width: 4px;
   overflow: visible !important;

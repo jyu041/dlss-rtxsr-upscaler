@@ -15,7 +15,8 @@ The major source packages are:
 - `src/video/` — FFmpeg-facing decode/encode/mux pipelines and backend-specific
   video orchestration;
 - `src/backends/` — strict adapters/clients for RTX VSR, DLSS SR, DLSS-G,
-  DLSS 5 v3, and DLSS 5 v10;
+  and the unified DLSS 5 facade over the preferred v10 runtime plus the retained
+  v3 compatibility backend;
 - `src/runtime_manager/` — manifest-driven download, extraction, identity,
   activation, verification, and repair policy.
 
@@ -41,24 +42,38 @@ official NVIDIA provider. The normal path is the pinned C55/grid1 profile.
 The separately pinned grid4/GPU-resident NVOF worker is exposed only as an
 explicit experimental profile; it does not replace the default.
 
-### DLSS 5 v3
+### DLSS 5
 
-The v3 Feature-18 path is optional and experimental. It requires a separately
-approved local runtime, exact hashes, Defender evidence, an exact outbound
-firewall rule, and a successful Feature-18 self-test before the backend can
-become ready.
+The application exposes one DLSS 5 mode. `DLSS5UnifiedBackend` selects the
+isolated v10 application runtime whenever its explicit preflight is ready.
+The validated v3 Feature-18 backend is retained only as an internal
+compatibility fallback while v10 coverage is still being expanded; users do not
+select a DLSS version.
 
-### DLSS 5 v10 Experimental
+The preferred v10 path keeps its existing security boundary: pinned
+archive/runtime identity, fresh preflight/Defender evidence, isolated child
+execution, temporary outbound firewall containment, process-tree checks,
+per-frame NGX/CUDA/timestamp/geometry/reset validation, scene-aware resets, and
+mandatory clean CLOSE/cleanup.
 
-v10 is separate from v3. Its generic legacy host entry point remains disabled;
-the application uses a separately acknowledged experimental application path.
-That path requires pinned archive/runtime identity, fresh preflight/Defender
-evidence, isolated child execution, temporary outbound firewall containment,
-process-tree checks, per-frame NGX/CUDA/timestamp/geometry/reset validation,
-scene-aware resets, and clean CLOSE/cleanup.
+Around that v10 native session, the project now provides the shared application
+pipeline that previously existed only on v3:
 
-The current application boundary is SDR RGBA8, 1.0x processing/output geometry,
-and up to 1920x1080-equivalent input.
+- deterministic Auto or fixed 100/87.5/75/67/50% neural working resolution;
+- residual recomposition back onto the native-resolution source;
+- CUDA-preferred or CPU recomposition;
+- optional motion-compensated temporal stabilization of the neural residual;
+- native v10 1–4 pass, color/tone, face/skin, grain, shimmer, and NVOF controls.
+
+The validated native-input boundary remains SDR RGBA8 and up to
+1920x1080-equivalent input. Reduced working resolution does not expand that
+hardware-evidence boundary and does not change final output dimensions.
+
+If the preferred runtime is not ready, the unified dispatcher may use the
+validated v3 backend internally. Shared working-resolution, recomposition,
+temporal, color, and tone controls remain available there. A non-default
+v10-only control is never silently ignored: the render fails with an actionable
+message instead.
 
 ## Runtime model
 

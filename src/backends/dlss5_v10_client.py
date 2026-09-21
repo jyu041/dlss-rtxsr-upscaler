@@ -96,6 +96,7 @@ class V10ProtocolClient:
             stderr=subprocess.PIPE,
             bufsize=0,
             env=env,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         self._start_readers()
 

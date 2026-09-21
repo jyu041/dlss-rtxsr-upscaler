@@ -104,8 +104,8 @@ The bounded research wrappers and the application smoke wrapper refresh the
 pinned runtime/static audit and Defender preflight before native execution. The
 application smoke runs the same underlying `render_dlss5_v10()` path used by the
 unified dispatcher and requires the exact `EXPERIMENTAL_APP_SCENE_AWARE_V10`
-acknowledgement. The UI exposes **Refresh DLSS 5 runtime preflight** before the
-preferred runtime can activate. Current native-input constraints remain SDR
+acknowledgement. The UI exposes **Install / Repair DLSS 5** for explicit provisioning or
+repair; stale preflight evidence can also be refreshed from the verified local cache. Current native-input constraints remain SDR
 RGBA8, 1.0x output, and up to 1920x1080-equivalent geometry.
 
 The unified v10 application path additionally supports the shared

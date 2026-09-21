@@ -23,7 +23,7 @@ The preserved Phase 5C build established:
 
 The Phase 5C tree was not modified. A separate copy was created at:
 
-`C:\Users\mark\Desktop\dlss-community-research\Streamline_Sample_MFGCapture`
+`C:\Users\<user>\Desktop\dlss-community-research\Streamline_Sample_MFGCapture`
 
 The Phase 5C executable/runtime set was preserved. Phase 5C’s executable SHA
 was `440F7A14166C61EBED19A30F96A354BE2726D7CB6E70B013183B9FF5B2AC6B0F` and

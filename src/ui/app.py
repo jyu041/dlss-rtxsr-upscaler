@@ -8,11 +8,7 @@ from src.core.dlssg_readiness import assess, format_summary
 from src.backends.rtx_vsr import RTXVSRBackend
 from src.backends.dlss5 import DLSS5Backend
 from src.backends.dlss5_unified import DLSS5UnifiedBackend
-from src.backends.dlss5_v10_app import (
-    DLSS5V10ExperimentalBackend,
-    DEFAULT_V10_PREFLIGHT,
-    DEFAULT_V10_RUNTIME,
-)
+from src.backends.dlss5_v10_app import DLSS5V10ExperimentalBackend
 from src.backends.dlss_sr import DLSSSRBackend
 from src.backends.dlssg import DLSSGBackend, backend_for_nvof_profile
 from src.backends.dlssg_worker import NVOF_PROFILE_GRID4_GPU_CANDIDATE, NVOF_PROFILE_VALIDATED
@@ -35,7 +31,6 @@ from src.video.dlss5_unified import render_dlss5_unified
 from src.video.dlss_sr import process_dlss_sr_frame, render_dlss_sr
 from src.video.dlssg import ffmpeg_executable, render_dlssg
 from src.runtime_manager import RuntimeManager
-from src.runtime_manager.core import verify_artifact
 
 os.environ.setdefault("GRADIO_ANALYTICS_ENABLED","False")
 CONTROLLER = JobController()

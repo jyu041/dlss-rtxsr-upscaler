@@ -387,31 +387,53 @@ button.primary {
   min-height: 34px;
 }
 
-/* Gradio's default form gap and padded component shells make tuning panels
-   unnecessarily tall. Keep this scoped to the collapsed tuning sections. */
+/* Keep tuning controls dense without adding wrapper boxes that clip help popovers. */
+.compact-settings {
+  --form-gap-width: 4px;
+  overflow: visible !important;
+}
+
 .compact-settings .form {
-  gap: 6px !important;
+  --form-gap-width: 4px;
+  gap: 4px !important;
+  overflow: visible !important;
 }
 
-.compact-settings .compact-control.form {
-  --form-gap-width: 2px;
-  gap: 2px !important;
-  margin: 0 !important;
+.compact-settings .setting-label {
+  margin: 2px 0 -2px !important;
+  overflow: visible !important;
+  position: relative;
+  z-index: 30;
 }
 
-.compact-settings .compact-control .setting-label {
-  margin: 2px 0 0 !important;
+.compact-settings .setting-label-row,
+.compact-settings .setting-help {
+  overflow: visible !important;
 }
 
-.compact-settings .compact-control .block.padded,
+.compact-settings .setting-label-row {
+  font-size: .74rem;
+  min-height: 16px;
+}
+
+.compact-settings .setting-tooltip {
+  bottom: auto;
+  top: calc(100% + 6px);
+  z-index: 1000;
+}
+
+.compact-settings .compact-control.block.padded,
 .compact-settings .compact-native-control.block.padded {
-  padding-top: 7px !important;
-  padding-bottom: 7px !important;
+  margin: 0 !important;
+  padding-top: 5px !important;
+  padding-bottom: 5px !important;
 }
 
+.compact-settings .compact-control,
 .compact-settings .compact-native-control {
   margin: 0 !important;
 }
+
 
 .job-progress {
   background: var(--nve-surface);

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 
 
 @dataclass(frozen=True)
@@ -44,7 +44,8 @@ class ProgressTracker:
             done = old.frames_done if frames_done is None else max(0, int(frames_done))
             total = old.frames_total if frames_total is None else (int(frames_total) if frames_total is not None else None)
             phase_value = phase or old.phase
-            if phase_value == "PROCESSING" and self._processing_started is None:
+            state_value = state or old.state
+            if state_value == "PROCESSING" and self._processing_started is None:
                 self._processing_started = now
             delta_time = now - self._last_time
             delta_frames = done - self._last_done
@@ -56,10 +57,25 @@ class ProgressTracker:
             average = done / processing_elapsed if done and processing_elapsed > 0 else 0.0
             percent = min(100.0, done / total * 100.0) if total and total > 0 else None
             eta = None
-            if total and total > done and done >= 5 and processing_elapsed >= 2 and self._smoothed > 0:
-                eta = max(0.0, (total - done) / self._smoothed)
+            rate = average if average > 0 else self._smoothed
+            if total and total > done and done >= 5 and processing_elapsed >= 2 and rate > 0:
+                eta = max(0.0, (total - done) / rate)
             self._last_time, self._last_done = now, done
-            self._progress = JobProgress(phase_value, done, total, percent, time.perf_counter() - self._started, current, average, self._smoothed, eta, message or old.message, old.started_at, time.time(), state or old.state)
+            self._progress = JobProgress(
+                phase_value,
+                done,
+                total,
+                percent,
+                now - self._started,
+                current,
+                average,
+                self._smoothed,
+                eta,
+                message or old.message,
+                old.started_at,
+                time.time(),
+                state_value,
+            )
             return self._progress
 
     def set_state(self, state: str, *, phase: str | None = None, message: str | None = None) -> JobProgress:
@@ -67,7 +83,13 @@ class ProgressTracker:
 
     def snapshot(self) -> JobProgress:
         with self._lock:
-            return self._progress
+            progress = self._progress
+            if progress.state not in {"IDLE", "COMPLETED", "CANCELLED", "FAILED"}:
+                progress = replace(
+                    progress,
+                    elapsed_seconds=max(0.0, time.perf_counter() - self._started),
+                )
+            return progress
 
 
 @dataclass

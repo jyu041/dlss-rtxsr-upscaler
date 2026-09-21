@@ -76,6 +76,7 @@ stronger enhancement levels, not as a simple quality ranking.
 - Expired/missing local Defender-preflight evidence can be refreshed from that
   verified cache without another ~690 MB download.
 - Configuration now exposes one **Install / Repair DLSS 5** recovery action.
+- Diagnostics now reports the unified DLSS 5 runtime/readiness state instead of the retired v3-only status.
 - Normal onboarding no longer depends on the obsolete v3 archive URL.
 
 ### DLSS-G / Multi Frame Generation

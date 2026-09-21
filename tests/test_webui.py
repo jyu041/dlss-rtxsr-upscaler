@@ -298,7 +298,7 @@ def test_webui_is_task_first_and_separates_configuration_and_diagnostics():
     configuration = source.index('with gr.Tab("Configuration")')
     diagnostics = source.index('with gr.Tab("Diagnostics")')
     runtime_manager = source.index('gr.Markdown("### Runtime Manager")')
-    progress = source.index('progress_panel = gr.HTML(progress_html(CONTROLLER.snapshot())')
+    progress = source.index('progress_panel = gr.HTML(')
 
     assert enhance < configuration < diagnostics
     assert runtime_manager > configuration

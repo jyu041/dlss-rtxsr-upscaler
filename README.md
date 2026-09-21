@@ -177,7 +177,6 @@ See [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md) and
 - DLSS 5 remains experimental and may materially change image content. Higher neural-pass counts intentionally produce a stronger processed look rather than representing a simple quality ranking.
 - The preferred v10 path remains restricted to 1.0× output and the existing 1920×1080-equivalent native-input validation boundary; reduced working resolution changes the neural workload, not final output dimensions.
 - The retained RTX 3070-family v3 compatibility path is restricted to 1.0× output.
-- The current DLSS 5 v10 application path is restricted to 1.0× and a maximum 1920×1080-equivalent input.
 - Performance and visual quality vary by source content, resolution, codec, driver, GPU, and backend runtime.
 - Hardware evidence in this repository is not a claim of official NVIDIA support for experimental RTX 30-series combinations.
 
@@ -185,8 +184,8 @@ See [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md) and
 
 Primary hardware validation has been performed on an RTX 3070 Ti 8 GB under
 Windows 11. The repository records successful evidence for the validated
-DLSS-G 2×/3×/4× direct-host path, the managed grid4 candidate, DLSS 5 v3
-Feature-18 execution, and the isolated DLSS 5 v10 application path.
+DLSS-G 2×/3×/4× direct-host path, the managed grid4 candidate, validated
+DLSS 5 v3 compatibility execution, and the isolated preferred v10 application path.
 
 The current v10 application renderer has passed both a 640×480 90-frame smoke
 render and the advertised 1920×1080 / 1.0× ceiling test on that hardware.

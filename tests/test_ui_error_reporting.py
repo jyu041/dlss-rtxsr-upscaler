@@ -26,3 +26,13 @@ def test_source_upload_does_not_require_browser_video_playback():
     assert 'file_types=["video"]' in source
     assert 'type="filepath"' in source
     assert 'inp = gr.Video(label="Upload video"' not in source
+
+
+def test_source_upload_generates_browser_safe_preview_proxy():
+    source = APP.read_text(encoding="utf-8")
+    assert 'def _browser_preview(' in source
+    assert '"libx264"' in source
+    assert '"yuv420p"' in source
+    assert '"+faststart"' in source
+    assert 'source_preview = gr.Video(' in source
+    assert 'inp.change(inspect_with_preview' in source

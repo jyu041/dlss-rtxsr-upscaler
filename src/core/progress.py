@@ -22,7 +22,14 @@ def report_progress(callback, *, frame_index: int, total_frames: int | None, pha
 
 def tracker_callback(tracker: ProgressTracker):
     def callback(event: ProgressEvent) -> None:
-        tracker.update(frames_done=event.frame_index, frames_total=event.total_frames, phase=event.phase, state="PROCESSING" if event.phase == "PROCESSING" else event.phase, message=event.message)
+        is_processing = event.phase == "PROCESSING" or event.phase.startswith("DLSS-G ")
+        tracker.update(
+            frames_done=event.frame_index,
+            frames_total=event.total_frames,
+            phase=event.phase,
+            state="PROCESSING" if is_processing else event.phase,
+            message=event.message,
+        )
 
     return callback
 

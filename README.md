@@ -7,7 +7,7 @@
 Run RTX Video Super Resolution, standalone DLSS Super Resolution, DLSS Frame
 Generation, and experimental DLSS 5 Neural Rendering from one localhost UI.
 
-[![Release](https://img.shields.io/badge/release-v0.2.0--beta.2-6f42c1)](https://github.com/jyu041/dlss-rtxsr-upscaler/releases/tag/v0.2.0-beta.2)
+[![Release](https://img.shields.io/github/v/release/jyu041/dlss-rtxsr-upscaler?include_prereleases&label=release)](https://github.com/jyu041/dlss-rtxsr-upscaler/releases)
 [![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![NVIDIA RTX](https://img.shields.io/badge/NVIDIA-RTX-76B900?logo=nvidia&logoColor=white)](https://www.nvidia.com/geforce/graphics-cards/)
@@ -314,8 +314,10 @@ requirements.txt             Primary Python dependency definition
 ## Acknowledgements
 
 This project uses NVIDIA RTX Video/NGX/Streamline technologies, FFmpeg, Gradio,
-OpenCV, PyTorch, and the retained
-[`ComfyUI-DLSS5-Enhancer`](third_party/ComfyUI-DLSS5-Enhancer) protocol client.
+OpenCV, PyTorch, the retained
+[ComfyUI-DLSS5-Enhancer](third_party/ComfyUI-DLSS5-Enhancer) protocol client, and
+the pinned v10 runtime from
+[Merserk/dlss5-visual-enhancer](https://github.com/Merserk/dlss5-visual-enhancer).
 Acknowledgement does not imply endorsement.
 
 The source repository does not bundle the external DLSS-G direct-host/provider

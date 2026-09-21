@@ -806,6 +806,7 @@ def build():
                                 dlssg_depth = gr.Dropdown(["Constant 0.5"], value=dlssglast.get("depth_mode", "Constant 0.5"), label="Depth mode")
                                 dlssg_saved = gr.Markdown()
                                 gr.Markdown("Constant depth is a first-generation quality limitation; it is not renderer-quality depth.")
+                                gr.Markdown("2X Frame Generation, 3X Multi Frame Generation, and 4X Multi Frame Generation are hardware-validated on the tested RTX 3070 Ti configuration.")
                         with gr.Accordion("Output settings", open=False):
                             codec = gr.Dropdown(["H.264", "HEVC"], value="H.264", label="Codec")
                             container = gr.Dropdown(["MP4", "MKV", "MOV"], value="MP4", label="Container")

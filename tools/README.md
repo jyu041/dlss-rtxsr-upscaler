@@ -31,6 +31,13 @@ A normal user should not need to run them.
 - `start-dev.bat` — developer source launcher using the remembered Conda
   environment.
 
+## Local SDK paths for native research builds
+
+Native research/build scripts no longer contain developer-specific absolute
+paths. Pass `-NgxSdk` / `-NvApi` explicitly, set `NVE_NGX_SDK` /
+`NVE_NVAPI_SDK`, or use the documented `third_party/local/` staging
+locations. Optical Flow headers may be provided with `NVOF_SDK`.
+
 ## Hardware validation and research
 
 The `run_*`, `validate_*`, `capture_*`, `score_*`, benchmark, soak, and

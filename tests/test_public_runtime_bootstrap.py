@@ -133,13 +133,14 @@ def test_start_reuses_setup_conda_executable_and_preserves_shell_overrides():
     assert "%USERPROFILE%\\miniconda3\\condabin\\conda.bat" in start
 
 
-def test_setup_offers_fail_closed_managed_dlss5_v3_provisioning():
+def test_setup_offers_simple_preferred_dlss5_v10_provisioning():
     setup = (ROOT / "setup.bat").read_text(encoding="utf-8")
-    assert "tools\\provision_dlss5_v3.py --yes" in setup
+    assert "tools\\provision_dlss5_v10.py" in setup
+    assert "tools\\provision_dlss5_v3.py" not in setup
     assert "NVE_SETUP_DLSS5" in setup
-    assert "choice /C YN" in setup
-    assert "Windows UAC" in setup
-    assert "hash, scan, firewall, and Feature-18 self-test gates" in setup
+    assert 'choice /C YN /N /M "Enable DLSS 5 now? [Y/N] "' in setup
+    assert "exact pinned v10 runtime" in setup
+    assert "Microsoft Defender preflight" in setup
 
 
 def test_manifest_json_has_no_private_bootstrap_dependency():

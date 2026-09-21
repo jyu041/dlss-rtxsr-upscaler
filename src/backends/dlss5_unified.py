@@ -10,6 +10,7 @@ from __future__ import annotations
 from .base import Backend, BackendStatus
 from .dlss5 import DLSS5Backend
 from .dlss5_v10_app import DLSS5V10ExperimentalBackend
+from tools.provision_dlss5_v10 import refresh_preflight_from_cache
 
 
 class DLSS5UnifiedBackend(Backend):
@@ -24,8 +25,6 @@ class DLSS5UnifiedBackend(Backend):
         if status.available or status.state != "PREFLIGHT REQUIRED":
             return status
         try:
-            from tools.provision_dlss5_v10 import refresh_preflight_from_cache
-
             if refresh_preflight_from_cache():
                 return self.v10.status()
         except Exception:

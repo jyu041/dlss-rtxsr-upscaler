@@ -378,6 +378,7 @@ button.primary {
 }
 
 .compact-settings {
+  --form-gap-width: 6px;
   margin-top: 7px;
 }
 
@@ -393,6 +394,7 @@ button.primary {
 }
 
 .compact-settings .compact-control.form {
+  --form-gap-width: 2px;
   gap: 2px !important;
   margin: 0 !important;
 }

@@ -319,6 +319,25 @@ body {
   margin-top: 7px;
 }
 
+.source-input-shell {
+  gap: 7px;
+}
+
+.source-input-shell video {
+  border-radius: 8px;
+}
+
+.input-compatibility-note {
+  color: var(--nve-muted);
+  font-size: .74rem;
+  margin: 2px 0 5px;
+}
+
+.replace-input {
+  margin-top: 2px;
+  width: 100%;
+}
+
 .load-render {
   width: 100%;
   margin: 5px 0 8px;

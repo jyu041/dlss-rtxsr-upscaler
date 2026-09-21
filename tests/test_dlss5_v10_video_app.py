@@ -107,6 +107,9 @@ def test_v10_app_renderer_source_preserves_containment_and_scene_resets():
     assert 'if bool(cut["is_cut"])' in source
     assert "client.close()" in source
     assert "client.abort()" in source
+    host = open("src/backends/dlss5_v10_host.py", encoding="utf-8").read()
+    app_host = host[host.index("def experimental_application_server("):]
+    assert "native_session.close_process_lifetime()" in app_host
     assert "output.ngx_create_result" in source
     assert "output.ngx_evaluate_result" in source
     assert "output.cuda_result" in source
@@ -129,6 +132,7 @@ def test_v10_app_renderer_accepts_acknowledged_process_lifetime_termination():
     source = open("src/video/dlss5_v10.py", encoding="utf-8").read()
     assert 'clean_close = close_result in {"CLOSED", "CLOSED_ACK_TERMINATED"}' in source
     assert '"host_close": close_result' in source
+    assert "client.last_close_error" in source
 
 
 def test_v10_firewall_and_host_processes_are_windowless():

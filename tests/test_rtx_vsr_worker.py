@@ -74,3 +74,18 @@ def test_native_output_layout_accepts_channels_first_and_channels_last(shape, wi
 def test_native_output_layout_rejects_mismatched_geometry():
     with pytest.raises(RuntimeError, match="tensor shape"):
         _native_output_layout((3, 480, 640), 1280, 720)
+
+
+
+def test_worker_matches_nvidia_reference_geometry_and_stream_setup():
+    source = (
+        __import__("pathlib").Path(__file__).resolve().parents[1]
+        / "src"
+        / "video"
+        / "rtx_vsr_worker.py"
+    ).read_text(encoding="utf-8")
+    assert "torch.cuda.set_device(0)" in source
+    assert 'effect.input_width = int(options["input_width"])' in source
+    assert 'effect.input_height = int(options["input_height"])' in source
+    assert "stream_ptr = torch.cuda.current_stream().cuda_stream" in source
+    assert "effect.run(tensor, stream_ptr=stream_ptr)" in source

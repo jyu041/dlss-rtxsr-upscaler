@@ -755,32 +755,25 @@ def build():
                             nrpreset = gr.State(dlast.get("nr_preset", "Default"))
                             model = gr.State(dlast.get("model_preset", "Default"))
                             with gr.Accordion("Quality tuning", open=False, elem_classes="compact-settings"):
-                                with gr.Group(elem_classes="compact-control"):
-                                    _tip(DLSS5_TOOLTIPS, "nr_style", "NR style")
-                                    style = gr.Dropdown(["Default", "Natural", "Cinematic"], value=dlast.get("nr_style", "Natural"), show_label=False)
-                                with gr.Group(elem_classes="compact-control"):
-                                    _tip(DLSS5_TOOLTIPS, "intensity", "NR intensity")
-                                    intensity = gr.Slider(0, 2, dlast.get("intensity", .60), .05, show_label=False)
-                                with gr.Group(elem_classes="compact-control"):
-                                    _tip(DLSS5_TOOLTIPS, "tone", "Local tone strength")
-                                    tone = gr.Slider(0, 2, dlast.get("local_tone", .40), .05, show_label=False)
-                                with gr.Group(elem_classes="compact-control"):
-                                    _tip(DLSS5_TOOLTIPS, "structure", "Local structure strength")
-                                    structure = gr.Slider(0, 2, dlast.get("local_structure", .40), .05, show_label=False)
-                                with gr.Group(elem_classes="compact-control"):
-                                    _tip(DLSS5_TOOLTIPS, "skin", "Skin structure strength")
-                                    skin = gr.Slider(-1, 2, dlast.get("skin_structure", .15), .05, show_label=False)
-                                with gr.Group(elem_classes="compact-control"):
-                                    _tip(DLSS5_TOOLTIPS, "mask", "Automatic mask")
-                                    mask = gr.Dropdown(["Off", "On"], value="On" if dlast.get("automatic_mask", False) else "Off", show_label=False)
+                                _tip(DLSS5_TOOLTIPS, "nr_style", "NR style")
+                                style = gr.Dropdown(["Default", "Natural", "Cinematic"], value=dlast.get("nr_style", "Natural"), show_label=False, elem_classes="compact-control")
+                                _tip(DLSS5_TOOLTIPS, "intensity", "NR intensity")
+                                intensity = gr.Slider(0, 2, dlast.get("intensity", .60), .05, show_label=False, elem_classes="compact-control")
+                                _tip(DLSS5_TOOLTIPS, "tone", "Local tone strength")
+                                tone = gr.Slider(0, 2, dlast.get("local_tone", .40), .05, show_label=False, elem_classes="compact-control")
+                                _tip(DLSS5_TOOLTIPS, "structure", "Local structure strength")
+                                structure = gr.Slider(0, 2, dlast.get("local_structure", .40), .05, show_label=False, elem_classes="compact-control")
+                                _tip(DLSS5_TOOLTIPS, "skin", "Skin structure strength")
+                                skin = gr.Slider(-1, 2, dlast.get("skin_structure", .15), .05, show_label=False, elem_classes="compact-control")
+                                _tip(DLSS5_TOOLTIPS, "mask", "Automatic mask")
+                                mask = gr.Dropdown(["Off", "On"], value="On" if dlast.get("automatic_mask", False) else "Off", show_label=False, elem_classes="compact-control")
                                 shimmer_suppression = gr.Slider(0, 1, dlast.get("shimmer_suppression", 0.0), .05, label="Temporal residual stabilization", elem_classes="compact-native-control")
                                 color_strength = gr.Slider(0, 1, dlast.get("color_strength", 1.0), .05, label="Neural color strength", elem_classes="compact-native-control")
                                 tone_preservation = gr.Slider(0, 1, dlast.get("tone_preservation", 0.0), .05, label="Tone preservation", elem_classes="compact-native-control")
 
                             with gr.Accordion("Advanced runtime / neural controls", open=False, elem_classes="compact-settings"):
-                                with gr.Group(elem_classes="compact-control"):
-                                    _tip(DLSS5_TOOLTIPS, "recompose", "Recomposition")
-                                    recompose_backend = gr.Dropdown([("Auto (CUDA preferred)", "auto"), ("CUDA", "cuda"), ("CPU", "cpu")], value=dlast.get("recompose_backend", "auto"), show_label=False)
+                                _tip(DLSS5_TOOLTIPS, "recompose", "Recomposition")
+                                recompose_backend = gr.Dropdown([("Auto (CUDA preferred)", "auto"), ("CUDA", "cuda"), ("CPU", "cpu")], value=dlast.get("recompose_backend", "auto"), show_label=False, elem_classes="compact-control")
                                 v10_nr_passes = gr.Dropdown([1, 2, 3, 4], value=dlast.get("v10_nr_passes", 1), label="NR passes", elem_classes="compact-native-control")
                                 v10_face_skin_protection = gr.Slider(0, 1, dlast.get("v10_face_skin_protection", 0.0), .05, label="Face / skin protection", elem_classes="compact-native-control")
                                 v10_grain_preservation = gr.Slider(0, 1, dlast.get("v10_grain_preservation", 0.0), .05, label="Grain preservation", elem_classes="compact-native-control")

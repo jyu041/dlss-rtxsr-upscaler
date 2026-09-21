@@ -15,7 +15,7 @@ community Create/Evaluate attempt was authorized.
 - Community repository HEAD: `5f62ff44a9c08f9841fa605e7b7160f79ccd2c40`
 - Community `version.dll` SHA-256: `C844646D835A7B88ED1382EEA80403D38B433F8AC09CF92581C73698C44AE7C2`
 - NVIDIA header snapshot: `374959484e79a640feaba44c93ac8cfb0a03f5b5`
-- Official runtime used for probe: `C:\Users\mark\Desktop\dlss-community-research\Streamline_Sample_MFGAmpere\_bin`
+- Official runtime used for probe: `C:\Users\<user>\Desktop\dlss-community-research\Streamline_Sample_MFGAmpere\_bin`
 - Official provider: `nvngx_dlssg.dll`, version `310.9.1.0`, SHA-256
   `FF6E90EB78B827927DFF5B4ECC6B1C870C2E9BCA29ED9F48C7D348CC9E170B82`
 

@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
+import os
+from pathlib import Path, PureWindowsPath
 import subprocess
 import sys
 import tempfile
@@ -125,29 +126,56 @@ def remove_temporary_firewall_block(rule_name: str) -> None:
     _run_elevated_script(script)
 
 
+def _is_expected_windows_console_host(process: psutil.Process) -> bool:
+    try:
+        if process.name().casefold() != "conhost.exe":
+            return False
+        windir = os.environ.get("WINDIR")
+        if not windir:
+            return False
+        expected = PureWindowsPath(windir) / "System32" / "conhost.exe"
+        actual = PureWindowsPath(process.exe())
+        return str(actual).casefold() == str(expected).casefold()
+    except (psutil.Error, OSError, ValueError):
+        return False
+
+
+def _describe_process(process: psutil.Process) -> dict[str, object]:
+    try:
+        name = process.name()
+    except (psutil.Error, OSError):
+        name = "<unavailable>"
+    return {"pid": process.pid, "name": name}
+
+
 def assert_no_host_descendants(pid: int | None, stage: str) -> dict[str, object]:
     if pid is None:
         raise RuntimeError(f"v10 host PID unavailable at {stage}")
     try:
         root = psutil.Process(pid)
-        descendants = [
-            process
-            for process in root.children(recursive=True)
-            if process.is_running()
-        ]
+        observed = root.children(recursive=True)
     except (psutil.Error, OSError) as exc:
         raise RuntimeError(f"could not inspect v10 host process tree at {stage}: {exc}") from exc
+
+    descendants: list[psutil.Process] = []
+    allowed_console_hosts: list[dict[str, object]] = []
+    for process in observed:
+        try:
+            if not process.is_running():
+                continue
+        except (psutil.NoSuchProcess, OSError):
+            continue
+        if _is_expected_windows_console_host(process):
+            allowed_console_hosts.append(_describe_process(process))
+        else:
+            descendants.append(process)
+
     evidence = {
         "stage": stage,
         "host_pid": pid,
         "descendant_count": len(descendants),
-        "descendants": [
-            {
-                "pid": process.pid,
-                "name": process.name(),
-            }
-            for process in descendants
-        ],
+        "descendants": [_describe_process(process) for process in descendants],
+        "allowed_console_hosts": allowed_console_hosts,
     }
     if descendants:
         raise RuntimeError(

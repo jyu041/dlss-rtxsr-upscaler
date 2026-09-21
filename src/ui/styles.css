@@ -378,12 +378,39 @@ button.primary {
 }
 
 .compact-settings {
+  --form-gap-width: 6px;
   margin-top: 7px;
 }
 
 .compact-settings > .label-wrap,
 .compact-settings > button {
   min-height: 34px;
+}
+
+/* Gradio's default form gap and padded component shells make tuning panels
+   unnecessarily tall. Keep this scoped to the collapsed tuning sections. */
+.compact-settings .form {
+  gap: 6px !important;
+}
+
+.compact-settings .compact-control.form {
+  --form-gap-width: 2px;
+  gap: 2px !important;
+  margin: 0 !important;
+}
+
+.compact-settings .compact-control .setting-label {
+  margin: 2px 0 0 !important;
+}
+
+.compact-settings .compact-control .block.padded,
+.compact-settings .compact-native-control.block.padded {
+  padding-top: 7px !important;
+  padding-bottom: 7px !important;
+}
+
+.compact-settings .compact-native-control {
+  margin: 0 !important;
 }
 
 .job-progress {

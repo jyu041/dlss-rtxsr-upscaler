@@ -48,3 +48,5 @@ def test_render_result_uses_browser_safe_preview_proxy():
     source = APP.read_text(encoding="utf-8")
     assert 'browser_preview = _browser_preview(destination)' in source
     assert 'browser preview: first 12s' in source
+    assert "output {stats['output_fps']:.3f} FPS" in source
+    assert "render throughput {stats['end_to_end_fps']:.2f} output frames/s" in source

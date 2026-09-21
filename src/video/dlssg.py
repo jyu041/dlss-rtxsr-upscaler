@@ -172,7 +172,7 @@ def _vram_mib() -> int | None:
     try:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=5, check=False,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5, check=False,
         )
         return int(result.stdout.strip().splitlines()[0]) if result.returncode == 0 else None
     except (OSError, ValueError, subprocess.TimeoutExpired, IndexError):
@@ -592,7 +592,7 @@ def render_dlssg(
             mux = subprocess.run(
                 [ffmpeg, "-y", "-v", "error", "-i", str(temporary), "-i", str(source_path), "-map", "0:v:0",
                  "-map", "1:a?", "-c:v", "copy", "-c:a", "copy", "-map_metadata", "1", str(destination_path)],
-                capture_output=True, text=True, check=False,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
             )
             if mux.returncode:
                 raise RuntimeError(f"audio remux failed: {mux.stderr[-4000:]}")

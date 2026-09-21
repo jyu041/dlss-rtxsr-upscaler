@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections import defaultdict, deque
 import heapq
 import hashlib
-import io
 import json
 import os
 from pathlib import Path
@@ -382,7 +381,7 @@ def render_dlssg(
     worker_log_stream = (
         log_path.open("w", encoding="utf-8")
         if write_sidecars
-        else io.StringIO()
+        else open(os.devnull, "w", encoding="utf-8")
     )
     worker_nvof_initializations = worker_create_features = worker_evaluates = 0
     worker_device_removal_queries: set[str] = set()

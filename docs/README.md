@@ -26,7 +26,7 @@ phrases such as "not implemented", "future work", or "candidate".
 | [Third-party inventory](THIRD_PARTY.md) | Dependency/licensing inventory |
 | [Development](DEVELOPMENT.md) | Contributor workflow |
 | [Project status](PROJECT_STATUS.md) | What is complete, deliberately deferred, or hardware-dependent |
-| [v0.2.0-beta.1 release notes](RELEASE_NOTES_v0.2.0-beta.1.md) | Current source-beta changes, validation scope, and limitations |
+| [v0.2.0-beta.2 release notes](RELEASE_NOTES_v0.2.0-beta.2.md) | Current source-beta changes, validation scope, and limitations |
 | [Binary distribution boundary](legal/BINARY_DISTRIBUTION_NOTICES.md) | Packaging/distribution constraints |
 
 ## Current hardware evidence
@@ -34,6 +34,7 @@ phrases such as "not implemented", "future work", or "candidate".
 These dated documents support current capability claims and should remain
 separate from generic installation documentation:
 
+- [Unified DLSS 5 v10 hardware validation](DLSS5_UNIFIED_V10_HARDWARE_2026-09-21.md)
 - [DLSS 5 v10 application hardware validation](DLSS5_V10_APP_HARDWARE_2026-09-19.md)
 - [Managed grid4 worker hardware validation](MFG_GRID4_MANAGED_WORKER_HARDWARE_2026-09-19.md)
 - [MFG GPU timestamp instrumentation](MFG_GPU_TIMESTAMP_INSTRUMENTATION_2026-09-18.md)

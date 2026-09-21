@@ -71,7 +71,9 @@ default, the job fails explicitly instead of silently ignoring the setting.
 ## General behavior
 
 Ordinary application startup does not download replacement runtimes and the
-application never silently switches enhancement backends.
+application never silently switches enhancement families. The single DLSS 5
+mode may use its retained compatibility runtime, but the status and completion
+message explicitly report that fallback.
 
 DLSS paths are SDR-oriented and do not promise HDR preservation. Performance
 and output characteristics are hardware/runtime/content dependent.

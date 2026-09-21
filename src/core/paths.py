@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 import os, uuid
 
@@ -24,6 +25,11 @@ def aligned_dimensions(width: int, height: int, scale: float = 1.0, target: tupl
         raw = target
     return max(8, round(raw[0] / 8) * 8), max(8, round(raw[1] / 8) * 8)
 
+def _output_timestamp() -> str:
+    """Return the local wall-clock timestamp used in user-facing filenames."""
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
 def output_path(source: Path, mode: str, container: str, scale: float = 1, multiplier: int = 2) -> Path:
     tag = (
         f"dlssg_{multiplier}x"
@@ -36,4 +42,18 @@ def output_path(source: Path, mode: str, container: str, scale: float = 1, multi
         if mode.startswith("DLSS")
         else f"rtxvsr_{scale:g}x"
     )
-    return OUTPUTS / f"{source.stem}_{tag}.{container.lower()}"
+    timestamp = _output_timestamp()
+    suffix = container.lower()
+    candidate = OUTPUTS / f"{source.stem}_{timestamp}_{tag}.{suffix}"
+    if not candidate.exists():
+        return candidate
+
+    # One GPU job runs at a time, but repeated/manual calls can still land in
+    # the same wall-clock second. Keep the human-readable second-level timestamp
+    # and add a deterministic counter rather than ever reusing an existing name.
+    index = 2
+    while True:
+        candidate = OUTPUTS / f"{source.stem}_{timestamp}_{index}_{tag}.{suffix}"
+        if not candidate.exists():
+            return candidate
+        index += 1

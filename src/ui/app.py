@@ -1,4 +1,4 @@
-import os, json, shutil, sys, tempfile, traceback, warnings
+import hashlib, os, json, shutil, subprocess, sys, tempfile, traceback, warnings
 
 # Gradio 6.16 currently references Starlette's deprecated HTTP 422 alias on
 # queue joins. It is upstream noise rather than an application failure, so
@@ -194,6 +194,87 @@ def inspect(path):
     except Exception as e: return f"<span class=\"error\">Inspection failed: {e}</span>", f"Inspection failed: {e}"
 
 
+def _browser_preview(path: str | Path, *, seconds: float = 12.0) -> str:
+    """Create a short, normalized H.264/AAC MP4 strictly for browser playback."""
+    source = Path(path).expanduser().resolve()
+    stat = source.stat()
+    identity = f"{source}|{stat.st_size}|{stat.st_mtime_ns}".encode("utf-8", errors="surrogatepass")
+    key = hashlib.sha256(identity).hexdigest()[:20]
+    root = TEMP / "source_preview"
+    root.mkdir(parents=True, exist_ok=True)
+    directory = root / key
+    destination = directory / "browser-preview.mp4"
+    if destination.is_file() and destination.stat().st_size > 0:
+        return str(destination)
+
+    directory.mkdir(parents=True, exist_ok=True)
+    command = [
+        ffmpeg_executable(),
+        "-y",
+        "-v",
+        "error",
+        "-i",
+        str(source),
+        "-t",
+        str(max(1.0, float(seconds))),
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a?",
+        "-map_metadata",
+        "-1",
+        "-vf",
+        r"scale=min(1280\,iw):-2",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "22",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-movflags",
+        "+faststart",
+        str(destination),
+    ]
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=180,
+        check=False,
+    )
+    if result.returncode or not destination.is_file() or destination.stat().st_size == 0:
+        destination.unlink(missing_ok=True)
+        detail = (result.stderr or result.stdout or "FFmpeg did not create a preview")[-2000:]
+        raise RuntimeError(f"browser preview conversion failed: {detail}")
+
+    old = sorted(
+        (item for item in root.iterdir() if item.is_dir() and item != directory),
+        key=lambda item: item.stat().st_mtime,
+    )
+    for item in old[:-3]:
+        shutil.rmtree(item, ignore_errors=True)
+    return str(destination)
+
+
+def inspect_with_preview(path):
+    summary, detail = inspect(path)
+    if not path or detail.startswith("Inspection failed"):
+        return summary, detail, None
+    try:
+        return summary, detail, _browser_preview(path)
+    except Exception as exc:
+        _log_ui_exception("Source browser preview", exc)
+        return summary, detail + f"\n\nBrowser preview unavailable: {exc}", None
+
+
 def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", shimmer_suppression=0.0, color_strength=1.0, tone_preservation=0.0, v10_nr_passes=1, v10_face_skin_protection=0.0, v10_grain_preservation=0.0, v10_shimmer_suppression=0.70, v10_prefer_nvof="Off", *dlssg_settings):
     if not path: return None, None, "Choose an input video."
     try:
@@ -318,12 +399,18 @@ def default_mode():
 def load_last_render():
     path = load_last_successful_render()
     if not path:
-        return None, '<span class="muted">No previous render available.</span>', "No previous render available.", None, None, None, "No previous render available.", gr.update(interactive=False)
+        return None, '<span class="muted">No previous render available.</span>', "No previous render available.", None, None, None, None, "No previous render available.", gr.update(interactive=False)
     summary, detail = inspect(path)
     if detail.startswith("Inspection failed"):
         clear_last_successful_render()
-        return None, '<span class="error">Previous render is not a readable video.</span>', detail, None, None, None, "Previous render is not a readable video.", gr.update(interactive=False)
-    return path, summary, detail, None, None, None, f"Loaded last successful render: {Path(path).name}", gr.update(interactive=True)
+        return None, '<span class="error">Previous render is not a readable video.</span>', detail, None, None, None, None, "Previous render is not a readable video.", gr.update(interactive=False)
+    try:
+        source_preview = _browser_preview(path)
+    except Exception as exc:
+        _log_ui_exception("Last render browser preview", exc)
+        source_preview = None
+        detail += f"\n\nBrowser preview unavailable: {exc}"
+    return path, summary, detail, source_preview, None, None, None, f"Loaded last successful render: {Path(path).name}", gr.update(interactive=True)
 
 
 def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, container_value, codec_value, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale=1.0, recompose_backend="auto", shimmer_suppression=0.0, color_strength=1.0, tone_preservation=0.0, v10_nr_passes=1, v10_face_skin_protection=0.0, v10_grain_preservation=0.0, v10_shimmer_suppression=0.70, v10_prefer_nvof="Off", dlssg_motion="NVIDIA Optical Flow", dlssg_depth="Constant 0.5", dlssg_multiplier=2, dlssg_nvof_profile=NVOF_PROFILE_VALIDATED):
@@ -518,9 +605,14 @@ def build():
                             type="filepath",
                         )
                         gr.Markdown(
-                            "Source upload is file-based so browser codec support does not gate processing. "
-                            "Use **Preview Frame** or **Preview Clip** for an in-app visual preview.",
+                            "The original file is used for processing. The player below is a short "
+                            "browser-safe H.264/AAC proxy and does not modify the source.",
                             elem_classes="input-compatibility-note",
+                        )
+                        source_preview = gr.Video(
+                            label="Source preview (first 12 seconds)",
+                            interactive=False,
+                            include_audio=True,
                         )
                         load_render = gr.Button("Load Last Render", interactive=bool(previous_render), elem_classes="load-render")
                         summary = gr.HTML('<span class="muted">No video selected.</span>')
@@ -681,8 +773,8 @@ def build():
         def visibility(selected):
             rtx_visible, dlss_visible, sr_visible, dlssg_visible = mode_visibility(selected)
             return gr.update(visible=rtx_visible), gr.update(visible=dlss_visible), gr.update(visible=sr_visible), gr.update(visible=dlssg_visible)
-        inp.change(inspect, inp, [summary, info])
-        load_render.click(load_last_render, outputs=[inp, summary, info, before, after, result_video, job, load_render])
+        inp.change(inspect_with_preview, inp, [summary, info, source_preview])
+        load_render.click(load_last_render, outputs=[inp, summary, info, source_preview, before, after, result_video, job, load_render])
         mode.change(lambda value: value, mode, state)
         mode.change(visibility, mode, [rtx_group, dlss_group, sr_group, dlssg_group])
         preset.change(apply_preset, preset, [nrpreset, style, intensity, tone, structure, skin, mask])

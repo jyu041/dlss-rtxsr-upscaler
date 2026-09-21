@@ -69,7 +69,7 @@ present.  This is not a blind `MultiFrameCountMax` override.
 The exact runtime path was:
 
 ```text
-C:\Users\mark\Desktop\dlss-community-research\dlssg_for_sm86\version.dll
+C:\Users\<user>\Desktop\dlss-community-research\dlssg_for_sm86\version.dll
 ```
 
 The adjacent `dlssg_sm86.ini` was restored to its original `Logging.Level=1`

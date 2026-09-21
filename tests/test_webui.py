@@ -323,6 +323,28 @@ def test_webui_is_task_first_and_separates_configuration_and_diagnostics():
 
 
 
+def test_webui_progress_is_local_to_preview_and_dlss5_is_compact():
+    source = open("src/ui/app.py", encoding="utf-8").read()
+    css = open("src/ui/styles.css", encoding="utf-8").read()
+
+    preview_column = source.index('with gr.Column(scale=40, min_width=420, elem_classes=["workspace-card", "preview-panel"])')
+    progress = source.index('progress_panel = gr.HTML(')
+    preview_heading = source.index('gr.Markdown("## Preview / Output")')
+    configuration = source.index('with gr.Tab("Configuration")')
+    assert preview_column < progress < preview_heading < configuration
+    assert 'elem_classes=["workspace-progress", "preview-progress"]' in source
+
+    dlss5_start = source.index('with gr.Column(visible=dlss_initial, elem_classes=["backend-panel", "backend-dlss"])')
+    dlss5_end = source.index('with gr.Column(visible=sr_initial', dlss5_start)
+    dlss5 = source[dlss5_start:dlss5_end]
+    assert 'with gr.Accordion("Quality tuning", open=False' in dlss5
+    assert 'with gr.Accordion("Advanced runtime / neural controls", open=False' in dlss5
+    assert 'gr.Markdown("#### Experimental quality composition")' not in dlss5
+    assert 'class="compact-note"' not in dlss5
+    assert ".preview-progress .job-progress" in css
+    assert ".compact-settings" in css
+
+
 def test_webui_second_pass_uses_progressive_disclosure_for_status_and_runtime_inventory():
     source = open("src/ui/app.py", encoding="utf-8").read()
     css = open("src/ui/styles.css", encoding="utf-8").read()

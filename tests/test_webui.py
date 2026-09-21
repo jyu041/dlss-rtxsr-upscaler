@@ -339,10 +339,14 @@ def test_webui_progress_is_local_to_preview_and_dlss5_is_compact():
     dlss5 = source[dlss5_start:dlss5_end]
     assert 'with gr.Accordion("Quality tuning", open=False' in dlss5
     assert 'with gr.Accordion("Advanced runtime / neural controls", open=False' in dlss5
+    assert 'with gr.Group(elem_classes="compact-control")' in dlss5
+    assert 'elem_classes="compact-native-control"' in dlss5
     assert 'gr.Markdown("#### Experimental quality composition")' not in dlss5
     assert 'class="compact-note"' not in dlss5
     assert ".preview-progress .job-progress" in css
-    assert ".compact-settings" in css
+    assert ".compact-settings .form" in css
+    assert ".compact-settings .compact-control.form" in css
+    assert "gap: 2px !important;" in css
 
 
 def test_webui_second_pass_uses_progressive_disclosure_for_status_and_runtime_inventory():

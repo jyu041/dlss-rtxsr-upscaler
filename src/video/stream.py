@@ -5,7 +5,28 @@ import numpy as np
 from src.core.process_utils import tool
 from src.core.paths import aligned_dimensions
 from src.core.progress import report_progress
+from src.video.nvenc import nvenc_preflight
 from src.video.rtx_vsr_worker import RTXVSRSession
+
+
+def _preflight_encoder(codec: str, width: int, height: int) -> None:
+    result = nvenc_preflight(codec, width, height)
+    if result["available"]:
+        return
+
+    detail = result.get("stderr_tail") or "unknown FFmpeg/NVENC error"
+    hint = ""
+    if codec == "H.264":
+        hevc = nvenc_preflight("HEVC", width, height)
+        if hevc["available"]:
+            hint = (
+                " HEVC NVENC passed at the same output size; choose HEVC in "
+                "Output settings or reduce the RTX VSR scale."
+            )
+    raise RuntimeError(
+        f"RTX VSR cannot encode {width}x{height} with {codec} "
+        f"({result.get('encoder') or 'unknown encoder'}): {detail}{hint}"
+    )
 
 def render_vsr(source, destination, backend, scale=2.0, quality="ULTRA", mode="Super Resolution", cancel=None, progress=None, codec="H.264"):
     ffmpeg = tool("ffmpeg")
@@ -19,6 +40,7 @@ def render_vsr(source, destination, backend, scale=2.0, quality="ULTRA", mode="S
     video_only = Path(destination).with_suffix(".video_only.mp4")
     enc = {"H.264": "h264_nvenc", "HEVC": "hevc_nvenc"}.get(codec)
     if not enc: raise ValueError("RTX VSR supports H.264 and HEVC NVENC only")
+    _preflight_encoder(codec, output[0], output[1])
     enc_cmd = [ffmpeg, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{output[0]}x{output[1]}", "-r", str(info["fps"]), "-i", "-", "-an", "-c:v", enc, "-preset", "p5", "-cq", "19", str(video_only)]
     report_progress(progress, frame_index=0, total_frames=frames, phase="INITIALIZING", message="Initializing RTX VSR")
     decoder = encoder = None
@@ -36,7 +58,19 @@ def render_vsr(source, destination, backend, scale=2.0, quality="ULTRA", mode="S
             if not raw: break
             if len(raw) != frame_bytes: raise RuntimeError("FFmpeg returned a truncated RGB frame")
             cpu = session.process_frame(count, np.frombuffer(raw, dtype=np.uint8).reshape(height, width, 3).copy())
-            encoder.stdin.write(cpu.tobytes())
+            try:
+                encoder.stdin.write(cpu.tobytes())
+            except OSError as exc:
+                encoder_code = encoder.poll()
+                if encoder_code is not None:
+                    details = (
+                        encoder.stderr.read() if encoder.stderr else b""
+                    ).decode(errors="replace")[-2000:]
+                    raise RuntimeError(
+                        f"RTX VSR FFmpeg encoder exited with code {encoder_code}: "
+                        f"{details or exc}"
+                    ) from exc
+                raise
             count += 1
             if count == 1 or count % 100 == 0:
                 sample = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)

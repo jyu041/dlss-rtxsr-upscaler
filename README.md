@@ -21,28 +21,26 @@ actions.
 
 ## Backends
 
-The application exposes five selectable modes across four backend families.
-Backends are explicit and fail closed: if the selected runtime is missing,
-modified, incompatible, or not approved, the application reports the problem
-instead of silently switching to another processor.
+The application exposes four selectable modes across four backend families.
+Backends are explicit and fail closed. DLSS 5 is presented as one user-facing
+mode: the isolated v10 runtime is preferred when its preflight is ready, while
+the validated v3 path is retained only as an internal compatibility fallback.
 
 | Mode | Purpose | Default / normal path | Provisioning |
 | --- | --- | --- | --- |
 | **RTX VSR** | Conventional enhancement, denoise/deblur, super resolution | Super Resolution · 2× · ULTRA | Python/VFX dependencies installed by `setup.bat` |
 | **DLSS SR** | Temporal super resolution through a standalone D3D12/NGX host | Quality · Default model | Host/runtime installed by `setup.bat`; local self-test attempted |
 | **DLSS Frame Generation** | 2×/3×/4× temporal interpolation | Validated C55/grid1 profile | Worker, SM86 direct-host runtime, and NVIDIA provider installed by `setup.bat`; hardware validation attempted |
-| **DLSS 5 v3** | Experimental Neural Rendering | 1.0× on the validated Ampere path | Optional setup-time provisioning after explicit approval/security gates |
-| **DLSS 5 v10 Experimental** | Experimental scene-aware Neural Rendering | 1.0×, up to 1920×1080-equivalent input | Explicit preflight from the Configuration page; never selected by default |
+| **DLSS 5** | Experimental Neural Rendering | Preferred v10 runtime; 1.0× output with Auto/100/87.5/75/67/50% neural working resolution | Preferred runtime uses explicit Configuration preflight; validated v3 provisioning remains an optional compatibility fallback |
 
 ### What the modes do
 
 - **RTX VSR** uses NVIDIA RTX Video SDK processing for conventional video enhancement.
 - **DLSS SR** runs standalone NVIDIA NGX DLSS Super Resolution with estimated optical-flow motion guidance. It is not a game integration and does not receive engine motion vectors.
 - **DLSS-G** generates intermediate frames from adjacent decoded frames. The normal application path uses the pinned C55/grid1 worker profile; the tested grid4/GPU-resident NVOF profile is available as an explicit experimental option.
-- **DLSS 5 v3** uses the validated experimental Feature-18 path after its identity, Defender, firewall, approval, and self-test gates pass.
-- **DLSS 5 v10 Experimental** uses the isolated scene-aware application path with pinned runtime identity, fresh Defender preflight, process-tree checks, temporary outbound firewall containment, NGX/CUDA result checks, and clean-close enforcement.
+- **DLSS 5** automatically uses the isolated v10 application path when its pinned runtime/preflight is ready. That path now supports reduced neural working resolution, residual recomposition, optional temporal residual stabilization, 1–4 neural passes, color/tone controls, face/skin and grain preservation, native shimmer control, and optional NVOF preference. If the preferred runtime is not ready, the validated v3 path can be used internally as a compatibility fallback without exposing a second DLSS 5 mode.
 
-DLSS 5 modes are experimental Neural Rendering paths, not conventional
+DLSS 5 is an experimental Neural Rendering path, not a conventional
 detail-preserving upscalers. They may reinterpret faces, materials, lighting,
 and other semantic content.
 
@@ -57,7 +55,7 @@ and other semantic content.
 - Separate **Enhance**, **Configuration**, and **Diagnostics** workspaces so runtime maintenance and telemetry stay out of the normal processing flow.
 - Manifest-driven runtime management with pinned URLs, hashes, destinations, and validation policy.
 - No manual runtime path entry for normal RTX VSR, DLSS SR, or validated DLSS-G use.
-- No silent backend fallback or runtime substitution.
+- No silent cross-backend substitution. When DLSS 5 uses its retained compatibility runtime, the UI reports that fallback explicitly.
 
 ## Quick Start
 
@@ -99,7 +97,7 @@ the same Conda-enabled shell.
 2. installs the pinned Python dependencies;
 3. verifies FFmpeg/FFprobe and NVENC encoder availability;
 4. installs and verifies the normal managed DLSS-G C55 worker, the separate pinned grid4 candidate worker, the DLSS SR host/runtime, the validated SM86 direct-host runtime, and the official NVIDIA DLSS-G provider;
-5. optionally provisions DLSS 5 v3 after explicit user approval and its additional security gates;
+5. optionally provisions the validated DLSS 5 v3 compatibility runtime after explicit user approval and its additional security gates;
 6. attempts local DLSS SR and DLSS-G hardware validation;
 7. runs diagnostics; and
 8. writes `config/source_env.bat` for later launches.
@@ -109,13 +107,13 @@ or cause another backend to be substituted. The affected backend remains
 unavailable or marked as needing validation while other verified modes remain
 usable.
 
-For unattended/repeat setup, `NVE_SETUP_DLSS5=1` opts into DLSS 5 v3
-provisioning and `NVE_SETUP_DLSS5=0` skips its prompt.
+For unattended/repeat setup, `NVE_SETUP_DLSS5=1` opts into provisioning the
+validated v3 compatibility runtime and `NVE_SETUP_DLSS5=0` skips its prompt.
 
-DLSS 5 v10 is intentionally not provisioned during the normal setup path.
-When a user chooses to use it, **Configuration → DLSS 5 v10 experimental
-readiness → Refresh DLSS 5 v10 preflight** performs the explicit pinned
-archive/staging/Defender step.
+The preferred v10 runtime is intentionally not activated silently during normal
+setup. **Configuration → DLSS 5 preferred runtime readiness → Refresh DLSS 5
+runtime preflight** performs the explicit pinned archive/staging/Defender step.
+Once ready, the single **DLSS 5** mode uses v10 automatically.
 
 Detailed installation and repair notes are in
 [`docs/INSTALL.md`](docs/INSTALL.md) and
@@ -164,8 +162,8 @@ The project is designed around explicit, auditable local execution:
 - Managed components are checked against source-controlled identity policy before activation.
 - The normal application does not silently download replacement runtimes at startup.
 - Missing or modified runtimes fail closed with diagnostics.
-- DLSS 5 v3 requires its additional pinned-hash, Defender, firewall, approval, and Feature-18 self-test gates.
-- DLSS 5 v10 requires an explicit preflight and, during rendering, runs through an isolated child process with temporary outbound firewall containment, process-tree checks, NGX/CUDA validation, and mandatory cleanup.
+- The retained v3 compatibility runtime requires its additional pinned-hash, Defender, firewall, approval, and Feature-18 self-test gates.
+- The preferred v10 runtime requires an explicit preflight and, during rendering, runs through an isolated child process with temporary outbound firewall containment, process-tree checks, NGX/CUDA validation, and mandatory cleanup.
 - Experimental upstream runtime files retain their own licensing/signing properties; the project does not treat a pinned hash as a claim that third-party code is inherently safe.
 
 See [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md) and
@@ -176,9 +174,9 @@ See [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md) and
 - The main video pipeline targets SDR RGBA processing.
 - DLSS SR uses estimated optical flow rather than renderer motion vectors, depth, or jitter.
 - DLSS-G behavior is hardware/runtime dependent. C55/grid1 remains the validated default; grid4/GPU-resident NVOF is explicitly experimental.
-- DLSS 5 v3 and v10 are experimental and may materially change image content.
-- The validated RTX 3070-family DLSS 5 v3 path is restricted to 1.0× output.
-- The current DLSS 5 v10 application path is restricted to 1.0× and a maximum 1920×1080-equivalent input.
+- DLSS 5 remains experimental and may materially change image content. Higher neural-pass counts intentionally produce a stronger processed look rather than representing a simple quality ranking.
+- The preferred v10 path remains restricted to 1.0× output and the existing 1920×1080-equivalent native-input validation boundary; reduced working resolution changes the neural workload, not final output dimensions.
+- The retained RTX 3070-family v3 compatibility path is restricted to 1.0× output.
 - Performance and visual quality vary by source content, resolution, codec, driver, GPU, and backend runtime.
 - Hardware evidence in this repository is not a claim of official NVIDIA support for experimental RTX 30-series combinations.
 
@@ -186,8 +184,8 @@ See [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md) and
 
 Primary hardware validation has been performed on an RTX 3070 Ti 8 GB under
 Windows 11. The repository records successful evidence for the validated
-DLSS-G 2×/3×/4× direct-host path, the managed grid4 candidate, DLSS 5 v3
-Feature-18 execution, and the isolated DLSS 5 v10 application path.
+DLSS-G 2×/3×/4× direct-host path, the managed grid4 candidate, validated
+DLSS 5 v3 compatibility execution, and the isolated preferred v10 application path.
 
 The current v10 application renderer has passed both a 640×480 90-frame smoke
 render and the advertised 1920×1080 / 1.0× ceiling test on that hardware.

@@ -21,6 +21,8 @@ from src.backends.dlss5_v10_client import (
     V10ProtocolClient,
 )
 from src.backends.dlss5_v10_protocol import FrameRequest
+from src.backends.dlss5_quality import TemporalResidualStabilizer, resolve_working_scale
+from src.backends.dlss5_recompose import compute_working_dimensions, downsample_for_nr, residual_recompose_cpu
 from src.core.media_info import frame_total, probe
 from src.core.process_utils import tool
 from src.core.progress import report_progress
@@ -122,6 +124,9 @@ def render_dlss5_v10(
     grain_preservation: float = 0.0,
     shimmer_suppression: float = 0.70,
     prefer_nvof: bool = False,
+    nr_working_scale: float | str = 1.0,
+    recompose_backend: str = "auto",
+    temporal_stabilization: float = 0.0,
     start: float = 0.0,
     duration: float | None = None,
     codec: str = "H.264",
@@ -139,11 +144,23 @@ def render_dlss5_v10(
             "DLSS 5 v10 experimental application mode currently supports SDR RGBA8 only"
         )
     width, height, fps = int(info["width"]), int(info["height"]), float(info["fps"])
+    # Preserve the hardware-tested native-input scope even when the neural work
+    # itself runs at a reduced resolution.
     backend.validate_geometry(width, height, scale)
+    resolved_working_scale = resolve_working_scale(nr_working_scale, width, height)
+    working_width, working_height = compute_working_dimensions(
+        width, height, resolved_working_scale
+    )
+    requested_recompose_backend = str(recompose_backend).strip().lower()
+    if requested_recompose_backend not in {"auto", "cuda", "cpu"}:
+        raise ValueError("recompose_backend must be auto, cuda, or cpu")
+    if not 0.0 <= float(temporal_stabilization) <= 1.0:
+        raise ValueError("temporal_stabilization must be in [0, 1]")
+
     frame_count, estimated = frame_total(info, duration)
     request = backend.create_request(
-        width,
-        height,
+        working_width,
+        working_height,
         scale=scale,
         style=style,
         intensity=intensity,
@@ -200,10 +217,21 @@ def render_dlss5_v10(
     decode_read_ms = 0.0
     scene_cut_ms = 0.0
     native_process_ms = 0.0
+    preprocess_ms = 0.0
+    recompose_ms = 0.0
+    temporal_compose_ms = 0.0
     encoder_write_ms = 0.0
     rule_name = f"NVE DLSS5 v10 app {os.getpid()}-{int(started * 1000) & 0xFFFF:X}"
     firewall_installed = False
     clean_close = False
+    compositor = None
+    recompose_backend_used = "native"
+    recompose_fallback_reason = None
+    temporal = TemporalResidualStabilizer(
+        shimmer_suppression=float(temporal_stabilization),
+        color_strength=1.0,
+        tone_preservation=0.0,
+    ) if float(temporal_stabilization) > 0.0 else None
 
     try:
         install_temporary_firewall_block(Path(sys.executable), rule_name)
@@ -219,10 +247,10 @@ def render_dlss5_v10(
         create = client.create(request)
         if create.get("native_loaded") is not True:
             raise RuntimeError("DLSS5 v10 application CREATE did not load the native runtime")
-        if create.get("output_size") != [width, height]:
+        if create.get("output_size") != [working_width, working_height]:
             raise RuntimeError(
                 f"DLSS5 v10 application CREATE output_size={create.get('output_size')!r}, "
-                f"expected {[width, height]}"
+                f"expected {[working_width, working_height]}"
             )
         initialization = create.get("initialization", {})
         if not isinstance(initialization, dict):
@@ -232,6 +260,35 @@ def render_dlss5_v10(
                 f"DLSS5 v10 application bridge ABI {initialization.get('bridge_abi_version')!r} != 6"
             )
         assert_no_host_descendants(client.pid, "app_after_create")
+
+        if resolved_working_scale < 1.0:
+            if requested_recompose_backend != "cpu":
+                try:
+                    from src.backends.dlss5_cuda_recompose import (
+                        CudaResidualCompositor,
+                        select_cuda_device,
+                    )
+                    device = select_cuda_device()
+                    if device is None:
+                        raise RuntimeError(
+                            "No unambiguous CUDA device is available for DLSS 5 recomposition"
+                        )
+                    compositor = CudaResidualCompositor(
+                        width,
+                        height,
+                        working_width,
+                        working_height,
+                        device=device,
+                    )
+                    recompose_backend_used = "cuda"
+                except Exception as exc:
+                    if requested_recompose_backend == "cuda":
+                        raise
+                    recompose_fallback_reason = str(exc)
+                    compositor = None
+                    recompose_backend_used = "cpu"
+            else:
+                recompose_backend_used = "cpu"
 
         encoder_name = {
             "H.264": "h264_nvenc",
@@ -295,23 +352,58 @@ def render_dlss5_v10(
                 if bool(cut["is_cut"]):
                     reset = True
                     cuts += 1
+            preprocess_started = time.perf_counter()
+            native_rgba = np.frombuffer(raw_frame, dtype=np.uint8).reshape(
+                height, width, 4
+            )
+            working_source = (
+                native_rgba
+                if resolved_working_scale == 1.0
+                else downsample_for_nr(native_rgba, working_width, working_height)
+            )
+            preprocess_ms += (time.perf_counter() - preprocess_started) * 1000
+
             process_started = time.perf_counter()
             output = client.process_frame(
-                FrameRequest(timestamp=count, reset=reset, rgba=raw_frame)
+                FrameRequest(
+                    timestamp=count,
+                    reset=reset,
+                    rgba=np.ascontiguousarray(working_source).tobytes(),
+                )
             )
             native_process_ms += (time.perf_counter() - process_started) * 1000
             _validate_output(
                 output,
-                width=width,
-                height=height,
+                width=working_width,
+                height=working_height,
                 timestamp=count,
                 reset=reset,
             )
             assert_no_host_descendants(client.pid, f"app_after_frame_{count}")
 
-            rendered = np.frombuffer(output.rgba, dtype=np.uint8).reshape(
-                height, width, 4
+            rendered_working = np.frombuffer(output.rgba, dtype=np.uint8).reshape(
+                working_height, working_width, 4
             )
+            recompose_started = time.perf_counter()
+            if resolved_working_scale == 1.0:
+                rendered = rendered_working
+            elif compositor is None:
+                rendered = residual_recompose_cpu(
+                    native_rgba, working_source, rendered_working
+                )
+            else:
+                rendered, _ = compositor.compose(
+                    native_rgba, working_source, rendered_working
+                )
+            recompose_ms += (time.perf_counter() - recompose_started) * 1000
+
+            if temporal is not None:
+                temporal_started = time.perf_counter()
+                rendered, _ = temporal.compose(native_rgba, rendered, reset=reset)
+                temporal_compose_ms += (
+                    time.perf_counter() - temporal_started
+                ) * 1000
+
             try:
                 write_started = time.perf_counter()
                 encoder.stdin.write(
@@ -427,6 +519,13 @@ def render_dlss5_v10(
             "fps": count / max(0.001, total_wall_seconds),
             "processing_fps": count / max(0.001, processing_loop_wall_seconds),
             "dimensions": (width, height),
+            "working_dimensions": (working_width, working_height),
+            "nr_working_scale_requested": nr_working_scale,
+            "nr_working_scale_resolved": resolved_working_scale,
+            "recompose_backend_requested": requested_recompose_backend,
+            "recompose_backend_used": recompose_backend_used,
+            "recompose_fallback_reason": recompose_fallback_reason,
+            "temporal_stabilization": float(temporal_stabilization),
             "audio_preserved": bool(info["audio_codec"] != "none"),
             "scene_resets": resets,
             "detected_scene_cuts": cuts,
@@ -452,6 +551,9 @@ def render_dlss5_v10(
                 "decode_read_ms": decode_read_ms,
                 "scene_cut_ms": scene_cut_ms,
                 "native_process_ms": native_process_ms,
+                "preprocess_ms": preprocess_ms,
+                "recompose_ms": recompose_ms,
+                "temporal_compose_ms": temporal_compose_ms,
                 "encoder_write_ms": encoder_write_ms,
                 "transport": "double-buffered-readinto/host-protocol/rawvideo-stdin",
             },
@@ -461,6 +563,11 @@ def render_dlss5_v10(
             "initialization": initialization,
         }
     finally:
+        if compositor is not None:
+            try:
+                compositor.close()
+            except Exception:
+                pass
         if not clean_close:
             try:
                 client.abort()

@@ -53,11 +53,13 @@ Use synthetic or owned media. Do not run unrestricted recursive pytest
 discovery when an extracted local runtime tree exists; target `tests`
 explicitly.
 
-## DLSS5 v10 research and experimental application gates
+## DLSS 5 preferred-runtime research and application gates
 
 The generic/default v10 host path remains disabled. The validated research
-sequence remains available, and the application exposes a separate explicit
-`DLSS 5 v10 Experimental` mode rather than silently replacing v3:
+sequence remains available, but the application now exposes one **DLSS 5** mode.
+The unified dispatcher selects the isolated v10 application runtime whenever its
+explicit preflight is ready and otherwise retains v3 only as an internal
+compatibility fallback:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\run_dlss5_v10_bounded.ps1 -Execute
@@ -100,12 +102,15 @@ requires all three review videos and prints their paths explicitly.
 
 The bounded research wrappers and the application smoke wrapper refresh the
 pinned runtime/static audit and Defender preflight before native execution. The
-application smoke runs the same `render_dlss5_v10()` path used by the UI for a
-short clip and requires the exact `EXPERIMENTAL_APP_SCENE_AWARE_V10`
-acknowledgement. The UI exposes a separate **Refresh DLSS 5 v10 preflight**
-button before experimental rendering. Current application constraints are SDR
-RGBA8, 1.0x processing scale, and up to 1920x1080-equivalent geometry.
+application smoke runs the same underlying `render_dlss5_v10()` path used by the
+unified dispatcher and requires the exact `EXPERIMENTAL_APP_SCENE_AWARE_V10`
+acknowledgement. The UI exposes **Refresh DLSS 5 runtime preflight** before the
+preferred runtime can activate. Current native-input constraints remain SDR
+RGBA8, 1.0x output, and up to 1920x1080-equivalent geometry.
 
-These remain explicit developer/experimental paths, not ordinary pytest and
-not an automatic replacement for DLSS 5 v3.
+The unified v10 application path additionally supports the shared
+Auto/100/87.5/75/67/50% neural working-resolution layer, residual recomposition,
+and optional temporal residual stabilization. Those application-level controls
+do not widen the native-input hardware claim. The retained v3 implementation is
+now a compatibility fallback rather than a second user-selectable DLSS 5 mode.
 

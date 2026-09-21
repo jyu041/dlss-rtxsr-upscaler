@@ -83,6 +83,20 @@ def test_v10_app_encoder_forces_sdr_420_compatibility():
     assert "SDR_ENCODER_PIXEL_FORMAT" in source
 
 
+def test_v10_app_renderer_supports_shared_reduced_resolution_pipeline():
+    source = open("src/video/dlss5_v10.py", encoding="utf-8").read()
+    assert "resolve_working_scale" in source
+    assert "compute_working_dimensions" in source
+    assert "downsample_for_nr" in source
+    assert "residual_recompose_cpu" in source
+    assert "CudaResidualCompositor" in source
+    assert "TemporalResidualStabilizer" in source
+    assert "nr_working_scale_requested" in source
+    assert "nr_working_scale_resolved" in source
+    assert "recompose_backend_used" in source
+    assert "temporal_stabilization" in source
+
+
 def test_v10_app_renderer_source_preserves_containment_and_scene_resets():
     source = open("src/video/dlss5_v10.py", encoding="utf-8").read()
     assert "install_temporary_firewall_block" in source

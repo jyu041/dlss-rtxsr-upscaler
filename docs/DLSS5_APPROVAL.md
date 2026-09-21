@@ -1,10 +1,11 @@
 # DLSS5 Runtime Approval
 
-DLSS 5 Neural Rendering remains optional and **experimental**. The validated
-legacy execution path is the Feature-18 v3 runtime. Visual Enhancer v10 remains
-separate from v3, but it now also has an explicitly gated application mode in
-addition to its retained research harnesses. The earlier v9 candidate remains
-historical static-audit evidence.
+DLSS 5 Neural Rendering remains optional and **experimental**. The application
+now exposes one DLSS 5 mode. The isolated Visual Enhancer v10 application path
+is the preferred implementation when its explicit preflight is ready; the
+validated Feature-18 v3 runtime is retained only as an internal compatibility
+fallback while broader v10 coverage is still being established. The earlier v9
+candidate remains historical static-audit evidence.
 
 ## Normal setup path
 
@@ -146,27 +147,33 @@ conda run -n dlss-rtxsr-upscaler python tools\provision_dlss5_v3.py --archive C:
 The supplied archive must match the same pinned size and SHA-256. Arbitrary
 runtime folders and replacement DLLs are not accepted by the managed path.
 
-## Neuroframe v10 remains separate
+## Preferred v10 runtime behind the unified DLSS 5 mode
 
-Visual Enhancer v10 is still not substituted for the validated v3 Feature-18
-runtime and is not executed by setup. Runtime Manager retains the upstream
-archive as a selective/static candidate so ordinary install/start flows cannot
-silently activate it. The application now exposes a separate
-`DLSS 5 v10 Experimental` mode behind its own explicit preflight and execution
-boundary.
+Visual Enhancer v10 is not executed silently by setup. Runtime Manager retains
+the pinned upstream artifact and the Configuration page performs the explicit
+archive/staging/Defender preflight. Once that preflight is ready,
+`DLSS5UnifiedBackend` selects v10 automatically for the single user-facing
+**DLSS 5** mode. If it is not ready, the validated v3 runtime may be used
+internally when available.
 
 The v10 boundary preserves the materially different in-process D3D12/NGX bridge
 plus caller-shim lifecycle: bridge ABI 6, process-lifetime NGX state, isolated
 child execution, exact runtime identity, fresh Microsoft Defender preflight,
 temporary exact-interpreter outbound firewall blocking, process-tree checks,
 per-frame NGX/CUDA/timestamp/geometry/reset validation, scene-aware resets, and
-mandatory clean CLOSE/cleanup. It remains opt-in and never becomes the default
-or a silent replacement for v3.
+mandatory clean CLOSE/cleanup.
 
-The application path is currently restricted to SDR RGBA8, 1.0x processing and
-up to 1920x1080-equivalent input. The upstream 125-200% controls remain
-Lanczos pre-resize controls and are not treated as evidence of native >1.0x NGX
-output scaling on Ampere.
+The preferred path now wraps that native session with the runtime-agnostic
+quality/performance layer previously validated on v3: deterministic reduced
+working resolution, residual recomposition, optional temporal residual
+stabilization, and shared color/tone controls. Native v10 1–4 pass, face/skin,
+grain, shimmer, and NVOF controls remain available. A v10-only setting is never
+silently ignored by the compatibility backend.
+
+The native-input hardware scope remains SDR RGBA8, 1.0x output and up to
+1920x1080-equivalent input. Reduced working resolution changes the internal
+neural workload and recomposes onto the native source; it is not evidence of
+native >1.0x NGX output scaling or a wider validated input boundary on Ampere.
 
 On 2026-09-19 the exact application renderer passed on the RTX 3070 Ti at both
 640x480 for 90 frames and 1920x1080 for 30 frames. Both runs completed the

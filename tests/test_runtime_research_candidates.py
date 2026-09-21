@@ -34,12 +34,12 @@ def test_dlss5_v10_candidate_stays_separate_from_v3_and_requires_explicit_app_ga
     assert candidate.destination != "dlss5-v3"
 
 
-def test_setup_keeps_validated_mfg_and_dlss5_v3_paths():
+def test_setup_keeps_validated_mfg_and_provisions_preferred_dlss5_v10():
     setup = (ROOT / "setup.bat").read_text(encoding="utf-8")
     assert "DLSSG_RUNTIME_PROFILE=legacy" in setup
     assert "validate_dlssg_candidate.py --profile legacy" in setup
-    assert "provision_dlss5_v3.py" in setup
-    assert "dlss5-neuroframe-v10-static-candidate" not in setup
+    assert "provision_dlss5_v10.py" in setup
+    assert "provision_dlss5_v3.py" not in setup
 
 
 def test_startup_does_not_activate_research_candidates():

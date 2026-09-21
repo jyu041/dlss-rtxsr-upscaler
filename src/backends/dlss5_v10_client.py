@@ -602,26 +602,33 @@ class V10ProtocolClient:
                 elif value.get("native_loaded") is not False:
                     raise V10ProtocolError("invalid CLOSE acknowledgement")
 
-                try:
-                    self.process.wait(timeout=self.close_grace)
-                except subprocess.TimeoutExpired:
-                    if not self._native_mode:
-                        raise
-                    # The v10 runtime deliberately keeps D3D12/NGX/module state
-                    # process-lifetime. Once the host has acknowledged a clean
-                    # native session close, the isolated process itself is the
-                    # final lifetime boundary. Do not turn a loader/interpreter
-                    # teardown stall into a failed render: terminate only this
-                    # owned host after the clean CLOSE acknowledgement.
-                    self.process.kill()
-                    self.process.wait(timeout=5)
-                    result = "CLOSED_ACK_TERMINATED"
+                if self._native_mode and session_close == "CLOSED_PROCESS_LIFETIME":
+                    # The application host has completed its logical protocol
+                    # close. Deliberately do not enter Python/DLL teardown with
+                    # live process-lifetime NGX state: the isolated OS process
+                    # is the teardown boundary.
+                    if self.process.poll() is None:
+                        self.process.kill()
+                        self.process.wait(timeout=5)
+                    result = "CLOSED_PROCESS_LIFETIME"
                 else:
-                    if self.process.returncode != 0:
-                        raise V10ProtocolError(
-                            f"v10 protocol host exited with {self.process.returncode}"
-                        )
-                    result = "CLOSED"
+                    try:
+                        self.process.wait(timeout=self.close_grace)
+                    except subprocess.TimeoutExpired:
+                        if not self._native_mode:
+                            raise
+                        # Research-native sessions that did perform their
+                        # logical release still use supervised termination if
+                        # interpreter/DLL teardown stalls afterward.
+                        self.process.kill()
+                        self.process.wait(timeout=5)
+                        result = "CLOSED_ACK_TERMINATED"
+                    else:
+                        if self.process.returncode != 0:
+                            raise V10ProtocolError(
+                                f"v10 protocol host exited with {self.process.returncode}"
+                            )
+                        result = "CLOSED"
             except (OSError, subprocess.TimeoutExpired, TimeoutError, V10ProtocolError) as exc:
                 detail = str(exc).strip() or type(exc).__name__
                 stderr_tail = self._stderr_tail()

@@ -267,7 +267,7 @@ def apply_preset(name):
 
 
 def unavailable_action(mode, action):
-    status = DLSS5Backend().status() if mode.startswith("DLSS") else RTXVSRBackend().status()
+    status = DLSS5UnifiedBackend().status() if mode == "DLSS 5 only" else RTXVSRBackend().status()
     if not status.available:
         return f"{action} blocked: {status.name} unavailable. {status.reason}"
     return f"{action} is gated until the installed SDK adapter passes its smoke test."

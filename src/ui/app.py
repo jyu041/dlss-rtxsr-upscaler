@@ -194,17 +194,31 @@ def inspect(path):
     except Exception as e: return f"<span class=\"error\">Inspection failed: {e}</span>", f"Inspection failed: {e}"
 
 
-def _browser_preview(path: str | Path, *, seconds: float = 12.0) -> str:
-    """Create a short, normalized H.264/AAC MP4 strictly for browser playback."""
+def _browser_display_video(path: str | Path) -> str:
+    """Create a full-length browser-playable MP4 without shortening the media.
+
+    H.264/AAC inputs are losslessly remuxed: encoded video/audio packets are
+    copied unchanged while malformed metadata/timestamps are normalized and the
+    MP4 index is moved to the front for reliable browser playback. Other codecs
+    fall back to a full-resolution/full-duration H.264/AAC display copy. The
+    original source/render artifact is never replaced.
+    """
     source = Path(path).expanduser().resolve()
     stat = source.stat()
-    preview_seconds = max(1.0, float(seconds))
-    identity = f"{source}|{stat.st_size}|{stat.st_mtime_ns}|{preview_seconds:.3f}".encode("utf-8", errors="surrogatepass")
+    info = probe(source)
+    video_codec = str(info.get("codec") or "").strip().lower()
+    audio_codec = str(info.get("audio_codec") or "none").strip().lower()
+    stream_copy = video_codec in {"h264", "avc1"} and audio_codec in {"aac", "none"}
+
+    identity = (
+        f"full-display-v2|{source}|{stat.st_size}|{stat.st_mtime_ns}|"
+        f"{video_codec}|{audio_codec}|{int(stream_copy)}"
+    ).encode("utf-8", errors="surrogatepass")
     key = hashlib.sha256(identity).hexdigest()[:20]
-    root = TEMP / "browser_preview"
+    root = TEMP / "browser_display"
     root.mkdir(parents=True, exist_ok=True)
     directory = root / key
-    destination = directory / "browser-preview.mp4"
+    destination = directory / "video.mp4"
     if destination.is_file() and destination.stat().st_size > 0:
         return str(destination)
 
@@ -214,47 +228,57 @@ def _browser_preview(path: str | Path, *, seconds: float = 12.0) -> str:
         "-y",
         "-v",
         "error",
+        "-fflags",
+        "+genpts",
         "-i",
         str(source),
-        "-t",
-        str(preview_seconds),
         "-map",
         "0:v:0",
         "-map",
         "0:a?",
         "-map_metadata",
         "-1",
-        "-vf",
-        r"scale=min(1280\,iw):-2",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "22",
-        "-pix_fmt",
-        "yuv420p",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "128k",
+        "-map_chapters",
+        "-1",
+    ]
+    if stream_copy:
+        command += ["-c:v", "copy"]
+        if audio_codec != "none":
+            command += ["-c:a", "copy"]
+    else:
+        command += [
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+        ]
+        if audio_codec != "none":
+            command += ["-c:a", "aac", "-b:a", "192k"]
+    command += [
+        "-avoid_negative_ts",
+        "make_zero",
         "-movflags",
         "+faststart",
         str(destination),
     ]
+
     result = subprocess.run(
         command,
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
-        timeout=180,
+        timeout=3600,
         check=False,
     )
     if result.returncode or not destination.is_file() or destination.stat().st_size == 0:
         destination.unlink(missing_ok=True)
-        detail = (result.stderr or result.stdout or "FFmpeg did not create a preview")[-2000:]
-        raise RuntimeError(f"browser preview conversion failed: {detail}")
+        detail = (result.stderr or result.stdout or "FFmpeg did not create a display video")[-4000:]
+        raise RuntimeError(f"full-length browser video preparation failed: {detail}")
 
     old = sorted(
         (item for item in root.iterdir() if item.is_dir() and item != directory),
@@ -278,11 +302,11 @@ def select_source(path):
             detail,
         )
     try:
-        preview = _browser_preview(path)
+        preview = _browser_display_video(path)
     except Exception as exc:
-        _log_ui_exception("Source browser preview", exc)
+        _log_ui_exception("Source video display", exc)
         preview = None
-        detail += f"\n\nBrowser preview unavailable: {exc}"
+        detail += f"\n\nInput video display unavailable: {exc}"
     return (
         str(Path(path).expanduser().resolve()),
         gr.update(visible=False),
@@ -465,11 +489,11 @@ def load_last_render():
             gr.update(interactive=False),
         )
     try:
-        preview = _browser_preview(path)
+        preview = _browser_display_video(path)
     except Exception as exc:
-        _log_ui_exception("Last render browser preview", exc)
+        _log_ui_exception("Last render video display", exc)
         preview = None
-        detail += f"\n\nBrowser preview unavailable: {exc}"
+        detail += f"\n\nVideo display unavailable: {exc}"
     return (
         str(Path(path).resolve()),
         gr.update(value=None, visible=False),
@@ -552,14 +576,13 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
                 if stats.get("compatibility_fallback")
                 else "; DLSS 5 preferred runtime"
             )
-        browser_preview = None
-        preview_note = ""
+        browser_video = None
+        display_note = ""
         try:
-            browser_preview = _browser_preview(destination)
-            preview_note = "; browser preview: first 12s"
+            browser_video = _browser_display_video(destination)
         except Exception as exc:
-            _log_ui_exception("Rendered browser preview", exc)
-            preview_note = "; browser preview unavailable"
+            _log_ui_exception("Rendered video display", exc)
+            display_note = "; in-app video display unavailable"
         if processing_mode == "DLSS Frame Generation 2X":
             rate_text = (
                 f"output {stats['output_fps']:.3f} FPS; "
@@ -567,7 +590,7 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
             )
         else:
             rate_text = f"render throughput {stats['fps']:.2f} frames/s"
-        return browser_preview, f"Completed {stats.get('multiplier', 1)}X: {stats['frames']} frames; {rate_text}; {stats['dimensions'][0]}x{stats['dimensions'][1]}; audio preserved: {stats['audio_preserved']}{timing}{dlss_runtime}{preview_note}"
+        return browser_video, f"Completed {stats.get('multiplier', 1)}X: {stats['frames']} frames; {rate_text}; {stats['dimensions'][0]}x{stats['dimensions'][1]}; audio preserved: {stats['audio_preserved']}{timing}{dlss_runtime}{display_note}"
     except InterruptedError:
         if job: MONITOR.set_active(False); CONTROLLER.finish("CANCELLED", "Render cancelled")
         return None, "Render cancelled; partial output removed."
@@ -644,8 +667,8 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
             stats = render_vsr(clip_source, destination, RTXVSRBackend(), float(scale_value), quality_value, vsr_mode, job.cancel_event, progress=progress)
         MONITOR.set_active(False); CONTROLLER.finish("COMPLETED", f"Preview completed: {stats['frames']} frames")
         if processing_mode == "DLSS Frame Generation 2X":
-            before_playback = _browser_preview(clip_source, seconds=float(duration))
-            after_playback = _browser_preview(destination, seconds=float(duration))
+            before_playback = _browser_display_video(clip_source)
+            after_playback = _browser_display_video(destination)
             return before_playback, after_playback, f"Preview {stats['multiplier']}X: source {probe(clip_source)['fps']:.3f} FPS → output {stats['output_fps']:.3f} FPS; {stats['generated_frames']} generated frames; {stats['total_wall_seconds']:.2f}s"
         runtime_note = ""
         if "dlss5_runtime" in stats:
@@ -654,7 +677,7 @@ def preview_clip(path, processing_mode, vsr_mode, scale_value, quality_value, co
                 if stats.get("compatibility_fallback")
                 else "; preferred runtime"
             )
-        return None, _browser_preview(destination, seconds=float(duration)), f"Preview completed: {stats['frames']} frames at {stats['fps']:.2f} FPS; {stats['dimensions'][0]}x{stats['dimensions'][1]}{runtime_note}"
+        return None, _browser_display_video(destination), f"Preview completed: {stats['frames']} frames at {stats['fps']:.2f} FPS; {stats['dimensions'][0]}x{stats['dimensions'][1]}{runtime_note}"
     except InterruptedError:
         if job: MONITOR.set_active(False); CONTROLLER.finish("CANCELLED", "Preview cancelled")
         return None, None, "Preview cancelled; partial output removed."
@@ -698,15 +721,12 @@ def build():
                             )
                             source_preview = gr.Video(
                                 label="Input video",
+                                format="mp4",
                                 interactive=False,
                                 include_audio=True,
                                 visible=False,
                             )
                             replace_input = gr.Button("Choose a different video", visible=False, elem_classes="replace-input")
-                        gr.Markdown(
-                            "The original file is processed. The in-app player uses a browser-safe proxy.",
-                            elem_classes="input-compatibility-note",
-                        )
                         load_render = gr.Button("Load Last Render", interactive=bool(previous_render), elem_classes="load-render")
                         summary = gr.HTML('<span class="muted">No video selected.</span>')
                         with gr.Accordion("Media details", open=False):
@@ -789,15 +809,15 @@ def build():
                             container = gr.Dropdown(["MP4", "MKV", "MOV"], value="MP4", label="Container")
                     with gr.Column(scale=40, min_width=420, elem_classes=["workspace-card", "preview-panel"]):
                         gr.Markdown("## Preview / Output")
-                        with gr.Tabs(elem_classes="preview-tabs"):
-                            with gr.Tab("Frame"):
+                        with gr.Tabs(selected="video", elem_classes="preview-tabs") as preview_tabs:
+                            with gr.Tab("Video", id="video"):
+                                with gr.Row(elem_classes="preview-grid"):
+                                    before_clip = gr.Video(label="Before / source clip", format="mp4")
+                                    result_video = gr.Video(label="After / processed video", format="mp4")
+                            with gr.Tab("Frame", id="frame"):
                                 with gr.Row(elem_classes="preview-grid"):
                                     before = gr.Image(label="Before / source", type="filepath")
                                     after = gr.Image(label="After / processed", type="filepath")
-                            with gr.Tab("Video"):
-                                with gr.Row(elem_classes="preview-grid"):
-                                    before_clip = gr.Video(label="Before / source clip")
-                                    result_video = gr.Video(label="After / generated clip")
                         gr.Markdown("### Preview / Render")
                         with gr.Row(elem_classes="preview-options"):
                             timestamp = gr.Number(0, label="Timestamp (sec)")
@@ -892,9 +912,12 @@ def build():
         v10_refresh.click(refresh_dlss5_v10_preflight, outputs=[status, v10_readiness], show_progress="full")
         runtime_refresh.click(runtime_cards_markdown, outputs=runtime_cards, show_progress="hidden")
         runtime_action_button.click(runtime_action, [runtime_ids, runtime_action_choice, runtime_archive], runtime_action_result, show_progress="full")
-        frame.click(do_frame, [source_state, timestamp, state, vsr_mode, scale, quality, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, shimmer_suppression, color_strength, tone_preservation, v10_nr_passes, v10_face_skin_protection, v10_grain_preservation, v10_shimmer_suppression, v10_prefer_nvof, *dlssg_inputs], [before, after, job])
-        clip.click(preview_clip, [source_state, state, vsr_mode, scale, quality, container, timestamp, preview_duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, shimmer_suppression, color_strength, tone_preservation, v10_nr_passes, v10_face_skin_protection, v10_grain_preservation, v10_shimmer_suppression, v10_prefer_nvof, *dlssg_inputs], [before_clip, result_video, job])
-        render.click(render_video, [source_state, state, vsr_mode, scale, quality, container, codec, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, shimmer_suppression, color_strength, tone_preservation, v10_nr_passes, v10_face_skin_protection, v10_grain_preservation, v10_shimmer_suppression, v10_prefer_nvof, *dlssg_inputs], [result_video, job])
+        frame_event = frame.click(do_frame, [source_state, timestamp, state, vsr_mode, scale, quality, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, shimmer_suppression, color_strength, tone_preservation, v10_nr_passes, v10_face_skin_protection, v10_grain_preservation, v10_shimmer_suppression, v10_prefer_nvof, *dlssg_inputs], [before, after, job])
+        frame_event.then(lambda: gr.Tabs(selected="frame"), outputs=preview_tabs, show_progress="hidden")
+        clip_event = clip.click(preview_clip, [source_state, state, vsr_mode, scale, quality, container, timestamp, preview_duration, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, shimmer_suppression, color_strength, tone_preservation, v10_nr_passes, v10_face_skin_protection, v10_grain_preservation, v10_shimmer_suppression, v10_prefer_nvof, *dlssg_inputs], [before_clip, result_video, job])
+        clip_event.then(lambda: gr.Tabs(selected="video"), outputs=preview_tabs, show_progress="hidden")
+        render_event = render.click(render_video, [source_state, state, vsr_mode, scale, quality, container, codec, dlss_scale, nrpreset, style, intensity, tone, structure, skin, mask, model, sr_mode, sr_model, nr_working_scale, recompose_backend, shimmer_suppression, color_strength, tone_preservation, v10_nr_passes, v10_face_skin_protection, v10_grain_preservation, v10_shimmer_suppression, v10_prefer_nvof, *dlssg_inputs], [result_video, job])
+        render_event.then(lambda: gr.Tabs(selected="video"), outputs=preview_tabs, show_progress="hidden")
         stop.click(lambda: (CONTROLLER.cancel() or "Cancellation requested."), None, job)
         refresh_timer.tick(lambda: (metrics_html(), progress_html(CONTROLLER.snapshot())), outputs=[metrics, progress_panel], show_progress="hidden", queue=False)
         rtx_save.click(save_rtx, [rtx_name, vsr_mode, scale, quality], [rtx_saved, rtx_message])

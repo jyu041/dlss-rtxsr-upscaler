@@ -59,7 +59,13 @@ def render_vsr(source, destination, backend, scale=2.0, quality="ULTRA", mode="S
     selected = _select_encoder(codec, output[0], output[1])
     enc = str(selected["encoder"])
     enc_cmd = [ffmpeg, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{output[0]}x{output[1]}", "-r", str(info["fps"]), "-i", "-", "-an", "-c:v", enc, "-preset", "p5", "-cq", "19", str(video_only)]
-    report_progress(progress, frame_index=0, total_frames=frames, phase="INITIALIZING", message="Initializing RTX VSR")
+    init_message = "Initializing RTX VSR"
+    if selected["fallback"]:
+        init_message += (
+            f"; {selected['requested_codec']} NVENC unsupported at "
+            f"{output[0]}x{output[1]}, using {selected['codec']}"
+        )
+    report_progress(progress, frame_index=0, total_frames=frames, phase="INITIALIZING", message=init_message)
     decoder = encoder = None
     session = None
     count = 0; started = time.perf_counter(); memory_samples = []

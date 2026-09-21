@@ -5,7 +5,7 @@
 `DLSSG_ACTIVATION_FAILED`
 
 The official Streamline sample was built in the isolated external working copy
-`C:\Users\mark\Desktop\dlss-community-research\Streamline_Sample_MFGAmpere`.
+`C:\Users\<user>\Desktop\dlss-community-research\Streamline_Sample_MFGAmpere`.
 ReShade was not used. The one donor-enabled run completed normally, but the
 sample kept its DLSS-G mode off because the sample's separate `-DLSSG_on`
 scripting switch was not supplied. No generated-frame success is claimed and no

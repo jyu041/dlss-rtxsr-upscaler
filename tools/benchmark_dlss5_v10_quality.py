@@ -1,8 +1,9 @@
 """Bounded real-video A/B matrix for the isolated DLSS5 v10 application path.
 
 Requires the normal v10 preflight to have passed. The tool does not weaken any
-security gate. It varies only controls already represented in the versioned v10
-CREATE protocol and records review videos, quality metrics, and stage timings.
+security gate. It varies native v10 controls plus the application-level shared
+working-resolution/recomposition/temporal layer and records review videos,
+quality metrics, and stage timings.
 """
 
 from __future__ import annotations
@@ -52,18 +53,32 @@ def main() -> int:
         frames=expected,
     )
 
+    common = {
+        "nr_passes": 1,
+        "shimmer_suppression": 0.70,
+        "color_strength": 1.0,
+        "tone_preservation": 0.0,
+        "prefer_nvof": False,
+        "nr_working_scale": 1.0,
+        "recompose_backend": "auto",
+        "temporal_stabilization": 0.0,
+    }
     cases = [
-        {"name": "baseline-current", "nr_passes": 1, "shimmer_suppression": 0.70, "color_strength": 1.0, "tone_preservation": 0.0, "prefer_nvof": False},
-        {"name": "shimmer-off", "nr_passes": 1, "shimmer_suppression": 0.0, "color_strength": 1.0, "tone_preservation": 0.0, "prefer_nvof": False},
-        {"name": "shimmer-0p35", "nr_passes": 1, "shimmer_suppression": 0.35, "color_strength": 1.0, "tone_preservation": 0.0, "prefer_nvof": False},
-        {"name": "shimmer-1p0", "nr_passes": 1, "shimmer_suppression": 1.0, "color_strength": 1.0, "tone_preservation": 0.0, "prefer_nvof": False},
-        {"name": "passes-2", "nr_passes": 2, "shimmer_suppression": 0.70, "color_strength": 1.0, "tone_preservation": 0.0, "prefer_nvof": False},
-        {"name": "passes-3", "nr_passes": 3, "shimmer_suppression": 0.70, "color_strength": 1.0, "tone_preservation": 0.0, "prefer_nvof": False},
-        {"name": "passes-4", "nr_passes": 4, "shimmer_suppression": 0.70, "color_strength": 1.0, "tone_preservation": 0.0, "prefer_nvof": False},
-        {"name": "detail-tone-preserved", "nr_passes": 1, "shimmer_suppression": 0.70, "color_strength": 0.0, "tone_preservation": 1.0, "prefer_nvof": False},
+        {"name": "baseline-current", **common},
+        {"name": "shimmer-off", **common, "shimmer_suppression": 0.0},
+        {"name": "shimmer-0p35", **common, "shimmer_suppression": 0.35},
+        {"name": "shimmer-1p0", **common, "shimmer_suppression": 1.0},
+        {"name": "passes-2", **common, "nr_passes": 2},
+        {"name": "passes-3", **common, "nr_passes": 3},
+        {"name": "passes-4", **common, "nr_passes": 4},
+        {"name": "detail-tone-preserved", **common, "color_strength": 0.0, "tone_preservation": 1.0},
+        {"name": "working-0p75", **common, "nr_working_scale": 0.75},
+        {"name": "working-0p666", **common, "nr_working_scale": 2.0 / 3.0},
+        {"name": "working-0p75-temporal-0p5", **common, "nr_working_scale": 0.75, "temporal_stabilization": 0.5},
+        {"name": "passes-4-working-0p75", **common, "nr_passes": 4, "nr_working_scale": 0.75},
     ]
     if args.include_nvof:
-        cases.append({"name": "prefer-nvof", "nr_passes": 1, "shimmer_suppression": 0.70, "color_strength": 1.0, "tone_preservation": 0.0, "prefer_nvof": True})
+        cases.append({"name": "prefer-nvof", **common, "prefer_nvof": True})
 
     results: list[dict] = []
     for case in cases:
@@ -86,6 +101,9 @@ def main() -> int:
             grain_preservation=0.0,
             shimmer_suppression=float(case["shimmer_suppression"]),
             prefer_nvof=bool(case["prefer_nvof"]),
+            nr_working_scale=case["nr_working_scale"],
+            recompose_backend=str(case["recompose_backend"]),
+            temporal_stabilization=float(case["temporal_stabilization"]),
             start=args.start,
             duration=args.duration,
             codec="H.264",
@@ -102,6 +120,10 @@ def main() -> int:
             "end_to_end_fps": stats.get("fps"),
             "processing_fps": stats.get("processing_fps"),
             "scene_resets": stats.get("scene_resets"),
+            "working_dimensions": stats.get("working_dimensions"),
+            "nr_working_scale_resolved": stats.get("nr_working_scale_resolved"),
+            "recompose_backend_used": stats.get("recompose_backend_used"),
+            "temporal_stabilization": stats.get("temporal_stabilization"),
             "performance": stats.get("performance"),
             "quality_controls": stats.get("quality_controls"),
             **metrics,
@@ -111,7 +133,9 @@ def main() -> int:
             f"{case['name']}: processing_fps={float(stats.get('processing_fps', 0)):.2f} "
             f"e2e_fps={float(stats.get('fps', 0)):.2f} "
             f"effect={float(metrics['effect_mae'] or 0):.3f} "
-            f"temporal={float(metrics['motion_compensated_residual_flicker_mae'] or 0):.3f}"
+            f"temporal={float(metrics['motion_compensated_residual_flicker_mae'] or 0):.3f} "
+            f"work={stats.get('nr_working_scale_resolved')} "
+            f"recompose={stats.get('recompose_backend_used')}"
         )
 
     report = {

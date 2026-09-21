@@ -138,14 +138,15 @@ def test_actual_local_webui_launch():
 def test_enhancement_selector_is_the_single_routing_source():
     assert mode_visibility("RTX VSR only") == (True, False, False, False)
     assert mode_visibility("DLSS 5 only") == (False, True, False, False)
-    assert mode_visibility("DLSS 5 v10 Experimental") == (False, True, False, False)
+    assert mode_visibility("DLSS 5 v10 Experimental") == (False, False, False, False)
     assert mode_visibility("DLSS SR only") == (False, False, True, False)
     assert mode_visibility("DLSS Frame Generation 2X") == (False, False, False, True)
 
 
-def test_v10_mode_is_exposed_but_never_selected_as_default(monkeypatch):
+def test_dlss5_exposes_one_mode_and_unified_backend_can_be_default(monkeypatch):
     choices = webui.available_mode_choices()
-    assert ("DLSS 5 v10 Experimental", "DLSS 5 v10 Experimental") in choices
+    assert ("DLSS 5", "DLSS 5 only") in choices
+    assert all("v10 Experimental" not in label for label, _value in choices)
 
     class NotReady:
         available = False
@@ -157,32 +158,42 @@ def test_v10_mode_is_exposed_but_never_selected_as_default(monkeypatch):
     monkeypatch.setattr(webui, "RTXVSRBackend", lambda: type("Backend", (), {"status": lambda self: NotReady()})())
     monkeypatch.setattr(webui, "DLSSSRBackend", lambda: type("Backend", (), {"status": lambda self: NotReady()})())
     monkeypatch.setattr(webui, "DLSSGBackend", lambda: type("Backend", (), {"status": lambda self: NotReady()})())
-    monkeypatch.setattr(webui, "DLSS5Backend", lambda: type("Backend", (), {"status": lambda self: NotReady()})())
-    monkeypatch.setattr(webui, "DLSS5V10ExperimentalBackend", lambda: type("Backend", (), {"status": lambda self: Ready()})())
-    assert webui.default_mode() == "RTX VSR only"
+    monkeypatch.setattr(webui, "DLSS5UnifiedBackend", lambda: type("Backend", (), {"status": lambda self: Ready()})())
+    assert webui.default_mode() == "DLSS 5 only"
 
 
-def test_v10_mode_forces_1x_scale_and_restores_v3_choices(monkeypatch):
-    locked = webui.dlss_scale_update_for_mode("DLSS 5 v10 Experimental", 2.0)
+def test_unified_dlss5_locks_output_scale_for_preferred_runtime(monkeypatch):
+    class Preferred:
+        def preferred_ready(self):
+            return True
+
+    monkeypatch.setattr(webui, "DLSS5UnifiedBackend", Preferred)
+    locked = webui.dlss_scale_update_for_mode("DLSS 5 only", 2.0)
     assert locked["choices"] == [1.0]
     assert locked["value"] == 1.0
+
+    class Compatibility:
+        def preferred_ready(self):
+            return False
 
     class Backend:
         def supported_output_scales(self):
             return [1.0, 1.5, 2.0]
 
+    monkeypatch.setattr(webui, "DLSS5UnifiedBackend", Compatibility)
     monkeypatch.setattr(webui, "DLSS5Backend", Backend)
     restored = webui.dlss_scale_update_for_mode("DLSS 5 only", 2.0)
     assert restored["choices"] == [1.0, 1.5, 2.0]
     assert restored["value"] == 2.0
 
 
-def test_v10_ui_has_explicit_preflight_and_application_renderer():
+def test_dlss5_ui_has_one_mode_and_preferred_runtime_preflight():
     source = open("src/ui/app.py", encoding="utf-8").read()
-    assert '("DLSS 5 v10 Experimental", "DLSS 5 v10 Experimental")' in source
-    assert 'gr.Button("Refresh DLSS 5 v10 preflight")' in source
-    assert "DLSS5V10ExperimentalBackend()" in source
-    assert "render_dlss5_v10(" in source
+    assert '("DLSS 5", "DLSS 5 only")' in source
+    assert '("DLSS 5 v10 Experimental", "DLSS 5 v10 Experimental")' not in source
+    assert 'gr.Button("Refresh DLSS 5 runtime preflight")' in source
+    assert "DLSS5UnifiedBackend()" in source
+    assert "render_dlss5_unified(" in source
     assert "refresh_dlss5_v10_preflight" in source
     assert "verify_artifact(archive, spec)" in source
     assert "mode.change(dlss_scale_update_for_mode" in source
@@ -326,7 +337,7 @@ def test_webui_is_task_first_and_separates_configuration_and_diagnostics():
 
     # Readiness/admin controls are deliberately kept out of the Enhance tab.
     sr_readiness = source.index('gr.Markdown("### DLSS SR readiness")')
-    v10_readiness = source.index('gr.Markdown("### DLSS 5 v10 experimental readiness")')
+    v10_readiness = source.index('gr.Markdown("### DLSS 5 preferred runtime readiness")')
     assert configuration < sr_readiness < diagnostics
     assert configuration < v10_readiness < diagnostics
 
@@ -350,7 +361,7 @@ def test_webui_second_pass_uses_progressive_disclosure_for_status_and_runtime_in
 
     assert 'with gr.Row(elem_classes="validation-grid")' in source
     assert 'gr.Markdown("### DLSS SR readiness")' in source
-    assert 'gr.Markdown("### DLSS 5 v10 experimental readiness")' in source
+    assert 'gr.Markdown("### DLSS 5 preferred runtime readiness")' in source
     assert "footer {\n  display: none !important;\n}" in css
 
 

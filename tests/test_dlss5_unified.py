@@ -141,9 +141,44 @@ def test_unified_backend_uses_legacy_when_preferred_runtime_is_not_ready(monkeyp
 
     monkeypatch.setattr(backend_module, "DLSS5V10ExperimentalBackend", V10)
     monkeypatch.setattr(backend_module, "DLSS5Backend", Legacy)
+    monkeypatch.setattr(backend_module, "refresh_preflight_from_cache", lambda: False)
 
     backend = backend_module.DLSS5UnifiedBackend()
     name, implementation = backend.runtime()
     assert name == "v3-fallback"
     assert isinstance(implementation, Legacy)
     assert backend.status().state == "READY (COMPATIBILITY)"
+
+
+def test_unified_backend_refreshes_stale_preflight_from_cached_archive(monkeypatch):
+    state = {"ready": False, "refreshes": 0}
+
+    class V10:
+        def status(self):
+            if state["ready"]:
+                return BackendStatus("v10", True, "EXPERIMENTAL READY", "fresh")
+            return BackendStatus("v10", False, "PREFLIGHT REQUIRED", "stale")
+
+        def close(self):
+            pass
+
+    class Legacy:
+        def status(self):
+            return BackendStatus("v3", False, "NO RUNTIME", "missing")
+
+        def close(self):
+            pass
+
+    def refresh():
+        state["refreshes"] += 1
+        state["ready"] = True
+        return True
+
+    monkeypatch.setattr(backend_module, "DLSS5V10ExperimentalBackend", V10)
+    monkeypatch.setattr(backend_module, "DLSS5Backend", Legacy)
+    monkeypatch.setattr(backend_module, "refresh_preflight_from_cache", refresh)
+
+    backend = backend_module.DLSS5UnifiedBackend()
+    assert backend.status().available is True
+    assert backend.status().state == "READY"
+    assert state["refreshes"] == 1

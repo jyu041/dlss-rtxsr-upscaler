@@ -10,6 +10,7 @@ from __future__ import annotations
 from .base import Backend, BackendStatus
 from .dlss5 import DLSS5Backend
 from .dlss5_v10_app import DLSS5V10ExperimentalBackend
+from tools.provision_dlss5_v10 import refresh_preflight_from_cache
 
 
 class DLSS5UnifiedBackend(Backend):
@@ -19,8 +20,19 @@ class DLSS5UnifiedBackend(Backend):
         self.v10 = DLSS5V10ExperimentalBackend()
         self.legacy = DLSS5Backend()
 
+    def _preferred_status(self) -> BackendStatus:
+        status = self.v10.status()
+        if status.available or status.state != "PREFLIGHT REQUIRED":
+            return status
+        try:
+            if refresh_preflight_from_cache():
+                return self.v10.status()
+        except Exception:
+            pass
+        return status
+
     def runtime(self) -> tuple[str, Backend]:
-        v10_status = self.v10.status()
+        v10_status = self._preferred_status()
         if v10_status.available:
             return "v10", self.v10
         legacy_status = self.legacy.status()
@@ -34,7 +46,7 @@ class DLSS5UnifiedBackend(Backend):
 
     def status(self) -> BackendStatus:
         try:
-            v10_status = self.v10.status()
+            v10_status = self._preferred_status()
         except Exception as exc:
             v10_status = BackendStatus("DLSS 5", False, "UNAVAILABLE", str(exc))
         if v10_status.available:
@@ -72,7 +84,7 @@ class DLSS5UnifiedBackend(Backend):
 
     def preferred_ready(self) -> bool:
         try:
-            return self.v10.status().available
+            return self._preferred_status().available
         except Exception:
             return False
 

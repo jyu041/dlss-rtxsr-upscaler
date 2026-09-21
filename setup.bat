@@ -90,38 +90,25 @@ if not exist "%DLSSG_COMMUNITY_RUNTIME%" (echo Validated DLSS-G direct-host runt
 if not exist "%~dp0runtime\dlssg\legacy\dlssg_sm86.ini" (echo Validated DLSS-G direct-host INI was not installed correctly.& exit /b 1)
 if not exist "%DLSSG_OFFICIAL_RUNTIME_DIR%\nvngx_dlssg.dll" (echo Managed NVIDIA DLSS-G provider was not installed correctly.& exit /b 1)
 
-echo [7/10] Optional managed DLSS 5 v3 provisioning
+echo [7/10] Optional DLSS 5 provisioning
 set "NVE_DLSS5_CHOICE="
 if /I "%NVE_SETUP_DLSS5%"=="1" set "NVE_DLSS5_CHOICE=Y"
 if /I "%NVE_SETUP_DLSS5%"=="0" set "NVE_DLSS5_CHOICE=N"
 if not defined NVE_DLSS5_CHOICE (
-  echo DLSS 5 v3 is experimental and requires an explicit local approval, malware scan, firewall block, and hardware self-test.
-  choice /C YN /N /M "Provision the pinned validated DLSS 5 v3 runtime now? [Y/N] "
+  echo DLSS 5 is experimental. Setup can download the exact pinned v10 runtime ^(~690 MB once^), verify it, and run the required Microsoft Defender preflight now.
+  choice /C YN /N /M "Enable DLSS 5 now? [Y/N] "
   if errorlevel 2 (set "NVE_DLSS5_CHOICE=N") else (set "NVE_DLSS5_CHOICE=Y")
 )
 if /I "%NVE_DLSS5_CHOICE%"=="Y" (
-  echo The DLSS 5 provisioner may show a Windows UAC prompt to create the exact outbound worker firewall rule.
   if defined NVE_DLSS5_ARCHIVE (
-    echo Using the explicitly supplied DLSS 5 v3 archive: %NVE_DLSS5_ARCHIVE%
-    call "%NVE_CONDA_EXE%" run --no-capture-output %NVE_CONDA_TARGET% python tools\provision_dlss5_v3.py --yes --archive "%NVE_DLSS5_ARCHIVE%"
-    if errorlevel 1 echo WARNING: DLSS 5 v3 provisioning or Feature-18 validation did not complete. Other backends remain usable; DLSS 5 stays unavailable until its gates pass.
+    echo Using the explicitly supplied DLSS 5 v10 archive: %NVE_DLSS5_ARCHIVE%
+    call "%NVE_CONDA_EXE%" run --no-capture-output %NVE_CONDA_TARGET% python tools\provision_dlss5_v10.py --archive "%NVE_DLSS5_ARCHIVE%"
   ) else (
-    call "%NVE_CONDA_EXE%" run --no-capture-output %NVE_CONDA_TARGET% python tools\check_setup_network.py --require-download
-    if errorlevel 1 (
-      echo WARNING: DLSS 5 v3 download was skipped because this shell has no usable setup download path. Other backends remain usable.
-      echo Run setup.bat from a normal network-enabled shell and rerun setup.
-    ) else (
-      call "%NVE_CONDA_EXE%" run --no-capture-output %NVE_CONDA_TARGET% python tools\cache_dlss5_v3_archive.py
-      if errorlevel 1 (
-        echo WARNING: DLSS 5 v3 archive download/cache verification failed. Other backends remain usable.
-      ) else (
-        call "%NVE_CONDA_EXE%" run --no-capture-output %NVE_CONDA_TARGET% python tools\provision_dlss5_v3.py --yes --archive "%~dp0runtime\cache\dlss5-v3\DLSS.5.Visual.Enhancer.v3.0.zip"
-        if errorlevel 1 echo WARNING: DLSS 5 v3 provisioning or Feature-18 validation did not complete. The verified archive remains cached for a later retry.
-      )
-    )
+    call "%NVE_CONDA_EXE%" run --no-capture-output %NVE_CONDA_TARGET% python tools\provision_dlss5_v10.py
   )
+  if errorlevel 1 echo WARNING: DLSS 5 v10 verification/staging/preflight did not complete. Other backends remain usable.
 ) else (
-  echo Skipping optional DLSS 5 v3 provisioning. You can run tools\provision_dlss5_v3.py later.
+  echo Skipping optional DLSS 5 provisioning. You can enable it later from Configuration or by running tools\provision_dlss5_v10.py.
 )
 
 echo [8/10] Running backend validation
@@ -148,6 +135,6 @@ echo Environment ready: %NVE_CONDA_ENV%
 echo C55, the managed grid4 candidate, DLSS SR, and the validated DLSS-G direct-host runtime/provider are installed from pinned public sources.
 echo Normal use does not require downloading backend DLLs manually or entering runtime paths in the UI.
 echo The newer SM86 0.3.1 proxy generation remains an advanced candidate only; normal C55 MFG uses the validated legacy direct-host profile.
-echo DLSS 5 v3 can also be provisioned from its pinned upstream release through the explicit setup opt-in; it remains experimental and fail-closed behind hash, scan, firewall, and Feature-18 self-test gates.
+echo DLSS 5 v10 is provisioned by the same setup opt-in; setup downloads the exact pinned archive, verifies it, stages the allowlisted runtime, and requires a clean Defender preflight.
 echo.
 echo Setup complete. Launch with start.bat from Command Prompt or .\start.bat from PowerShell.

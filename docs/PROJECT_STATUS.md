@@ -16,13 +16,12 @@ appropriate:
 - DLSS SR standalone D3D12/NGX application path;
 - validated C55/grid1 DLSS Frame Generation path;
 - managed grid4/GPU-resident NVOF experimental profile;
-- one user-facing DLSS 5 mode with automatic preferred-runtime selection;
-- preferred v10 application path with pinned preflight, isolated host,
+- one user-facing DLSS 5 mode with one-step optional setup provisioning and automatic preferred-runtime selection;
+- preferred v10 application path with pinned archive verification, cached repair/preflight refresh, isolated host,
   process-tree/firewall containment, per-frame result checks, scene-aware
   resets, clean-close enforcement, reduced working-resolution recomposition,
   optional temporal residual stabilization, and 1–4 neural passes;
-- retained v3 Feature-18 compatibility runtime with its existing hash, Defender,
-  firewall, approval, and self-test gates, hidden from normal backend selection;
+- retained v3 Feature-18 compatibility implementation for existing/manual legacy installations, hidden from normal onboarding and backend selection;
 - task-first Enhance / Configuration / Diagnostics WebUI;
 - repository-root cleanup and current README;
 - ordinary test suite and clean source-install acceptance CI;

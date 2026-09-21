@@ -6,6 +6,7 @@ engineering history remain under `docs/`.
 ## Unreleased
 
 - replace the separate DLSS 5 v3/v10 user modes with one **DLSS 5** mode;
+- simplify fresh-install DLSS 5 onboarding to one setup opt-in that provisions the preferred pinned v10 runtime directly, with a single Configuration repair action and local cached preflight refresh;
 - prefer the isolated v10 application runtime automatically after its explicit
   preflight, with v3 retained only as an internal compatibility fallback;
 - extend the v10 video path with Auto/100/87.5/75/67/50% neural working

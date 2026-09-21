@@ -162,15 +162,16 @@ def test_dlss5_exposes_one_mode_and_unified_backend_can_be_default(monkeypatch):
     assert webui.default_mode() == "DLSS 5 only"
 
 
-def test_dlss5_ui_has_one_mode_and_preferred_runtime_preflight():
+def test_dlss5_ui_has_one_mode_and_simple_install_repair_action():
     source = open("src/ui/app.py", encoding="utf-8").read()
     assert '("DLSS 5", "DLSS 5 only")' in source
     assert '("DLSS 5 v10 Experimental", "DLSS 5 v10 Experimental")' not in source
-    assert 'gr.Button("Refresh DLSS 5 runtime preflight")' in source
+    assert 'gr.Button("Install / Repair DLSS 5")' in source
+    assert 'gr.Markdown("### DLSS 5 runtime")' in source
     assert "DLSS5UnifiedBackend()" in source
     assert "render_dlss5_unified(" in source
     assert "refresh_dlss5_v10_preflight" in source
-    assert "verify_artifact(archive, spec)" in source
+    assert "prepare_dlss5_v10()" in source
     assert "mode.change(dlss_scale_update_for_mode" not in source
     assert "dlss_scale = gr.State(dlss_default_scale)" in source
     assert "nrpreset = gr.State" in source
@@ -315,7 +316,7 @@ def test_webui_is_task_first_and_separates_configuration_and_diagnostics():
 
     # Readiness/admin controls are deliberately kept out of the Enhance tab.
     sr_readiness = source.index('gr.Markdown("### DLSS SR readiness")')
-    v10_readiness = source.index('gr.Markdown("### DLSS 5 preferred runtime readiness")')
+    v10_readiness = source.index('gr.Markdown("### DLSS 5 runtime")')
     assert configuration < sr_readiness < diagnostics
     assert configuration < v10_readiness < diagnostics
 
@@ -339,7 +340,7 @@ def test_webui_second_pass_uses_progressive_disclosure_for_status_and_runtime_in
 
     assert 'with gr.Row(elem_classes="validation-grid")' in source
     assert 'gr.Markdown("### DLSS SR readiness")' in source
-    assert 'gr.Markdown("### DLSS 5 preferred runtime readiness")' in source
+    assert 'gr.Markdown("### DLSS 5 runtime")' in source
     assert "footer {\n  display: none !important;\n}" in css
 
 

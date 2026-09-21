@@ -31,7 +31,7 @@ the validated v3 path is retained only as an internal compatibility fallback.
 | **RTX VSR** | Conventional enhancement, denoise/deblur, super resolution | Super Resolution · 2× · ULTRA | Python/VFX dependencies installed by `setup.bat` |
 | **DLSS SR** | Temporal super resolution through a standalone D3D12/NGX host | Quality · Default model | Host/runtime installed by `setup.bat`; local self-test attempted |
 | **DLSS Frame Generation** | 2×/3×/4× temporal interpolation | Validated C55/grid1 profile | Worker, SM86 direct-host runtime, and NVIDIA provider installed by `setup.bat`; hardware validation attempted |
-| **DLSS 5** | Experimental Neural Rendering | Preferred v10 runtime; 1.0× output with Auto/100/87.5/75/67/50% neural working resolution | Preferred runtime uses explicit Configuration preflight; validated v3 provisioning remains an optional compatibility fallback |
+| **DLSS 5** | Experimental Neural Rendering | Preferred v10 runtime; 1.0× output with Auto/100/87.5/75/67/50% neural working resolution | `setup.bat` can download, verify, stage, and Defender-scan the pinned v10 runtime in one opt-in step |
 
 ### What the modes do
 
@@ -41,7 +41,7 @@ the validated v3 path is retained only as an internal compatibility fallback.
 - **DLSS 5** automatically uses the isolated v10 application path when its pinned runtime/preflight is ready. That path now supports reduced neural working resolution, residual recomposition, optional temporal residual stabilization, 1–4 neural passes, color/tone controls, face/skin and grain preservation, native shimmer control, and optional NVOF preference. If the preferred runtime is not ready, the validated v3 path can be used internally as a compatibility fallback without exposing a second DLSS 5 mode.
 
 DLSS 5 is an experimental Neural Rendering path, not a conventional
-detail-preserving upscalers. They may reinterpret faces, materials, lighting,
+detail-preserving upscaler. It may reinterpret faces, materials, lighting,
 and other semantic content.
 
 ## Features
@@ -97,7 +97,7 @@ the same Conda-enabled shell.
 2. installs the pinned Python dependencies;
 3. verifies FFmpeg/FFprobe and NVENC encoder availability;
 4. installs and verifies the normal managed DLSS-G C55 worker, the separate pinned grid4 candidate worker, the DLSS SR host/runtime, the validated SM86 direct-host runtime, and the official NVIDIA DLSS-G provider;
-5. optionally provisions the validated DLSS 5 v3 compatibility runtime after explicit user approval and its additional security gates;
+5. optionally provisions the preferred DLSS 5 v10 runtime after one explicit opt-in, including pinned archive verification, allowlisted staging, and a Microsoft Defender preflight;
 6. attempts local DLSS SR and DLSS-G hardware validation;
 7. runs diagnostics; and
 8. writes `config/source_env.bat` for later launches.
@@ -107,13 +107,11 @@ or cause another backend to be substituted. The affected backend remains
 unavailable or marked as needing validation while other verified modes remain
 usable.
 
-For unattended/repeat setup, `NVE_SETUP_DLSS5=1` opts into provisioning the
-validated v3 compatibility runtime and `NVE_SETUP_DLSS5=0` skips its prompt.
-
-The preferred v10 runtime is intentionally not activated silently during normal
-setup. **Configuration → DLSS 5 preferred runtime readiness → Refresh DLSS 5
-runtime preflight** performs the explicit pinned archive/staging/Defender step.
-Once ready, the single **DLSS 5** mode uses v10 automatically.
+For unattended/repeat setup, `NVE_SETUP_DLSS5=1` enables DLSS 5 provisioning
+and `NVE_SETUP_DLSS5=0` skips its prompt. The same pinned v10 archive is kept in
+the local runtime cache so later Defender-preflight refreshes do not require
+another download. If repair is ever needed, use **Configuration → DLSS 5 runtime
+→ Install / Repair DLSS 5**.
 
 Detailed installation and repair notes are in
 [`docs/INSTALL.md`](docs/INSTALL.md) and
@@ -145,9 +143,7 @@ runtime/
 │   ├── grid4-worker/
 │   ├── legacy/
 │   └── official/
-├── dlss5-v3/                         # only after explicit v3 provisioning
-└── dlss5/
-    └── neuroframe-v10-candidate/     # only after explicit v10 preflight
+├── dlss5/\n│   └── neuroframe-v10-candidate/     # preferred DLSS 5 runtime after setup opt-in\n└── downloads/\n    └── Visual.Enhancer.v10.0.zip     # verified local cache for repair/preflight refresh
 ```
 
 Advanced runtime/environment overrides remain available for development and
@@ -162,8 +158,9 @@ The project is designed around explicit, auditable local execution:
 - Managed components are checked against source-controlled identity policy before activation.
 - The normal application does not silently download replacement runtimes at startup.
 - Missing or modified runtimes fail closed with diagnostics.
-- The retained v3 compatibility runtime requires its additional pinned-hash, Defender, firewall, approval, and Feature-18 self-test gates.
-- The preferred v10 runtime requires an explicit preflight and, during rendering, runs through an isolated child process with temporary outbound firewall containment, process-tree checks, NGX/CUDA validation, and mandatory cleanup.
+- The preferred v10 runtime is installed only after explicit setup/user action, is pinned by exact archive identity, and requires a clean Defender preflight before use.
+- During rendering, v10 runs through an isolated child process with temporary outbound firewall containment, process-tree checks, NGX/CUDA validation, and mandatory cleanup.
+- The older v3 implementation remains code-level compatibility fallback only for existing/manual legacy installations; it is no longer part of normal onboarding.
 - Experimental upstream runtime files retain their own licensing/signing properties; the project does not treat a pinned hash as a claim that third-party code is inherently safe.
 
 See [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md) and

@@ -79,15 +79,15 @@ def test_setup_batch_rejects_discard_proxy_without_reaching_conda():
     assert "[2/10] Creating/updating Python environment" not in output
 
 
-def test_setup_supports_exact_archive_fallback_and_managed_cache():
+def test_setup_supports_exact_v10_archive_override_and_managed_cache():
     setup = (ROOT / "setup.bat").read_text(encoding="utf-8")
-    assert "tools\\check_setup_network.py --require-download" in setup
+    provisioner = (ROOT / "tools" / "provision_dlss5_v10.py").read_text(encoding="utf-8")
     assert "NVE_DLSS5_ARCHIVE" in setup
-    assert "tools\\provision_dlss5_v3.py --yes --archive" in setup
-    assert "tools\\cache_dlss5_v3_archive.py" in setup
-    cached = "%~dp0runtime\\cache\\dlss5-v3\\DLSS.5.Visual.Enhancer.v3.0.zip"
-    assert cached in setup
-    assert f'python tools\\provision_dlss5_v3.py --yes --archive "{cached}"' in setup
-    # Do not assign a variable and consume it with %VAR% inside the same
-    # parenthesized cmd.exe block: percent expansion occurs before SET executes.
-    assert "NVE_DLSS5_MANAGED_ARCHIVE" not in setup
+    assert "tools\\provision_dlss5_v10.py" in setup
+    assert "tools\\provision_dlss5_v3.py" not in setup
+    assert '--archive "%NVE_DLSS5_ARCHIVE%"' in setup
+    assert 'runtime" / "downloads" / "Visual.Enhancer.v10.0.zip' in (
+        ROOT / "tools" / "prepare_dlss5_v10_candidate.py"
+    ).read_text(encoding="utf-8")
+    assert "ensure_cached_archive" in provisioner
+    assert "manager.download(RUNTIME_ID, canonical" in provisioner

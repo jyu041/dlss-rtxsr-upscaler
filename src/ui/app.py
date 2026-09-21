@@ -198,9 +198,10 @@ def _browser_preview(path: str | Path, *, seconds: float = 12.0) -> str:
     """Create a short, normalized H.264/AAC MP4 strictly for browser playback."""
     source = Path(path).expanduser().resolve()
     stat = source.stat()
-    identity = f"{source}|{stat.st_size}|{stat.st_mtime_ns}".encode("utf-8", errors="surrogatepass")
+    preview_seconds = max(1.0, float(seconds))
+    identity = f"{source}|{stat.st_size}|{stat.st_mtime_ns}|{preview_seconds:.3f}".encode("utf-8", errors="surrogatepass")
     key = hashlib.sha256(identity).hexdigest()[:20]
-    root = TEMP / "source_preview"
+    root = TEMP / "browser_preview"
     root.mkdir(parents=True, exist_ok=True)
     directory = root / key
     destination = directory / "browser-preview.mp4"
@@ -216,7 +217,7 @@ def _browser_preview(path: str | Path, *, seconds: float = 12.0) -> str:
         "-i",
         str(source),
         "-t",
-        str(max(1.0, float(seconds))),
+        str(preview_seconds),
         "-map",
         "0:v:0",
         "-map",

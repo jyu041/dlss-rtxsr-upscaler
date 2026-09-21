@@ -420,6 +420,21 @@ class V10NativeSession:
             return "CLOSED_RELEASE_FAILED"
         return "CLOSED_RELEASED"
 
+    def close_process_lifetime(self) -> str:
+        """Close the logical session without invoking optional native teardown.
+
+        The v10 application host is an isolated, single-job process and the
+        audited upstream lifecycle keeps D3D12/NGX state process-lifetime after
+        Feature-18 evaluation. The process boundary therefore owns final native
+        teardown. Calling the optional release export here can itself fail after
+        an otherwise successful render and must not be a prerequisite for
+        returning the completed video.
+        """
+        if self.closed:
+            return "ALREADY_CLOSED"
+        self.closed = True
+        return "CLOSED_PROCESS_LIFETIME"
+
     def __enter__(self) -> "V10NativeSession":
         self.initialize()
         return self

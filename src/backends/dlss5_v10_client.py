@@ -68,6 +68,7 @@ class V10ProtocolClient:
         self._poison_reason: str | None = None
         self._closed = False
         self._native_mode = False
+        self._last_close_error: str | None = None
 
     @property
     def poisoned(self) -> bool:
@@ -80,6 +81,19 @@ class V10ProtocolClient:
     @property
     def pid(self) -> int | None:
         return self.process.pid if self.process else None
+
+    @property
+    def last_close_error(self) -> str | None:
+        return self._last_close_error
+
+    def _stderr_tail(self, limit: int = 20) -> str:
+        lines: list[str] = []
+        while len(lines) < limit:
+            try:
+                lines.append(str(self._stderr.get_nowait()))
+            except queue.Empty:
+                break
+        return "\n".join(lines[-limit:]).strip()
 
     def start(self) -> None:
         raise V10ExecutionDisabled(
@@ -579,6 +593,7 @@ class V10ProtocolClient:
                         "CLOSED_RELEASED",
                         "CLOSED_NO_RELEASE_EXPORT",
                         "CLOSED_WITHOUT_NATIVE_SESSION",
+                        "CLOSED_PROCESS_LIFETIME",
                     }
                     if session_close not in allowed_native_close:
                         raise V10ProtocolError(
@@ -587,27 +602,39 @@ class V10ProtocolClient:
                 elif value.get("native_loaded") is not False:
                     raise V10ProtocolError("invalid CLOSE acknowledgement")
 
-                try:
-                    self.process.wait(timeout=self.close_grace)
-                except subprocess.TimeoutExpired:
-                    if not self._native_mode:
-                        raise
-                    # The v10 runtime deliberately keeps D3D12/NGX/module state
-                    # process-lifetime. Once the host has acknowledged a clean
-                    # native session close, the isolated process itself is the
-                    # final lifetime boundary. Do not turn a loader/interpreter
-                    # teardown stall into a failed render: terminate only this
-                    # owned host after the clean CLOSE acknowledgement.
-                    self.process.kill()
-                    self.process.wait(timeout=5)
-                    result = "CLOSED_ACK_TERMINATED"
+                if self._native_mode and session_close == "CLOSED_PROCESS_LIFETIME":
+                    # The application host has completed its logical protocol
+                    # close. Deliberately do not enter Python/DLL teardown with
+                    # live process-lifetime NGX state: the isolated OS process
+                    # is the teardown boundary.
+                    if self.process.poll() is None:
+                        self.process.kill()
+                        self.process.wait(timeout=5)
+                    result = "CLOSED_PROCESS_LIFETIME"
                 else:
-                    if self.process.returncode != 0:
-                        raise V10ProtocolError(
-                            f"v10 protocol host exited with {self.process.returncode}"
-                        )
-                    result = "CLOSED"
-            except (OSError, subprocess.TimeoutExpired, TimeoutError, V10ProtocolError):
+                    try:
+                        self.process.wait(timeout=self.close_grace)
+                    except subprocess.TimeoutExpired:
+                        if not self._native_mode:
+                            raise
+                        # Research-native sessions that did perform their
+                        # logical release still use supervised termination if
+                        # interpreter/DLL teardown stalls afterward.
+                        self.process.kill()
+                        self.process.wait(timeout=5)
+                        result = "CLOSED_ACK_TERMINATED"
+                    else:
+                        if self.process.returncode != 0:
+                            raise V10ProtocolError(
+                                f"v10 protocol host exited with {self.process.returncode}"
+                            )
+                        result = "CLOSED"
+            except (OSError, subprocess.TimeoutExpired, TimeoutError, V10ProtocolError) as exc:
+                detail = str(exc).strip() or type(exc).__name__
+                stderr_tail = self._stderr_tail()
+                if stderr_tail:
+                    detail = f"{detail}; host stderr: {stderr_tail}"
+                self._last_close_error = detail
                 self.abort()
                 result = "TERMINATED_AFTER_CLOSE_FAILURE"
         else:

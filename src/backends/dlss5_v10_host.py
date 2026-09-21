@@ -465,7 +465,7 @@ def experimental_application_server(
             if command == CLOSE:
                 guard.accept_close(request_id)
                 close_status = (
-                    native_session.close()
+                    native_session.close_process_lifetime()
                     if native_session is not None
                     else "CLOSED_WITHOUT_NATIVE_SESSION"
                 )
@@ -493,7 +493,7 @@ def experimental_application_server(
         guard.poison(str(exc))
         if native_session is not None:
             try:
-                native_session.close()
+                native_session.close_process_lifetime()
             except Exception:
                 pass
         try:

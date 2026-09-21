@@ -70,3 +70,10 @@ def test_fresh_source_install_tracks_runtime_requirements_and_submodule_gitlink(
     ).read_text(encoding="utf-8")
     assert workflow.count('"tools/requirements/runtime.txt"') == 2
     assert workflow.count('"third_party/ComfyUI-DLSS5-Enhancer"') == 2
+
+
+def test_release_publication_uses_one_generic_manual_workflow():
+    workflow_dir = ROOT / ".github" / "workflows"
+    assert (workflow_dir / "publish-release.yml").is_file()
+    assert not (workflow_dir / "publish-v0.2.0-beta.2.yml").exists()
+    assert not (workflow_dir / "publish-v0.2.0-beta.3.yml").exists()

@@ -40,6 +40,46 @@ def ffmpeg_executable() -> str:
         raise RuntimeError("FFmpeg is unavailable; install it or imageio-ffmpeg in the project environment") from exc
 
 
+def _decoder_command(ffmpeg: str, source: str | Path) -> list[str]:
+    """Build the raw RGBA decoder command used by the DLSS-G video path.
+
+    Do not force passthrough timestamps here. Some otherwise-decodable MP4s
+    contain timestamp layouts that FFmpeg accepts in the normal decode path but
+    rejects when `-fps_mode passthrough` is forced. RTX VSR already uses the
+    normal FFmpeg timing path successfully, so DLSS-G should use the same input
+    compatibility behavior while emitting one raw frame stream for processing.
+    """
+    return [
+        ffmpeg,
+        "-v",
+        "error",
+        "-i",
+        str(source),
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "rgba",
+        "-",
+    ]
+
+
+def _decoder_empty_error(decoder: subprocess.Popen) -> RuntimeError:
+    """Return a useful error when FFmpeg closes stdout before the first frame."""
+    try:
+        code = decoder.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        code = decoder.poll()
+    stderr = b""
+    if decoder.stderr is not None:
+        try:
+            stderr = decoder.stderr.read()
+        except OSError:
+            stderr = b""
+    detail = stderr.decode("utf-8", errors="replace").strip()[-4000:]
+    suffix = detail or "FFmpeg produced no diagnostic output"
+    return RuntimeError(f"FFmpeg decoder produced no frames (exit {code}): {suffix}")
+
+
 def probe_video(source: str | Path) -> dict[str, object]:
     import av
 
@@ -407,8 +447,7 @@ def render_dlssg(
         lifecycle["setup_before_decoder_seconds"] = setup_start - started
         popen_start = time.perf_counter()
         decoder = subprocess.Popen(
-            [ffmpeg, "-v", "error", "-i", str(source_path), "-f", "rawvideo", "-pix_fmt", "rgba",
-             "-fps_mode", "passthrough", "-"],
+            _decoder_command(ffmpeg, source_path),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
@@ -466,6 +505,8 @@ def render_dlssg(
                 if first_decode_seconds is None:
                     first_decode_seconds = time.perf_counter() - loop_start
                 if not current:
+                    if input_count == 0:
+                        raise _decoder_empty_error(decoder)
                     break
                 input_count += 1
                 if previous is None:

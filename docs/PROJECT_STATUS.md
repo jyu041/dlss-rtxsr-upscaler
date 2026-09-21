@@ -1,6 +1,6 @@
 # Project Status
 
-Last reviewed against current `main`: 2026-09-20.
+Last reviewed against unified DLSS 5 integration branch: 2026-09-21.
 
 ## Complete for the current source-based beta
 
@@ -16,11 +16,13 @@ appropriate:
 - DLSS SR standalone D3D12/NGX application path;
 - validated C55/grid1 DLSS Frame Generation path;
 - managed grid4/GPU-resident NVOF experimental profile;
-- optional DLSS 5 v3 provisioning with hash, Defender, firewall, approval, and
-  Feature-18 self-test gates;
-- explicit DLSS 5 v10 Experimental application path with pinned preflight,
-  isolated host, process-tree/firewall containment, per-frame result checks,
-  scene-aware resets, and clean-close enforcement;
+- one user-facing DLSS 5 mode with automatic preferred-runtime selection;
+- preferred v10 application path with pinned preflight, isolated host,
+  process-tree/firewall containment, per-frame result checks, scene-aware
+  resets, clean-close enforcement, reduced working-resolution recomposition,
+  optional temporal residual stabilization, and 1–4 neural passes;
+- retained v3 Feature-18 compatibility runtime with its existing hash, Defender,
+  firewall, approval, and self-test gates, hidden from normal backend selection;
 - task-first Enhance / Configuration / Diagnostics WebUI;
 - repository-root cleanup and current README;
 - ordinary test suite and clean source-install acceptance CI;
@@ -56,7 +58,7 @@ source-based beta workflow.
 ## Optional engineering directions, not release blockers
 
 - CPU/GPU overlap or additional pipeline pipelining for DLSS 5;
-- broader DLSS 5 scaling/runtime experiments;
+- removal of the retained v3 compatibility implementation after v10 has equivalent broader hardware coverage;
 - further DLSS-G performance/quality research;
 - additional automated GPU regression infrastructure on a trusted
   NVIDIA-equipped runner.

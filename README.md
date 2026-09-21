@@ -55,7 +55,7 @@ and other semantic content.
 - Separate **Enhance**, **Configuration**, and **Diagnostics** workspaces so runtime maintenance and telemetry stay out of the normal processing flow.
 - Manifest-driven runtime management with pinned URLs, hashes, destinations, and validation policy.
 - No manual runtime path entry for normal RTX VSR, DLSS SR, or validated DLSS-G use.
-- No silent backend fallback or runtime substitution.
+- No silent cross-backend substitution. When DLSS 5 uses its retained compatibility runtime, the UI reports that fallback explicitly.
 
 ## Quick Start
 

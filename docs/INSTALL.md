@@ -44,8 +44,9 @@ pinned Python dependencies, then verifies FFmpeg/FFprobe and requires both
 
 After the machine prerequisites are present, normal users should not need to
 visit another repository to collect backend DLLs/executables, copy files into
-project folders, or enter absolute runtime paths in the UI. DLSS 5 v3 remains
-experimental, so setup asks for an explicit opt-in before provisioning it.
+project folders, or enter absolute runtime paths in the UI. The retained
+DLSS 5 v3 compatibility runtime remains experimental, so setup asks for an
+explicit opt-in before provisioning that fallback.
 
 ## Managed runtime provisioning
 

@@ -89,7 +89,7 @@ def decode_source(
     start_frame: int = 0,
 ) -> tuple[list[np.ndarray], float]:
     frames: list[np.ndarray] = []
-    with av.open(str(path)) as container:
+    with av.open(str(path), metadata_errors="replace") as container:
         stream = container.streams.video[0]
         fps = float(stream.average_rate or stream.base_rate or 0)
         for decoded_index, frame in enumerate(container.decode(stream)):

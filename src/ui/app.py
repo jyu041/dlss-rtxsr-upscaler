@@ -34,7 +34,7 @@ from src.ui.monitoring import metrics_html
 from src.ui.progress_view import progress_html
 from src.ui.tooltips import RTX_TOOLTIPS, DLSS5_TOOLTIPS, DLSS_SR_TOOLTIPS, setting_label
 from src.ui.preset_controls import delete_dlss, delete_rtx, delete_dlss_sr, load_dlss, load_dlss_sr, load_rtx, preset_choices, save_dlss, save_dlss_sr, save_rtx
-from src.video.stream import render_vsr
+from src.video.stream import process_same_resolution_frame, render_vsr
 from src.video.rtx_vsr_worker import RTXVSRSession
 from src.video.dlss5 import render_dlss5
 from src.video.dlss5_unified import render_dlss5_unified
@@ -378,6 +378,11 @@ def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_s
             used = composition.get("recompose_backend_used", "bypassed")
             return str(source_frame), str(out), f"DLSS 5 compatibility frame preview | Recompose {used} | {dlss_scale}x | {style} | Intensity {float(intensity):.2f} | Output {enhanced.shape[1]}x{enhanced.shape[0]}. Preview Clip / Render Video uses the preferred runtime when ready."
         target=(w,h) if vsr_mode in {"Deblur","Denoise"} else aligned_dimensions(w,h,float(scale_value))
+        out=TEMP/f"preview_{os.getpid()}.png"
+        if vsr_mode in {"Deblur", "Denoise"}:
+            process_same_resolution_frame(source_frame, out, vsr_mode, quality_value)
+            del image
+            return str(source_frame), str(out), f"RTX VSR {vsr_mode} preview completed at {target[0]}x{target[1]} using NVIDIA reference path."
         session = RTXVSRSession()
         try:
             session.start(w, h, target[0], target[1], vsr_mode, quality_value)
@@ -385,7 +390,7 @@ def do_frame(path, timestamp, mode, vsr_mode, scale_value, quality_value, dlss_s
             session.finish()
         finally:
             session.close()
-        out=TEMP/f"preview_{os.getpid()}.png"; Image.fromarray(enhanced).save(out)
+        Image.fromarray(enhanced).save(out)
         del image,enhanced
         return str(source_frame), str(out), f"RTX VSR {vsr_mode} preview completed at {target[0]}x{target[1]}."
     except Exception as e:

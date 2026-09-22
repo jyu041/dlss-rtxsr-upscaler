@@ -92,6 +92,7 @@ def test_same_resolution_modes_route_to_reference_helper(monkeypatch, tmp_path):
         }
 
     monkeypatch.setattr(stream, "_run_reference_same_res", fake_reference)
+    monkeypatch.setattr(stream, "tool", lambda _name: "ffmpeg")
     monkeypatch.setattr(
         "src.core.media_info.probe",
         lambda _path: {"width": 1280, "height": 720},

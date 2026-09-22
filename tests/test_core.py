@@ -14,9 +14,10 @@ def test_output_is_timestamped_and_does_not_overwrite_source(monkeypatch, tmp_pa
     from src.core import paths
     monkeypatch.setattr(paths, "OUTPUTS", tmp_path)
     monkeypatch.setattr(paths, "_output_timestamp", lambda: "20260922_015301")
-    p=output_path(Path("clip.mp4"),"RTX VSR only","MP4",2)
-    assert p.name == "clip_20260922_015301_rtxvsr_2x.mp4"
+    p=output_path(Path("this_source_name_can_be_extremely_long_and_should_never_leak_into_output.mp4"),"RTX VSR only","MP4",2)
+    assert p.name == "20260922_015301_rtxvsr_2x.mp4"
     assert p.parent == tmp_path
+    assert "this_source_name" not in p.name
 
 
 def test_output_same_second_uses_collision_counter(monkeypatch, tmp_path):
@@ -28,9 +29,9 @@ def test_output_same_second_uses_collision_counter(monkeypatch, tmp_path):
     second = output_path(Path("clip.mp4"), "DLSS 5 only", "MP4", 1)
     second.write_bytes(b"new generation")
     third = output_path(Path("clip.mp4"), "DLSS 5 only", "MP4", 1)
-    assert first.name == "clip_20260922_015301_dlss5.mp4"
-    assert second.name == "clip_20260922_015301_2_dlss5.mp4"
-    assert third.name == "clip_20260922_015301_3_dlss5.mp4"
+    assert first.name == "20260922_015301_dlss5.mp4"
+    assert second.name == "20260922_015301_2_dlss5.mp4"
+    assert third.name == "20260922_015301_3_dlss5.mp4"
     assert first.read_bytes() == b"old generation"
     assert second.read_bytes() == b"new generation"
 
@@ -49,7 +50,7 @@ def test_output_timestamp_precedes_enhancement_tag(monkeypatch, tmp_path, mode, 
     monkeypatch.setattr(paths, "OUTPUTS", tmp_path)
     monkeypatch.setattr(paths, "_output_timestamp", lambda: "20260922_015301")
     p = output_path(Path("inputA.mp4"), mode, "MP4", scale, multiplier)
-    assert p.name == f"inputA_20260922_015301_{expected_tag}.mp4"
+    assert p.name == f"20260922_015301_{expected_tag}.mp4"
 def test_invalid_codec_container():
     with pytest.raises(ValueError): validate("ProRes","MP4")
     with pytest.raises(ValueError): validate("AV1","MOV")

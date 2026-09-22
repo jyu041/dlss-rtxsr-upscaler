@@ -85,3 +85,11 @@ def test_dlssg_sidecar_writes_are_explicitly_gated():
     assert 'if write_sidecars\n        else open(os.devnull, "w", encoding="utf-8")' in source
     assert 'manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")' in source
     assert '"worker_diagnostics": str(log_path) if write_sidecars else None' in source
+
+
+
+def test_deblur_and_denoise_frame_preview_use_reference_helper():
+    source = APP.read_text(encoding="utf-8")
+    assert "process_same_resolution_frame" in source
+    assert 'if vsr_mode in {"Deblur", "Denoise"}:' in source
+    assert "using NVIDIA reference path" in source

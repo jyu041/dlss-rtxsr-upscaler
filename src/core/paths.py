@@ -44,16 +44,16 @@ def output_path(source: Path, mode: str, container: str, scale: float = 1, multi
     )
     timestamp = _output_timestamp()
     suffix = container.lower()
-    candidate = OUTPUTS / f"{source.stem}_{timestamp}_{tag}.{suffix}"
+    candidate = OUTPUTS / f"{timestamp}_{tag}.{suffix}"
     if not candidate.exists():
         return candidate
 
-    # One GPU job runs at a time, but repeated/manual calls can still land in
-    # the same wall-clock second. Keep the human-readable second-level timestamp
-    # and add a deterministic counter rather than ever reusing an existing name.
+    # Keep filenames short and independent of potentially huge source names.
+    # Same-second collisions retain the timestamp + enhancement suffix and add
+    # only a deterministic counter.
     index = 2
     while True:
-        candidate = OUTPUTS / f"{source.stem}_{timestamp}_{index}_{tag}.{suffix}"
+        candidate = OUTPUTS / f"{timestamp}_{index}_{tag}.{suffix}"
         if not candidate.exists():
             return candidate
         index += 1

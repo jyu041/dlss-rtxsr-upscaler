@@ -17,6 +17,28 @@ import sys
 import traceback
 
 
+def _native_same_res_width(width: int) -> int:
+    """Width used inside nvidia-vfx 0.1.0.1 for same-resolution modes.
+
+    The binding can corrupt output rows when the native VFX buffer width is not
+    divisible by 8. Keep the public/output resolution unchanged by padding only
+    the GPU tensor on the right and cropping the VFX result back afterward.
+    """
+    return ((int(width) + 7) // 8) * 8
+
+
+def _pad_same_res_input(rgb_input, public_width: int, F):
+    native_width = _native_same_res_width(public_width)
+    pad_width = native_width - int(public_width)
+    if pad_width:
+        rgb_input = F.pad(
+            rgb_input,
+            (0, pad_width, 0, 0),
+            mode="replicate",
+        ).contiguous()
+    return rgb_input, native_width
+
+
 def _quality_name(mode: str, quality: str) -> str:
     prefix = {"Deblur": "DEBLUR_", "Denoise": "DENOISE_"}.get(mode)
     if prefix is None:
@@ -67,6 +89,7 @@ def _open_video_encoder(av, output_path: Path, codec: str, rate, width: int, hei
 def process_video(args) -> dict[str, object]:
     import av
     import torch
+    import torch.nn.functional as F
     import nvvfx
 
     torch.cuda.set_device(0)
@@ -83,9 +106,12 @@ def process_video(args) -> dict[str, object]:
         raise RuntimeError("input video has no usable frame rate")
     rate = Fraction(float(average_rate)).limit_denominator(10000)
 
+    native_width = _native_same_res_width(width)
     quality = getattr(nvvfx.VideoSuperRes.QualityLevel, _quality_name(args.mode, args.quality))
     effect = nvvfx.VideoSuperRes(quality, device=0)
-    effect.output_width = width
+    effect.input_width = native_width
+    effect.input_height = height
+    effect.output_width = native_width
     effect.output_height = height
     effect.load()
 
@@ -104,7 +130,14 @@ def process_video(args) -> dict[str, object]:
                 .div_(255.0)
                 .contiguous()
             )
+            rgb_input, padded_width = _pad_same_res_input(rgb_input, width, F)
+            if padded_width != native_width:
+                raise RuntimeError(
+                    f"RTX VSR native-width mismatch: prepared {padded_width}, "
+                    f"configured {native_width}"
+                )
             rgb_output = _process_tensor(rgb_input, effect, torch)
+            rgb_output = rgb_output[:, :, :width].contiguous()
             frame_np = (
                 rgb_output.clamp(0.0, 1.0)
                 .mul(255.0)
@@ -131,6 +164,8 @@ def process_video(args) -> dict[str, object]:
         "width": width,
         "height": height,
         "encoder": encoder_name,
+        "native_width": native_width,
+        "public_width": width,
     }
 
 
@@ -138,6 +173,7 @@ def process_frame(args) -> dict[str, object]:
     import numpy as np
     from PIL import Image
     import torch
+    import torch.nn.functional as F
     import nvvfx
 
     torch.cuda.set_device(0)
@@ -146,9 +182,12 @@ def process_frame(args) -> dict[str, object]:
     frame = np.asarray(Image.open(source).convert("RGB"), dtype=np.uint8)
     height, width = frame.shape[:2]
 
+    native_width = _native_same_res_width(width)
     quality = getattr(nvvfx.VideoSuperRes.QualityLevel, _quality_name(args.mode, args.quality))
     effect = nvvfx.VideoSuperRes(quality, device=0)
-    effect.output_width = width
+    effect.input_width = native_width
+    effect.input_height = height
+    effect.output_width = native_width
     effect.output_height = height
     effect.load()
 
@@ -160,7 +199,14 @@ def process_frame(args) -> dict[str, object]:
         .div_(255.0)
         .contiguous()
     )
+    rgb_input, padded_width = _pad_same_res_input(rgb_input, width, F)
+    if padded_width != native_width:
+        raise RuntimeError(
+            f"RTX VSR native-width mismatch: prepared {padded_width}, "
+            f"configured {native_width}"
+        )
     rgb_output = _process_tensor(rgb_input, effect, torch)
+    rgb_output = rgb_output[:, :, :width].contiguous()
     frame_np = (
         rgb_output.clamp(0.0, 1.0)
         .mul(255.0)
@@ -171,7 +217,11 @@ def process_frame(args) -> dict[str, object]:
         .numpy()
     )
     Image.fromarray(frame_np).save(output_path)
-    return {"width": width, "height": height}
+    return {
+        "width": width,
+        "height": height,
+        "native_width": native_width,
+    }
 
 
 def main() -> int:

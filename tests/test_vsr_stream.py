@@ -128,3 +128,28 @@ def test_reference_module_mirrors_nvidia_python_sample_contract():
     assert 'effect.run(rgb_input, stream_ptr=stream_ptr)' in source
     assert 'torch.from_dlpack(native.image).clone()' in source
     assert '.permute(1, 2, 0)' in source
+
+
+
+def test_same_resolution_vfx_width_is_aligned_to_8_without_changing_public_size():
+    from src.video.rtx_vsr_reference import _native_same_res_width
+
+    assert _native_same_res_width(1434) == 1440
+    assert _native_same_res_width(1435) == 1440
+    assert _native_same_res_width(1440) == 1440
+    assert _native_same_res_width(1920) == 1920
+
+
+def test_same_resolution_reference_path_pads_right_edge_and_crops_back():
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "video"
+        / "rtx_vsr_reference.py"
+    ).read_text(encoding="utf-8")
+    assert 'mode="replicate"' in source
+    assert "effect.input_width = native_width" in source
+    assert "effect.output_width = native_width" in source
+    assert "rgb_output = rgb_output[:, :, :width].contiguous()" in source

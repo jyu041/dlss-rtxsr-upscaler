@@ -93,3 +93,11 @@ def test_deblur_and_denoise_frame_preview_use_reference_helper():
     assert "process_same_resolution_frame" in source
     assert 'if vsr_mode in {"Deblur", "Denoise"}:' in source
     assert "using NVIDIA reference path" in source
+
+
+
+def test_output_suffix_uses_actual_rtx_vsr_scale():
+    source = APP.read_text(encoding="utf-8")
+    assert 'if processing_mode == "RTX VSR only" and vsr_mode in {"Deblur", "Denoise"}' in source
+    assert 'else float(scale_value)' in source
+    assert 'destination = output_path(Path(path), processing_mode, container_value, output_scale' in source

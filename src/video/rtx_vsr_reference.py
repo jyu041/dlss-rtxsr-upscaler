@@ -9,6 +9,7 @@ same-resolution mode families on the tested Windows/RTX 3070 configuration.
 from __future__ import annotations
 
 import argparse
+from fractions import Fraction
 import json
 import os
 from pathlib import Path
@@ -77,9 +78,10 @@ def process_video(args) -> dict[str, object]:
     width = int(input_stream.codec_context.width)
     height = int(input_stream.codec_context.height)
     total = int(input_stream.frames or 0)
-    rate = input_stream.average_rate
-    if rate is None:
+    average_rate = input_stream.average_rate
+    if average_rate is None:
         raise RuntimeError("input video has no usable frame rate")
+    rate = Fraction(float(average_rate)).limit_denominator(10000)
 
     quality = getattr(nvvfx.VideoSuperRes.QualityLevel, _quality_name(args.mode, args.quality))
     effect = nvvfx.VideoSuperRes(quality, device=0)

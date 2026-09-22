@@ -519,7 +519,15 @@ def render_video(path, processing_mode, vsr_mode, scale_value, quality_value, co
     if not path: return None, "Choose an input video."
     job = None
     try:
-        job = CONTROLLER.start(); MONITOR.set_active(True); destination = output_path(Path(path), processing_mode, container_value, float(dlss_scale), int(dlssg_multiplier))
+        job = CONTROLLER.start(); MONITOR.set_active(True)
+        output_scale = (
+            1.0
+            if processing_mode == "RTX VSR only" and vsr_mode in {"Deblur", "Denoise"}
+            else float(scale_value)
+            if processing_mode == "RTX VSR only"
+            else float(dlss_scale)
+        )
+        destination = output_path(Path(path), processing_mode, container_value, output_scale, int(dlssg_multiplier))
         if processing_mode == "DLSS Frame Generation 2X":
             _save_last("dlssg", {"motion_provider": dlssg_motion, "depth_mode": dlssg_depth, "multiplier": int(dlssg_multiplier), "nvof_profile": dlssg_nvof_profile})
             if dlssg_motion != "NVIDIA Optical Flow" or dlssg_depth != "Constant 0.5": raise RuntimeError("Only NVIDIA Optical Flow + Constant 0.5 depth is implemented")

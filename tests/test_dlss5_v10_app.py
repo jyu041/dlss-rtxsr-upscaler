@@ -131,7 +131,7 @@ def test_v10_app_output_path_is_distinct(tmp_path, monkeypatch):
         "MP4",
         1.0,
     )
-    assert result.name == "input_20260922_015301_dlss5_v10.mp4"
+    assert result.name == "20260922_015301_dlss5_v10.mp4"
 
 
 def test_v10_application_ack_is_separate_from_bounded_research_tokens():

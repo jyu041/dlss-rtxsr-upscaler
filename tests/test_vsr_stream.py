@@ -76,3 +76,55 @@ def test_vsr_hevc_preflight_preserves_exact_ffmpeg_reason(monkeypatch):
         match="device does not support requested dimensions",
     ):
         stream._select_encoder("HEVC", 8192, 4320)
+
+
+
+def test_same_resolution_modes_route_to_reference_helper(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_reference(source, destination, **kwargs):
+        calls.append((source, destination, kwargs))
+        return {
+            "frames": 1,
+            "fps": 1.0,
+            "dimensions": (1280, 720),
+            "audio_preserved": False,
+        }
+
+    monkeypatch.setattr(stream, "_run_reference_same_res", fake_reference)
+    monkeypatch.setattr(stream, "tool", lambda _name: "ffmpeg")
+    monkeypatch.setattr(
+        "src.core.media_info.probe",
+        lambda _path: {"width": 1280, "height": 720},
+    )
+
+    result = stream.render_vsr(
+        tmp_path / "input.mp4",
+        tmp_path / "output.mp4",
+        backend=None,
+        scale=4.0,
+        quality="ULTRA",
+        mode="Deblur",
+        codec="H.264",
+    )
+
+    assert result["dimensions"] == (1280, 720)
+    assert len(calls) == 1
+    assert calls[0][2]["mode"] == "Deblur"
+    assert calls[0][2]["quality"] == "ULTRA"
+
+
+def test_reference_module_mirrors_nvidia_python_sample_contract():
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "video"
+        / "rtx_vsr_reference.py"
+    ).read_text(encoding="utf-8")
+    assert 'frame.to_ndarray(format="rgb24")' in source
+    assert '.permute(2, 0, 1)' in source
+    assert 'effect.run(rgb_input, stream_ptr=stream_ptr)' in source
+    assert 'torch.from_dlpack(native.image).clone()' in source
+    assert '.permute(1, 2, 0)' in source

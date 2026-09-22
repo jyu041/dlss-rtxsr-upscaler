@@ -1,6 +1,7 @@
 """Bounded FFmpeg -> NVVFX -> FFmpeg video pipeline."""
 from pathlib import Path
-import subprocess, time
+import json
+import subprocess, sys, time
 import numpy as np
 from src.core.process_utils import tool
 from src.core.paths import aligned_dimensions
@@ -44,13 +45,208 @@ def _select_encoder(codec: str, width: int, height: int) -> dict[str, object]:
         f"({result.get('encoder') or 'unknown encoder'}): {detail}"
     )
 
+def _run_reference_same_res(
+    source,
+    destination,
+    *,
+    mode: str,
+    quality: str,
+    codec: str,
+    cancel=None,
+    progress=None,
+) -> dict[str, object]:
+    """Run denoise/deblur through NVIDIA's documented Python integration path."""
+    ffmpeg = tool("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError("ffmpeg was not found in the bundled runtime or on PATH.")
+    from src.core.media_info import frame_total, probe
+
+    info = probe(str(source))
+    width, height = int(info["width"]), int(info["height"])
+    total, estimated = frame_total(info)
+    video_only = Path(destination).with_suffix(".video_only.mp4")
+    command = [
+        sys.executable,
+        "-u",
+        "-m",
+        "src.video.rtx_vsr_reference",
+        "--input",
+        str(source),
+        "--output",
+        str(video_only),
+        "--mode",
+        mode,
+        "--quality",
+        quality,
+        "--codec",
+        codec,
+    ]
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+        creationflags=creationflags,
+        cwd=str(Path(__file__).resolve().parents[2]),
+    )
+    result_payload: dict[str, object] | None = None
+    transcript: list[str] = []
+    started = time.perf_counter()
+    try:
+        assert process.stdout is not None
+        for raw_line in process.stdout:
+            line = raw_line.rstrip()
+            if not line:
+                continue
+            transcript.append(line)
+            transcript[:] = transcript[-80:]
+            if cancel and cancel.is_set():
+                process.kill()
+                process.wait(timeout=5)
+                raise InterruptedError("Render cancelled")
+            if line.startswith("NVE_PROGRESS "):
+                parts = line.split()
+                frame_index = int(parts[1])
+                worker_total = int(parts[2]) if len(parts) > 2 else 0
+                report_progress(
+                    progress,
+                    frame_index=frame_index,
+                    total_frames=worker_total or total,
+                    phase=f"RTX VSR {mode}",
+                    message=f"Processing {mode.lower()} with NVIDIA reference path",
+                )
+            elif line.startswith("NVE_RESULT "):
+                result_payload = json.loads(line[len("NVE_RESULT "):])
+        returncode = process.wait(timeout=30)
+        if returncode != 0 or result_payload is None:
+            raise RuntimeError(
+                f"RTX VSR {mode} reference helper failed (exit {returncode}): "
+                + "\n".join(transcript[-30:])
+            )
+
+        report_progress(
+            progress,
+            frame_index=int(result_payload["frames"]),
+            total_frames=total,
+            phase="MUXING",
+            message="Preserving audio",
+        )
+        mux = [
+            ffmpeg,
+            "-y",
+            "-v",
+            "error",
+            "-i",
+            str(video_only),
+            "-i",
+            str(source),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a?",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "copy",
+            "-map_metadata",
+            "-1",
+            "-map_chapters",
+            "-1",
+            "-movflags",
+            "+faststart",
+            str(destination),
+        ]
+        remux = subprocess.run(
+            mux,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            creationflags=creationflags,
+        )
+        if remux.returncode:
+            raise RuntimeError(remux.stderr[-2000:])
+        frames = int(result_payload["frames"])
+        return {
+            "frames": frames,
+            "fps": frames / max(0.001, time.perf_counter() - started),
+            "dimensions": (width, height),
+            "audio_preserved": bool(info["audio_codec"] != "none"),
+            "encoder": result_payload.get("encoder"),
+            "requested_codec": codec,
+            "output_codec": codec,
+            "codec_fallback": False,
+            "codec_fallback_reason": None,
+            "gpu_memory_samples": [],
+            "frames_estimated": estimated,
+            "worker_teardown": "PROCESS_BOUNDARY",
+            "same_resolution_reference_path": True,
+        }
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+        video_only.unlink(missing_ok=True)
+
+
+def process_same_resolution_frame(
+    source_frame: str | Path,
+    output_frame: str | Path,
+    mode: str,
+    quality: str,
+) -> Path:
+    """One-frame denoise/deblur preview through the same isolated reference path."""
+    command = [
+        sys.executable,
+        "-u",
+        "-m",
+        "src.video.rtx_vsr_reference",
+        "--frame-input",
+        str(source_frame),
+        "--frame-output",
+        str(output_frame),
+        "--mode",
+        mode,
+        "--quality",
+        quality,
+    ]
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        cwd=str(Path(__file__).resolve().parents[2]),
+    )
+    if result.returncode or not Path(output_frame).is_file():
+        detail = (result.stdout + "\n" + result.stderr).strip()[-3000:]
+        raise RuntimeError(f"RTX VSR {mode} frame helper failed: {detail}")
+    return Path(output_frame)
+
+
 def render_vsr(source, destination, backend, scale=2.0, quality="ULTRA", mode="Super Resolution", cancel=None, progress=None, codec="H.264"):
     ffmpeg = tool("ffmpeg")
     if not ffmpeg: raise RuntimeError("ffmpeg was not found in the bundled runtime or on PATH.")
     from src.core.media_info import frame_total, probe
     info = probe(str(source)); width, height = int(info["width"]), int(info["height"])
-    if mode in {"Deblur", "Denoise"}: output = (width, height)
-    else: output = aligned_dimensions(width, height, scale)
+    if mode in {"Deblur", "Denoise"}:
+        return _run_reference_same_res(
+            source,
+            destination,
+            mode=mode,
+            quality=quality,
+            codec=codec,
+            cancel=cancel,
+            progress=progress,
+        )
+    output = aligned_dimensions(width, height, scale)
     frames, estimated = frame_total(info)
     raw_cmd = [ffmpeg, "-v", "error", "-i", str(source), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
     video_only = Path(destination).with_suffix(".video_only.mp4")

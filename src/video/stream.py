@@ -91,6 +91,7 @@ def _run_reference_same_res(
         errors="replace",
         bufsize=1,
         creationflags=creationflags,
+        cwd=str(Path(__file__).resolve().parents[2]),
     )
     result_payload: dict[str, object] | None = None
     transcript: list[str] = []
@@ -222,6 +223,7 @@ def process_same_resolution_frame(
         errors="replace",
         check=False,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        cwd=str(Path(__file__).resolve().parents[2]),
     )
     if result.returncode or not Path(output_frame).is_file():
         detail = (result.stdout + "\n" + result.stderr).strip()[-3000:]
